@@ -89,7 +89,7 @@ def _rate_text(provider: dict) -> str:
 class CarsharingAdapter(Adapter):
     id = "carsharing"
     label = "Carsharing (stima costo)"
-    description = "Stima il costo di un'auto condivisa e verifica le citta' coperte."
+    description = "Stima il costo di un'auto condivisa e verifica le città coperte."
     modes = ("carsharing",)
 
     async def search(self, ctx: SearchContext) -> AdapterResult:

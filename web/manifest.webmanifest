@@ -1,7 +1,7 @@
 {
   "name": "Carpool Hunter",
   "short_name": "Carpool",
-  "description": "Trova il modo piu' economico per viaggiare in Italia: passaggi, bus, treno e carsharing.",
+  "description": "Trova il modo più economico per viaggiare in Italia: passaggi, bus, treno e carsharing.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

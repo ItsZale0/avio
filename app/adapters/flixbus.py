@@ -140,7 +140,7 @@ class FlixBusAdapter(Adapter):
                 )
                 if not from_id or not to_id:
                     return AdapterResult(
-                        hints=[f"FlixBus: citta' non riconosciuta ({ctx.from_place} / {ctx.to_place})."]
+                        hints=[f"FlixBus: città non riconosciuta ({ctx.from_place} / {ctx.to_place})."]
                     )
 
                 payloads = []

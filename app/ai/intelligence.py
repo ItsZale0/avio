@@ -109,7 +109,7 @@ def _templated_explanation(candidate: Candidate, watch: dict[str, Any]) -> str:
             else ""
         )
         return (
-            f"Piu' economico trovato: {first.operator or first.source} "
+            f"Più economico trovato: {first.operator or first.source} "
             f"({human_rome(first.depart_at, '%H:%M')} → {human_rome(first.arrive_at, '%H:%M')})"
             f"{transfer}, poi {second.operator or second.source} "
             f"({human_rome(second.depart_at, '%H:%M')} → {human_rome(second.arrive_at, '%H:%M')}). "
@@ -117,7 +117,7 @@ def _templated_explanation(candidate: Candidate, watch: dict[str, Any]) -> str:
         )
     leg = candidate.legs[0]
     return (
-        f"Piu' economico trovato: {leg.operator or leg.source} "
+        f"Più economico trovato: {leg.operator or leg.source} "
         f"({human_rome(leg.depart_at, '%H:%M')} → {human_rome(leg.arrive_at, '%H:%M')}) "
         f"a {candidate.total_price:.2f} EUR. "
         f"Arrivo {human_rome(candidate.arrive_at, '%a %d %b, %H:%M')}."
@@ -180,7 +180,7 @@ def _relax_questions(
                 "key": "flexible_days",
                 "text": (
                     f"Ho trovato una corsa ma arriva {human_rome(soonest.arrive_at, '%a %d %b alle %H:%M')}, "
-                    "dopo il limite. Posso considerare anche arrivi piu' tardi?"
+                    "dopo il limite. Posso considerare anche arrivi più tardi?"
                 ),
                 "options": [
                     {"id": "0", "label": "No, entro il limite", "prefs": {"flexible_days": 0}},
@@ -195,7 +195,7 @@ def _relax_questions(
             {
                 "key": "budget_flex",
                 "text": (
-                    f"La soluzione piu' economica costa {cheapest.price:.2f} EUR, sopra il budget "
+                    f"La soluzione più economica costa {cheapest.price:.2f} EUR, sopra il budget "
                     f"di {ctx.max_price:.2f} EUR. Vuoi alzare il budget?"
                 ),
                 "options": [
@@ -272,7 +272,7 @@ async def analyze(
                     + _constraints_text(watch, prefs)
                     + "\n\nCOMBINAZIONI CANDIDATE (JSON)\n"
                     + json.dumps(_candidates_payload(candidates), ensure_ascii=False)
-                    + "\n\nScegli il piano piu' economico e rispondi in JSON."
+                    + "\n\nScegli il piano più economico e rispondi in JSON."
                 ),
             },
         ]

@@ -1,6 +1,7 @@
 /* Carpool Hunter - service worker minimale.
-   Mette in cache la shell statica; i dati (/api) restano sempre online. */
-const CACHE = "carpool-v1";
+   Strategia: rete per prima (il codice cambia spesso), cache come rete di
+   sicurezza quando sei offline. I dati (/api) non vengono mai messi in cache. */
+const CACHE = "carpool-v2";
 const SHELL = [
   "/",
   "/static/styles.css",
@@ -37,17 +38,15 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname.startsWith("/api/") || url.pathname === "/config.json") return;
 
   event.respondWith(
-    caches.match(request).then((cached) => {
-      const network = fetch(request)
-        .then((response) => {
-          if (response && response.ok) {
-            const copy = response.clone();
-            caches.open(CACHE).then((cache) => cache.put(request, copy));
-          }
-          return response;
-        })
-        .catch(() => cached || caches.match("/"));
-      return cached || network;
-    })
+    // Rete per prima: se il PC e' raggiungibile vedi sempre l'ultima versione.
+    fetch(request)
+      .then((response) => {
+        if (response && response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE).then((cache) => cache.put(request, copy));
+        }
+        return response;
+      })
+      .catch(() => caches.match(request).then((cached) => cached || caches.match("/")))
   );
 });

@@ -179,7 +179,7 @@ async def _trip_from_text(text: str) -> str | None:
     from_lat, from_lon, _ = await geo.resolve_place(payload.from_place)
     to_lat, to_lon, _ = await geo.resolve_place(payload.to_place)
     if from_lat is None or from_lon is None or to_lat is None or to_lon is None:
-        return "Non trovo una delle due localita'. Prova con il nome della citta' (es. Trento, Vicenza)."
+        return "Non trovo una delle due località. Prova con il nome della città (es. Trento, Vicenza)."
 
     watch = store.create_watch(
         payload,
@@ -196,7 +196,7 @@ async def _trip_from_text(text: str) -> str | None:
     extra = f"\n{summary}" if summary else ""
     return (
         f"🔎 Ricerca creata: {payload.from_place} → {payload.to_place}.{extra}\n"
-        "Ti scrivo appena trovo la soluzione piu' economica."
+        "Ti scrivo appena trovo la soluzione più economica."
     )
 
 

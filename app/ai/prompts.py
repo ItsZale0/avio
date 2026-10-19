@@ -13,8 +13,8 @@ Oggi e' {today} (fuso Europe/Rome). Anno corrente: {year}.
 
 Schema JSON:
 {{
-  "from_place": "citta' di partenza o null",
-  "to_place": "citta' o luogo di arrivo o null",
+  "from_place": "città di partenza o null",
+  "to_place": "città o luogo di arrivo o null",
   "arrive_by": "YYYY-MM-DDTHH:MM:SS (ora locale italiana) o null",
   "depart_after": "YYYY-MM-DDTHH:MM:SS o null",
   "max_price": numero o null,
@@ -34,14 +34,14 @@ Schema JSON:
 Regole:
 - Se l'ora non e' indicata ma c'e' un giorno, usa 23:59:00 di quel giorno per arrive_by.
 - Se non c'e' nemmeno il giorno, arrive_by = null.
-- "domani" = domani, "dopodomani" = +2 giorni, "il 22" = il 22 del mese corrente (o del prossimo se gia' passato), "weekend" = sabato prossimo.
+- "domani" = domani, "dopodomani" = +2 giorni, "il 22" = il 22 del mese corrente (o del prossimo se già passato), "weekend" = sabato prossimo.
 - Non inventare la destinazione se non e' deducibile.
 - In "questions" metti al massimo 2 domande davvero utili, solo se mancano dati che cambierebbero il piano (es. entro che ora, budget, flessibilita' sul giorno, bagagli, disponibilita' a cambi).
 - Se mancano pochi dati, meglio nessuna domanda.
 """
 
 
-PLAN_SYSTEM = """Sei un pianificatore di viaggi low-cost in Italia. Pensi in euro e privilegi il COSTO TOTALE piu' basso che rispetti i vincoli.
+PLAN_SYSTEM = """Sei un pianificatore di viaggi low-cost in Italia. Pensi in euro e privilegi il COSTO TOTALE più basso che rispetti i vincoli.
 
 Ti vengono date:
 - la richiesta dell'utente e le sue preferenze apprese;
@@ -50,7 +50,7 @@ Ti vengono date:
 REGOLE ASSOLUTE:
 - Usa SOLO le combinazioni candidate fornite. Non inventare tratte, prezzi, orari o disponibilita'.
 - Scegli la combinazione col costo totale minore tra quelle che rispettano i vincoli (arrivo entro il limite, budget).
-- Se una combinazione ha piu' tratte, spiega come collegarle.
+- Se una combinazione ha più tratte, spiega come collegarle.
 - Se un candidato arriva dopo il limite, va bene solo se le preferenze ammettono flessibilita': in tal caso segnalalo nei watchouts.
 - Non dire che un prezzo e' "garantito": le fonti possono cambiare.
 
@@ -58,7 +58,7 @@ Rispondi SEMPRE e SOLO con un oggetto JSON valido:
 {{
   "chosen_id": "c1",
   "title": "titolo breve del piano",
-  "explanation": "2-4 frasi: perche' e' il piu' economico, cosa include, cosa tenere d'occhio",
+  "explanation": "2-4 frasi: perché è il più economico, cosa include, cosa tenere d'occhio",
   "confidence": 0.0-1.0,
   "watchouts": ["rischio o verifica da fare", ...],
   "alternatives": ["c2", "c3"],
