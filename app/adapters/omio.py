@@ -18,7 +18,7 @@ import httpx
 
 from ..geo import CITIES, haversine_km
 from ..timeutil import parse_dt
-from .base import Adapter, AdapterResult, Offer, SearchContext
+from .base import Adapter, AdapterResult, Offer, SearchContext, tappa
 
 POSITION_URL = "https://www.omio.com/GoEuroAPI/rest/api/v5/position"
 SEARCH_URL = "https://www.omio.com/GoEuroAPI/rest/api//v5/searches"
@@ -172,6 +172,17 @@ def _company(data: dict, company_id: str) -> tuple[str | None, str, str]:
     return None, raw, raw
 
 
+def _place_label(pos: dict) -> str:
+    """Nome preciso della fermata/stazione, con la citta' quando aggiunge info."""
+    if not isinstance(pos, dict):
+        return ""
+    name = str(pos.get("name") or "").strip()
+    city = str(pos.get("cityName") or "").strip()
+    if name and city and city.lower() not in name.lower():
+        return f"{name} ({city})"
+    return name or city
+
+
 def _dedupe(offers: list[Offer]) -> list[Offer]:
     """Omio restituisce varianti dello stesso viaggio: teniamo la piu' economica."""
     best: dict[tuple, Offer] = {}
@@ -301,6 +312,22 @@ class OmioAdapter(Adapter):
             dep = position((first_seg or {}).get("departurePosition")) or from_pos
             arr = position((last_seg or {}).get("arrivalPosition")) or to_pos
 
+            tappe: list[dict] = []
+            for seg_id in seg_ids:
+                seg = segments.get(str(seg_id)) or {}
+                seg_dep = position(seg.get("departurePosition")) or {}
+                seg_arr = position(seg.get("arrivalPosition")) or {}
+                _, seg_operator, _ = _company(data, str(seg.get("company")))
+                tappe.append(
+                    tappa(
+                        _place_label(seg_dep),
+                        _place_label(seg_arr),
+                        seg.get("departureTime"),
+                        seg.get("arrivalTime"),
+                        seg.get("transportId") or seg_operator or seg.get("type") or "",
+                    )
+                )
+
             duration = outbound.get("duration")
             try:
                 duration_min = int(duration) if duration is not None else None
@@ -324,10 +351,10 @@ class OmioAdapter(Adapter):
                     depart_at=depart_at,
                     arrive_at=arrive_at,
                     price=round(price, 2),
-                    pickup_name=dep.get("name") or dep.get("cityName") or from_pos["name"],
+                    pickup_name=_place_label(dep) or from_pos["name"],
                     pickup_lat=dep.get("latitude", ctx.from_lat),
                     pickup_lon=dep.get("longitude", ctx.from_lon),
-                    dropoff_name=arr.get("name") or arr.get("cityName") or to_pos["name"],
+                    dropoff_name=_place_label(arr) or to_pos["name"],
                     dropoff_lat=arr.get("latitude", ctx.to_lat),
                     dropoff_lon=arr.get("longitude", ctx.to_lon),
                     duration_min=duration_min,
@@ -337,6 +364,7 @@ class OmioAdapter(Adapter):
                         "fonte": "Omio",
                         "compagnia": raw_name or operator,
                         "cambi": changes,
+                        "tappe": tappe,
                         "partenza_alternativa": from_pos["name"] if from_shifted else "",
                         "arrivo_alternativo": to_pos["name"] if to_shifted else "",
                         "distanza_partenza_km": from_km if from_shifted else 0,

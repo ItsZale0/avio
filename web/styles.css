@@ -299,6 +299,18 @@ a:hover { text-decoration: underline; }
 .details-line { margin-top: 6px; font-size: 11px; color: var(--muted-2); display: flex; gap: 10px; flex-wrap: wrap; }
 .details-line span { white-space: nowrap; }
 
+.tappe { margin-top: 8px; }
+.tappe summary { cursor: pointer; font-size: 11px; color: var(--muted); list-style: none; padding: 3px 0; }
+.tappe summary::-webkit-details-marker { display: none; }
+.tappe summary::before { content: "▸ "; color: var(--muted-2); }
+.tappe[open] summary::before { content: "▾ "; }
+.tappe ol { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.tappe li { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.tappe-n { flex: 0 0 16px; height: 16px; border-radius: 50%; background: #16233a; color: var(--muted); font-size: 10px; display: inline-flex; align-items: center; justify-content: center; }
+.tappe-place { color: inherit; }
+.tappe-place .arrow { color: var(--muted-2); margin: 0 4px; }
+.tappe-when { color: var(--muted-2); font-size: 11px; margin-left: auto; white-space: nowrap; }
+
 .group-title { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted-2); font-weight: 700; margin: 22px 0 10px; }
 .group-title:first-child { margin-top: 0; }
 

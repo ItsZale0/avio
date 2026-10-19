@@ -85,6 +85,30 @@ class Offer:
         return haversine_km(self.dropoff_lat, self.dropoff_lon, ctx.to_lat, ctx.to_lon)  # type: ignore[arg-type]
 
 
+def iso_time(value: Any) -> str | None:
+    """Normalizza un orario di una tappa in ISO (o None se illeggibile)."""
+    if value is None:
+        return None
+    from ..timeutil import parse_dt
+
+    parsed = parse_dt(value)
+    if parsed is not None:
+        return parsed.isoformat()
+    text = str(value).strip()
+    return text or None
+
+
+def tappa(da: str | None, a: str | None, partenza: Any = None, arrivo: Any = None, mezzo: str | None = None) -> dict[str, Any]:
+    """Una tratta/fermata: da dove a dove, con orari e mezzo."""
+    return {
+        "da": (da or "").strip(),
+        "a": (a or "").strip(),
+        "partenza": iso_time(partenza),
+        "arrivo": iso_time(arrivo),
+        "mezzo": (mezzo or "").strip(),
+    }
+
+
 @dataclass
 class AdapterResult:
     offers: list[Offer] = field(default_factory=list)

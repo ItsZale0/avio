@@ -12,7 +12,7 @@ import httpx
 
 from ..geo import CITIES, haversine_km
 from ..timeutil import parse_dt
-from .base import Adapter, AdapterResult, Offer, SearchContext
+from .base import Adapter, AdapterResult, Offer, SearchContext, tappa
 
 AUTOCOMPLETE = "https://global.api.flixbus.com/search/autocomplete/cities"
 SEARCH = "https://global.api.flixbus.com/search/service/v4/search"
@@ -76,6 +76,31 @@ def _iter_rides(payload: dict):
 def _operator_name(value: str | None) -> str:
     text = (value or "FlixBus").strip()
     return "FlixBus" if text.lower() == "flixbus" else text.title()
+
+
+def _station_name(stations: dict, station_id) -> str:
+    station = stations.get(station_id) or {}
+    return str(station.get("name") or "").strip()
+
+
+def _tappe_from_legs(ride: dict, stations: dict) -> list[dict]:
+    """Tratte della corsa: da quale fermata a quale fermata, con orari."""
+    result: list[dict] = []
+    for leg in ride.get("legs") or []:
+        if not isinstance(leg, dict):
+            continue
+        departure = leg.get("departure") or {}
+        arrival = leg.get("arrival") or {}
+        result.append(
+            tappa(
+                _station_name(stations, departure.get("station_id")),
+                _station_name(stations, arrival.get("station_id")),
+                departure.get("date"),
+                arrival.get("date"),
+                leg.get("means_of_transport") or "bus",
+            )
+        )
+    return result
 
 
 def _deeplink(ctx: SearchContext, date: str) -> str:
@@ -230,6 +255,7 @@ class FlixBusAdapter(Adapter):
                             details={
                                 "tratte": ride.get("transfer_type", ""),
                                 "stato": ride.get("status", ""),
+                                "tappe": _tappe_from_legs(ride, stations),
                                 "fonte": "FlixBus",
                                 "partenza_alternativa": from_label if shifted_from else "",
                                 "arrivo_alternativo": to_label if shifted_to else "",

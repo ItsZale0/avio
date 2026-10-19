@@ -16,7 +16,7 @@ import httpx
 
 from ..geo import CITIES, haversine_km
 from ..timeutil import parse_dt
-from .base import Adapter, AdapterResult, Offer, SearchContext
+from .base import Adapter, AdapterResult, Offer, SearchContext, tappa
 
 STATIONS_URL = "https://www.itabus.it/on/demandware.store/Sites-ITABUS-Site/en/Api-Stations"
 TRAVELS_URL = "https://www.itabus.it/on/demandware.store/Sites-ITABUS-Site/en/Api-Travels"
@@ -133,6 +133,24 @@ def _candidates(place: str, lat: float | None, lon: float | None) -> list[tuple[
         if len(names) >= 3:
             break
     return names
+
+
+def _tappe_from_legs(legs: list[dict]) -> list[dict]:
+    """Tratte della corsa: dalla fermata di partenza a quella di arrivo."""
+    result: list[dict] = []
+    for leg in legs:
+        if not isinstance(leg, dict):
+            continue
+        result.append(
+            tappa(
+                leg.get("origin"),
+                leg.get("destination"),
+                leg.get("departure_timestamp"),
+                leg.get("arrival_timestamp"),
+                "bus",
+            )
+        )
+    return result
 
 
 class ItabusAdapter(Adapter):
@@ -264,6 +282,7 @@ class ItabusAdapter(Adapter):
                     details={
                         "fonte": "Itabus",
                         "cambi": int(route.get("transferNumber") or 0),
+                        "tappe": _tappe_from_legs(route.get("legs") or []),
                         "servizio": route.get("service_name"),
                         "servizi": ", ".join(str(s.get("code")) for s in services[:6] if isinstance(s, dict)),
                         "partenza_alternativa": from_st["name"] if from_shifted else "",

@@ -148,6 +148,10 @@ messe in cache per 6 ore (pulsante **Aggiorna** per forzare).
 - **Avvisi** — un digest per giro, solo se ci sono novità (nuove offerte, ribassi o
   **piano migliorato**). Deduplica per offerta: niente spam ogni ora.
 - **Ribassi** — se il prezzo scende di almeno il 4% (min 0,50 €), ricevi un avviso dedicato.
+- **Fermate precise** — ogni offerta mostra la fermata/stazione **esatta** di partenza e
+  arrivo (es. *Verona Porta Nuova*, *Trento (Lungadige San Nicolò)*), non solo la città.
+  Per i viaggi con cambi, la card si espande in **“dove ferma e cambia”**: l'elenco delle
+  tratte con orari e mezzo (es. *Thiene → Vicenza · RE 16074*).
 - **Carsharing** — stima il costo di un noleggio one-way nelle città coperte e mostra
   solo i provider che permettono quella tratta.
 - **Fonti rotte** — l'AI non inventa nulla: se una fonte cade, il piano si costruisce

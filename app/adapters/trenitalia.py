@@ -11,7 +11,7 @@ import httpx
 
 from ..geo import CITIES, haversine_km
 from ..timeutil import ROME, parse_dt
-from .base import Adapter, AdapterResult, Offer, SearchContext
+from .base import Adapter, AdapterResult, Offer, SearchContext, tappa
 
 LOCATIONS_URL = "https://app.lefrecce.it/Channels.Website.BFF.WEB/app/locations"
 SOLUTIONS_URL = "https://app.lefrecce.it/Channels.Website.BFF.WEB/website/ticket/solutions"
@@ -196,6 +196,7 @@ class TrenitaliaAdapter(Adapter):
                         "fonte": "Trenitalia",
                         "cambi": max(0, len(trains) - 1),
                         "treni": ", ".join(categories[:4]),
+                        "tappe": _tappe_from_nodes(solution.get("nodes") or []),
                         "durata": solution.get("duration"),
                         "partenza_alternativa": from_st["name"] if from_shifted else "",
                         "arrivo_alternativo": to_st["name"] if to_shifted else "",
@@ -205,6 +206,32 @@ class TrenitaliaAdapter(Adapter):
                 )
             )
         return offers
+
+
+def _train_label(train: dict) -> str:
+    acronym = str(train.get("acronym") or "").strip()
+    name = str(train.get("name") or train.get("description") or "").strip()
+    category = str(train.get("trainCategory") or "").strip()
+    parts = [part for part in (acronym, name or category) if part]
+    return " ".join(dict.fromkeys(parts))
+
+
+def _tappe_from_nodes(nodes: list[dict]) -> list[dict]:
+    """Tratte reali della soluzione: dove parte, dove cambia, dove arriva."""
+    result: list[dict] = []
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        result.append(
+            tappa(
+                node.get("origin"),
+                node.get("destination"),
+                node.get("departureTime"),
+                node.get("arrivalTime"),
+                _train_label(node.get("train") or {}),
+            )
+        )
+    return result
 
 
 def _main_operator(categories: list[str]) -> str:

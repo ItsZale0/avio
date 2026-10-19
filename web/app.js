@@ -550,6 +550,9 @@ function offerCard(offer, suppressNew = false) {
   const pickupKm = offer.details?.distanza_pickup_km;
   const dropoffKm = offer.details?.distanza_dropoff_km;
   const effective = offer.details?.costo_effettivo;
+  const tappe = Array.isArray(offer.details?.tappe)
+    ? offer.details.tappe.filter((t) => t && (t.da || t.a))
+    : [];
 
   const detailBits = [];
   if (duration) detailBits.push(`⏱ ${duration}`);
@@ -591,6 +594,16 @@ function offerCard(offer, suppressNew = false) {
           <span>↓ ${esc(offer.dropoff_name || "—")}${dropoffKm != null ? ` <span class="km">· ${dropoffKm} km</span>` : ""}</span>
         </div>
         ${detailBits.length ? `<div class="details-line">${detailBits.map((b) => `<span>${b}</span>`).join("")}</div>` : ""}
+        ${tappe.length > 1 ? `
+          <details class="tappe">
+            <summary>🛣️ ${tappe.length} tratte · dove ferma e cambia</summary>
+            <ol>${tappe.map((t, i) => `
+              <li>
+                <span class="tappe-n">${i + 1}</span>
+                <span class="tappe-place"><b>${esc(t.da || "—")}</b><span class="arrow">→</span><b>${esc(t.a || "—")}</b></span>
+                <span class="tappe-when">${t.partenza ? fmtTime(t.partenza) : ""}${t.arrivo ? " – " + fmtTime(t.arrivo) : ""}${t.mezzo ? " · " + esc(t.mezzo) : ""}</span>
+              </li>`).join("")}</ol>
+          </details>` : ""}
       </div>
       <div class="offer-side">
         ${priceHtml}

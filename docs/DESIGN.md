@@ -216,6 +216,12 @@ Non serve toccare il motore: filtri, scoring, deduplica e avvisi sono automatici
 | `carsharing` | tabella tariffe + città coperte | alta (stima) | disponibilità veicolo da verificare |
 | `transit` | Overpass (OSM) con 3 mirror | media | nessun orario, solo fermate vicine |
 
+Ogni adapter popola `details["tappe"]`: la lista delle tratte reali (`da`, `a`,
+`partenza`, `arrivo`, `mezzo`) ricavata da `solution.nodes` (Trenitalia), `segments`
+(Omio), `legs` (FlixBus, Itabus). La UI mostra la fermata esatta di partenza/arrivo e,
+per i viaggi con cambi, l'elenco espandibile delle tratte. Helper condiviso `tappa()`
+in `adapters/base.py`.
+
 I **link utili** (BlaBlaCar, FlixBus, Omio, Trainline, Trenitalia, Italo, Google Maps,
 app carsharing, codici sconto treni) sono sempre disponibili e non dipendono da API.
 
