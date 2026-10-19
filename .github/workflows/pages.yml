@@ -1,0 +1,48 @@
+name: Deploy frontend su GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "static/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepara il frontend
+        run: |
+          mkdir -p _site
+          cp -r static/. _site/
+          # config.json: URL del backend (tunnel) usato dalla PWA su Pages.
+          # Lasciato vuoto di proposito: si configura dal file config.json
+          # committato oppure via variabile CARPOOL_API_BASE.
+          if [ -n "${{ vars.CARPOOL_API_BASE }}" ]; then
+            printf '{"apiBase":"%s"}' "${{ vars.CARPOOL_API_BASE }}" > _site/config.json
+          fi
+          # .nojekyll: evita che Jekyll tocchi i file con _ iniziale
+          touch _site/.nojekyll
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
