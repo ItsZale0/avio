@@ -29,7 +29,6 @@ DEFAULTS: dict[str, str] = {
     "ai_enabled": "1",
     "ai_model_smart": "llama-3.3-70b-versatile",
     "ai_model_fast": "llama-3.1-8b-instant",
-    "ai_max_calls": "4",
     "telegram_offset": "0",
 }
 

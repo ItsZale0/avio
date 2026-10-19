@@ -121,6 +121,7 @@ CREATE TABLE IF NOT EXISTS questions (
     status         TEXT NOT NULL DEFAULT 'pending',
     answer         TEXT,
     answer_source  TEXT,
+    sent_at        TEXT,
     created_at     TEXT NOT NULL,
     answered_at    TEXT
 );
@@ -171,6 +172,7 @@ MIGRATIONS = [
     ("watches", "ai_plan_fingerprint", "TEXT"),
     ("watches", "ai_best_price", "REAL"),
     ("watches", "ai_updated_at", "TEXT"),
+    ("questions", "sent_at", "TEXT"),
 ]
 
 

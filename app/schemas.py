@@ -147,7 +147,6 @@ class SettingsIn(BaseModel):
     ai_enabled: str | None = None
     ai_model_smart: str | None = None
     ai_model_fast: str | None = None
-    ai_max_calls: str | None = None
 
 
 class ParseRequest(BaseModel):

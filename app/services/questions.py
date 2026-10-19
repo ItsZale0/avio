@@ -208,10 +208,11 @@ async def send_to_telegram(question: dict[str, Any], watch: dict[str, Any] | Non
     keyboard = notify.question_keyboard(question)
     ok, error, message_id = await notify.send_telegram_message(text, reply_markup=keyboard)
     if ok and message_id:
+        # Registra la consegna: serve a capire se la domanda e' arrivata in chat.
         with db.db() as conn:
             conn.execute(
-                "UPDATE questions SET answer_source = COALESCE(answer_source, 'telegram') WHERE id = ?",
-                (question["id"],),
+                "UPDATE questions SET sent_at = ? WHERE id = ?",
+                (now_utc().isoformat(), question["id"]),
             )
     return ok, error
 

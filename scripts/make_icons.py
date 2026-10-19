@@ -1,6 +1,9 @@
-"""Genera le icone PNG della PWA (nessuna dipendenza aggiuntiva: usa Pillow).
+"""Genera le icone PNG della PWA (richiede Pillow: `pip install pillow`).
 
 Uso: python scripts/make_icons.py
+
+Le icone sono gia' versionate in `web/icons/`: questo script serve solo se
+vuoi cambiarle (colori, forma, dimensioni).
 """
 
 from __future__ import annotations
