@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import unittest
+import unittest.mock
 from datetime import datetime, timedelta
 
 from app.adapters.base import Offer, SearchContext
 from app.ai import intelligence
 from app.ai.planner import build_candidates
 from app.timeutil import ROME, iso, now_utc
+
+# Due snodi lontani dalla destinazione: costringono a usare prima e ultima tratta.
+HUB_A = (46.20, 11.75)
+HUB_B = (46.01, 11.41)
 
 
 def make_offer(
@@ -109,8 +114,152 @@ class PlannerTests(unittest.TestCase):
         candidates = build_candidates([car, bus], context(arrive_by), max_transfer_km=3)
         self.assertFalse([c for c in candidates if c.kind == "combo"])
 
+    def _three_legs(self, base):
+        """carsharing -> treno -> autobus per l'ultimo miglio."""
+        car = make_offer("carsharing", "car", "carsharing", 3.0, base, 90, dropoff=HUB_A)
+        train = make_offer(
+            "trenitalia",
+            "train",
+            "train",
+            4.0,
+            base + timedelta(minutes=120),
+            60,
+            pickup=HUB_A,
+            dropoff=HUB_B,
+        )
+        last = make_offer(
+            "gtfs", "last", "bus", 2.0, base + timedelta(minutes=210), 30, pickup=HUB_B
+        )
+        direct = make_offer("flixbus", "direct", "bus", 12.0, base, 240)
+        return [car, train, last, direct]
+
+    def test_three_leg_trip_with_total_cost(self):
+        base = now_utc() + timedelta(hours=2)
+        arrive_by = base + timedelta(hours=8)
+        candidates = build_candidates(self._three_legs(base), context(arrive_by))
+        triple = next((c for c in candidates if c.kind == "triple"), None)
+        self.assertIsNotNone(triple)
+        self.assertEqual(len(triple.legs), 3)
+        self.assertAlmostEqual(triple.total_price, 9.0)
+        # Il costo totale somma le tre tratte: batte la corsa diretta (12 EUR).
+        direct = next(c for c in candidates if c.kind == "single" and c.legs[0].external_id == "direct")
+        self.assertLess(triple.effective_cost, direct.effective_cost)
+        self.assertEqual(triple.depart_at, base)
+        self.assertEqual(triple.arrive_at, base + timedelta(minutes=240))
+
+    def test_three_leg_plan_has_three_steps(self):
+        base = now_utc() + timedelta(hours=2)
+        arrive_by = base + timedelta(hours=8)
+        candidates = build_candidates(self._three_legs(base), context(arrive_by))
+        triple = next(c for c in candidates if c.kind == "triple")
+        plan = intelligence._plan_from_candidate(triple, None)
+        self.assertEqual(len(plan["steps"]), 3)
+        self.assertEqual([step["leg"] for step in plan["steps"]], [1, 2, 3])
+        self.assertEqual(plan["effective_cost"], 9.0)
+        explanation = intelligence._templated_explanation(triple, {})
+        self.assertIn("carsharing", explanation.lower())
+        self.assertIn("trenitalia", explanation.lower())
+
+    def test_three_leg_rejected_when_last_mile_far_from_destination(self):
+        base = now_utc() + timedelta(hours=2)
+        arrive_by = base + timedelta(hours=8)
+        offers = self._three_legs(base)
+        # L'ultimo miglio non arriva a destinazione: niente viaggio a 3 tratte.
+        offers[2] = make_offer(
+            "gtfs",
+            "last",
+            "bus",
+            2.0,
+            base + timedelta(minutes=210),
+            30,
+            pickup=HUB_B,
+            dropoff=(41.9, 12.5),
+        )
+        candidates = build_candidates(offers, context(arrive_by))
+        self.assertFalse([c for c in candidates if c.kind == "triple"])
+
+    def test_three_leg_rejected_when_transfer_too_short(self):
+        base = now_utc() + timedelta(hours=2)
+        arrive_by = base + timedelta(hours=8)
+        offers = self._three_legs(base)
+        # L'ultimo miglio parte prima che il treno sia arrivato.
+        offers[2] = make_offer("gtfs", "last", "bus", 2.0, base + timedelta(minutes=150), 30, pickup=HUB_B)
+        candidates = build_candidates(offers, context(arrive_by))
+        self.assertFalse([c for c in candidates if c.kind == "triple"])
+
+    def test_multi_leg_can_be_disabled(self):
+        base = now_utc() + timedelta(hours=2)
+        arrive_by = base + timedelta(hours=8)
+        candidates = build_candidates(
+            self._three_legs(base), context(arrive_by), allow_multi_leg=False
+        )
+        self.assertFalse([c for c in candidates if c.kind in ("combo", "triple")])
+        self.assertTrue(all(c.kind == "single" for c in candidates))
+
+    def test_combo_with_unpriced_leg_is_partial(self):
+        base = now_utc() + timedelta(hours=2)
+        arrive_by = base + timedelta(hours=8)
+        hub = (46.20, 11.75)
+        access = make_offer("flixbus", "access", "bus", 3.0, base, 60, dropoff=hub)
+        # Ultimo miglio solo orario (GTFS): nessun prezzo pubblico.
+        last = make_offer("gtfs", "last", "bus", None, base + timedelta(minutes=90), 60, pickup=hub)
+        complete = make_offer("itabus", "direct", "bus", 20.0, base, 240)
+        candidates = build_candidates([access, last, complete], context(arrive_by))
+        partial = next((c for c in candidates if c.partial), None)
+        self.assertIsNotNone(partial)
+        self.assertEqual(partial.kind, "combo")
+        self.assertEqual(partial.unpriced_legs, 1)
+        # Il totale e' solo la somma dei prezzi noti.
+        self.assertAlmostEqual(partial.total_price, 3.0)
+        # Un piano con tutti i prezzi viene comunque prima.
+        self.assertEqual(candidates[0].kind, "single")
+        self.assertEqual(candidates[0].total_price, 20.0)
+        plan = intelligence._plan_from_candidate(partial, None)
+        self.assertTrue(plan["partial"])
+        self.assertIsNone(plan["steps"][1]["price"])
+        self.assertTrue(any("tariffa" in w.lower() for w in plan["watchouts"]))
+        self.assertIn("parziale", intelligence._templated_explanation(partial, {}).lower())
+
+    def test_combo_of_two_unpriced_legs_is_dropped(self):
+        base = now_utc() + timedelta(hours=2)
+        arrive_by = base + timedelta(hours=8)
+        hub = (46.20, 11.75)
+        first = make_offer("gtfs", "first", "bus", None, base, 60, dropoff=hub)
+        second = make_offer("gtfs", "second", "bus", None, base + timedelta(minutes=90), 60, pickup=hub)
+        # Un'offerta con prezzo ma fuori destinazione: tiene in vita il planner.
+        elsewhere = make_offer("itabus", "far", "bus", 9.0, base, 90, dropoff=(41.9, 12.5))
+        candidates = build_candidates([first, second, elsewhere], context(arrive_by))
+        self.assertFalse([c for c in candidates if c.kind in ("combo", "triple")])
+
+    def test_legs_pool_unlocks_triples_dropped_by_filters(self):
+        base = now_utc() + timedelta(hours=2)
+        arrive_by = base + timedelta(hours=8)
+        # Solo la tratta diretta "passa i filtri"; le tratte intermedie arrivano
+        # a snodi lontani dalla destinazione e stanno nel pool grezzo.
+        direct = make_offer("flixbus", "direct", "bus", 12.0, base, 240)
+        pool = self._three_legs(base)
+        without_pool = build_candidates([direct], context(arrive_by))
+        self.assertTrue(all(c.kind == "single" for c in without_pool))
+        with_pool = build_candidates([direct], context(arrive_by), pool=pool)
+        self.assertTrue([c for c in with_pool if c.kind == "triple"])
+
 
 class IntelligenceFallbackTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        class _DisabledClient:
+            available = False
+
+            async def chat(self, *a, **kw):
+                raise RuntimeError("client disabled in test")
+
+        self._patcher = unittest.mock.patch.object(
+            intelligence, "client_from_settings", lambda: _DisabledClient()
+        )
+        self._patcher.start()
+
+    def tearDown(self):
+        self._patcher.stop()
+
     async def test_no_ai_still_returns_cheapest_plan(self):
         base = now_utc() + timedelta(hours=2)
         arrive_by = base + timedelta(hours=6)

@@ -18,7 +18,7 @@ from ..adapters.base import Offer, SearchContext
 from ..timeutil import human_rome, now_rome
 from . import prompts
 from .groq import ChatResult, ai_enabled, client_from_settings, log_call
-from .planner import Candidate, _reaches_destination, build_candidates
+from .planner import Candidate, _reaches_destination, _transfer_km, build_candidates
 
 MAX_CANDIDATES_IN_PROMPT = 14
 
@@ -91,6 +91,7 @@ def _candidates_payload(candidates: list[Candidate]) -> list[dict[str, Any]]:
                 if candidate.arrive_at
                 else None,
                 "duration_min": candidate.total_duration_min,
+                "partial": candidate.partial,
                 "transfer_km": round(candidate.transfer_km, 1)
                 if candidate.transfer_km is not None
                 else None,
@@ -101,19 +102,27 @@ def _candidates_payload(candidates: list[Candidate]) -> list[dict[str, Any]]:
 
 
 def _templated_explanation(candidate: Candidate, watch: dict[str, Any]) -> str:
-    if candidate.kind == "combo":
-        first, second = candidate.legs[0], candidate.legs[1]
-        transfer = (
-            f" con cambio a {first.dropoff_name} (~{candidate.transfer_km:.1f} km)"
-            if candidate.transfer_km is not None
-            else ""
-        )
+    partial = (
+        " Il totale è parziale: una tratta non ha prezzo, verifica la tariffa ufficiale."
+        if candidate.partial
+        else ""
+    )
+    if candidate.kind in ("combo", "triple"):
+        parts = []
+        for index, leg in enumerate(candidate.legs):
+            if index:
+                previous = candidate.legs[index - 1]
+                transfer = _transfer_note(previous, leg)
+                parts.append(f"{transfer} poi " if transfer else " poi ")
+            price = f"{leg.price:.2f} EUR" if leg.price is not None else "prezzo da verificare"
+            parts.append(
+                f"{leg.operator or leg.source} "
+                f"({human_rome(leg.depart_at, '%H:%M')} → {human_rome(leg.arrive_at, '%H:%M')}, {price})"
+            )
         return (
-            f"Più economico trovato: {first.operator or first.source} "
-            f"({human_rome(first.depart_at, '%H:%M')} → {human_rome(first.arrive_at, '%H:%M')})"
-            f"{transfer}, poi {second.operator or second.source} "
-            f"({human_rome(second.depart_at, '%H:%M')} → {human_rome(second.arrive_at, '%H:%M')}). "
-            f"Totale {candidate.total_price:.2f} EUR."
+            f"Più economico trovato: {''.join(parts)}. "
+            f"Totale {candidate.total_price:.2f} EUR, "
+            f"arrivo {human_rome(candidate.arrive_at, '%a %d %b, %H:%M')}.{partial}"
         )
     leg = candidate.legs[0]
     return (
@@ -122,6 +131,14 @@ def _templated_explanation(candidate: Candidate, watch: dict[str, Any]) -> str:
         f"a {candidate.total_price:.2f} EUR. "
         f"Arrivo {human_rome(candidate.arrive_at, '%a %d %b, %H:%M')}."
     )
+
+
+def _transfer_note(previous: Offer, following: Offer) -> str:
+    """Nota sul cambio tra due tratte (con la distanza, se nota)."""
+    km = _transfer_km(previous, following)
+    if km is None:
+        return ""
+    return f"cambio a {previous.dropoff_name} (~{km:.1f} km),"
 
 
 def _plan_from_candidate(
@@ -136,6 +153,11 @@ def _plan_from_candidate(
 ) -> dict[str, Any]:
     plan = candidate.as_dict(ranked=ranked)
     notes = list(plan.pop("notes", []) or [])
+    if candidate.partial:
+        notes.append(
+            "Alcune tratte non hanno un prezzo pubblico (es. orari GTFS): "
+            "verifica la tariffa ufficiale prima di partire."
+        )
     plan["title"] = title or candidate.label()
     plan["explanation"] = explanation or ""
     plan["confidence"] = confidence
@@ -230,6 +252,8 @@ async def analyze(
         ranked=ranked,
         flexible_minutes=flexible_minutes,
         max_transfer_km=max(1.0, max_transfer),
+        allow_multi_leg=prefs.get("allow_multi_leg") is not False,
+        pool=raw_offers,
     )
     result = IntelligenceResult(candidates_count=len(candidates))
 
@@ -329,7 +353,8 @@ async def analyze(
         _plan_from_candidate(candidate, ranked, ai=result.used_ai) for candidate in alternatives[:3]
     ]
     result.questions = ai_questions
-    result.summary = f"{plan['title']} · {plan['total_price']:.2f} EUR"
+    parziale = " (prezzo parziale)" if plan.get("partial") else ""
+    result.summary = f"{plan['title']} · {plan['total_price']:.2f} EUR{parziale}"
 
     previous = watch.get("ai_best_price")
     if previous is not None and plan.get("effective_cost") is not None:

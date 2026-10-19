@@ -108,8 +108,9 @@ Tutti gli orari sono salvati in **UTC ISO 8601**; l'interfaccia li mostra nel fu
 6. calcola score + badge + costo effettivo
 7. upsert offerte; rileva nuove e ribassi (>= max(0,50 €, 4%))
 8. disattiva offerte già passate
-9. pianificatore: costruisce le combinazioni candidate (1-2 tratte),
-   l'AI sceglie la più economica e la spiega (oppure fallback deterministico)
+9. pianificatore: costruisce le combinazioni candidate (1-3 tratte:
+   accesso → principale → ultimo miglio), l'AI sceglie la più economica
+   e la spiega (oppure fallback deterministico)
 10. salva il piano corrente + alternative; aggiorna ai_summary/ai_best_price
 11. domande: al massimo 2 per giro, dedupe per `key`, inviate anche su Telegram
 12. crea alert + invia digest (nuove offerte, ribassi o piano migliorato)
@@ -132,9 +133,11 @@ watch + offerte reali
         ▼
 app/ai/planner.py        combinazioni candidate (id c1, c2, …)
   - tratte singole che arrivano a destinazione
-  - combo a 2 tratte: tratta "accesso" (carsharing/rideshare/bus/transit)
-    + tratta "principale" (bus/treno/rideshare) se il cambio è
+  - combo a 2 tratte: tratta "accesso" (carsharing/rideshare/bus/transit/tram)
+    + tratta "principale" (bus/treno/rideshare/volo) se il cambio è
     contiguo (<= max_transfer_km) e temporalmente sensato (15 min – 6 h)
+  - viaggi a 3 tratte (auto + treno + ultimo miglio), con lo stesso
+    controllo sui due cambi; l'ultima tratta deve arrivare a destinazione
   - ordina per COSTO EFFETTIVO = prezzo + costo stimato di accesso
         │
         ▼
@@ -430,9 +433,10 @@ python -m unittest discover -s tests -v
   scoring e badge, costo effettivo, generazione link, import GTFS e coincidenze
   (tratta diretta, Pareto, cambio a piedi tra fermate a pochi metri), iscrizioni push
   (dedupe per endpoint, chiavi richieste, chiave pubblica VAPID, invio senza dispositivi).
-- `tests/test_ai.py`: planner (più economico, combo a 2 tratte, rifiuto per cambio
-  lontano o orari incompatibili), fallback senza chiave Groq, domanda quando l'arrivo
-  è oltre il limite, finestra di flessibilità (`flexible_days`).
+- `tests/test_ai.py`: planner (più economico, combo a 2 tratte e viaggi a 3 tratte
+  con costo totale, rifiuto per cambio lontano, cambio troppo corto o ultimo miglio
+  fuori destinazione, `allow_multi_leg`), fallback senza chiave Groq, domanda quando
+  l'arrivo è oltre il limite, finestra di flessibilità (`flexible_days`).
 
 ---
 

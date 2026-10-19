@@ -1,8 +1,10 @@
 """Pianificatore deterministico: costruisce le combinazioni candidate.
 
 L'AI non inventa nulla: puo' solo scegliere tra cio' che costruiamo qui con
-dati reali. Una combinazione puo' avere 1 o 2 tratte (es. carsharing fino
-alla stazione + autobus). I totali sono la somma dei prezzi noti.
+dati reali. Una combinazione puo' avere 1, 2 o 3 tratte: per esempio
+carsharing fino alla stazione + treno + autobus per l'ultimo miglio. Il totale
+e' la somma dei prezzi noti: se una tratta non ha prezzo (es. orari GTFS) il
+piano e' "parziale" e va verificato sulla tariffa ufficiale.
 """
 
 from __future__ import annotations
@@ -14,12 +16,21 @@ from ..adapters.base import Offer, SearchContext
 from ..geo import haversine_km
 
 # Modalita' che possono fare da "prima tratta" (per raggiungere una stazione).
-ACCESS_MODES = {"carsharing", "rideshare", "transit", "bus"}
+ACCESS_MODES = {"carsharing", "rideshare", "transit", "bus", "tram"}
 # Modalita' che possono fare da "tratta principale".
 MAIN_MODES = {"bus", "train", "rideshare", "flight"}
+# Modalita' che possono coprire l'"ultimo miglio", dalla stazione a destinazione.
+LAST_MODES = {"carsharing", "rideshare", "transit", "bus", "tram"}
+# Prima e seconda tratta di un viaggio a due tratte (es. treno + bus, oppure
+# carsharing + treno).
+FIRST_MODES = ACCESS_MODES | MAIN_MODES
+SECOND_MODES = MAIN_MODES | LAST_MODES
 
 MAX_COMBOS = 40
+MAX_TRIPLES = 20
 MAX_SINGLES = 60
+# Quante tratte tenere per lato quando si cercano i viaggi a tre tratte.
+MAX_SIDE_LEGS = 40
 
 
 @dataclass
@@ -35,6 +46,12 @@ class Candidate:
     access_cost: float = 0.0
     transfer_km: float | None = None
     notes: list[str] = field(default_factory=list)
+    # Tratte senza prezzo (es. orari GTFS): il totale e' parziale, va verificato.
+    unpriced_legs: int = 0
+
+    @property
+    def partial(self) -> bool:
+        return self.unpriced_legs > 0
 
     @property
     def effective_cost(self) -> float:
@@ -78,6 +95,8 @@ class Candidate:
             "depart_at": self.depart_at.isoformat() if self.depart_at else None,
             "arrive_at": self.arrive_at.isoformat() if self.arrive_at else None,
             "estimated": self.estimated,
+            "partial": self.partial,
+            "unpriced_legs": self.unpriced_legs,
             "transfer_km": round(self.transfer_km, 2) if self.transfer_km is not None else None,
             "notes": list(self.notes),
             "steps": steps,
@@ -116,6 +135,134 @@ def _duration(depart: datetime | None, arrive: datetime | None) -> int | None:
     return max(0, int((arrive - depart).total_seconds() // 60))
 
 
+def _legs_connected(
+    leg1: Offer,
+    leg2: Offer,
+    ctx: SearchContext,
+    *,
+    max_transfer_km: float,
+    transfer_min: int,
+    max_wait_min: int,
+) -> tuple[bool, float | None]:
+    """True (con la distanza del cambio) se si puo' prendere leg2 dopo leg1.
+
+    Le tratte senza prezzo (es. orari GTFS) sono ammesse: il piano viene
+    segnalato come "parziale" e il totale e' solo la somma dei prezzi noti.
+    """
+    if not leg1.arrive_at or not leg2.depart_at:
+        return False, None
+    if leg1.source == leg2.source and leg1.external_id == leg2.external_id:
+        return False, None
+    transfer_km = _transfer_km(leg1, leg2)
+    if transfer_km is not None and transfer_km > max_transfer_km + ctx.radius_km:
+        return False, None
+    earliest = leg1.arrive_at + timedelta(minutes=transfer_min)
+    if leg2.depart_at < earliest:
+        return False, None
+    if leg2.depart_at > leg1.arrive_at + timedelta(minutes=max_wait_min):
+        return False, None
+    return True, transfer_km
+
+
+def _price_sort(offer: Offer) -> tuple[int, float]:
+    """Prima le tratte con prezzo, poi le altre (più economiche prima)."""
+    return (1 if offer.price is None else 0, offer.price or 0.0)
+
+
+def _build_triples(
+    offers: list[Offer],
+    ctx: SearchContext,
+    *,
+    latest: datetime,
+    max_transfer_km: float,
+    transfer_min: int,
+    max_wait_min: int,
+) -> list[Candidate]:
+    """Viaggi a tre tratte: accesso + tratta principale + ultimo miglio.
+
+    Esempio: carsharing fino alla stazione, treno, poi autobus per l'ultimo
+    miglio. Almeno una tratta deve avere un prezzo noto: se ne manca qualcuno
+    il piano e' "parziale" e va verificato.
+    """
+    access_legs = sorted(
+        (o for o in offers if o.mode in FIRST_MODES and o.arrive_at),
+        key=_price_sort,
+    )[:MAX_SIDE_LEGS]
+    main_legs = sorted(
+        (o for o in offers if o.mode in MAIN_MODES and o.depart_at and o.arrive_at),
+        key=_price_sort,
+    )[:MAX_SIDE_LEGS]
+    last_legs = sorted(
+        (
+            o
+            for o in offers
+            if o.mode in LAST_MODES
+            and o.depart_at
+            and _reaches_destination(o, ctx)
+            and (o.arrive_at is None or o.arrive_at <= latest)
+        ),
+        key=_price_sort,
+    )[:MAX_SIDE_LEGS]
+
+    found: list[Candidate] = []
+    for leg2 in main_legs:
+        for leg3 in last_legs:
+            ok23, transfer23 = _legs_connected(
+                leg2,
+                leg3,
+                ctx,
+                max_transfer_km=max_transfer_km,
+                transfer_min=transfer_min,
+                max_wait_min=max_wait_min,
+            )
+            if not ok23:
+                continue
+            for leg1 in access_legs:
+                if leg1 is leg2 or leg1 is leg3:
+                    continue
+                if _reaches_destination(leg1, ctx):
+                    continue
+                ok12, transfer12 = _legs_connected(
+                    leg1,
+                    leg2,
+                    ctx,
+                    max_transfer_km=max_transfer_km,
+                    transfer_min=transfer_min,
+                    max_wait_min=max_wait_min,
+                )
+                if not ok12:
+                    continue
+                legs = [leg1, leg2, leg3]
+                priced_legs = [leg for leg in legs if leg.price is not None]
+                if not priced_legs:
+                    continue
+                notes = []
+                if transfer12 is not None:
+                    notes.append(f"cambio a {leg1.dropoff_name} (~{transfer12:.1f} km)")
+                if transfer23 is not None:
+                    notes.append(f"cambio a {leg2.dropoff_name} (~{transfer23:.1f} km)")
+                found.append(
+                    Candidate(
+                        id="",
+                        kind="triple",
+                        legs=legs,
+                        total_price=round(sum(leg.price for leg in priced_legs), 2),
+                        total_duration_min=_duration(leg1.depart_at, leg3.arrive_at),
+                        depart_at=leg1.depart_at,
+                        arrive_at=leg3.arrive_at,
+                        estimated=any(leg.price_is_estimate for leg in priced_legs),
+                        access_cost=_access_cost(leg1, ctx),
+                        transfer_km=transfer12,
+                        notes=notes,
+                        unpriced_legs=len(legs) - len(priced_legs),
+                    )
+                )
+        if len(found) >= MAX_TRIPLES * 5:
+            break
+    found.sort(key=lambda c: (c.unpriced_legs, c.total_price, c.total_duration_min or 10**6))
+    return found
+
+
 def build_candidates(
     offers: list[Offer],
     ctx: SearchContext,
@@ -125,8 +272,16 @@ def build_candidates(
     max_transfer_km: float = 3.0,
     transfer_min: int = 15,
     max_wait_min: int = 360,
+    allow_multi_leg: bool = True,
+    pool: list[Offer] | None = None,
 ) -> list[Candidate]:
-    """Restituisce le combinazioni valide ordinate per costo totale."""
+    """Restituisce le combinazioni valide: prima quelle con tutti i prezzi,
+    poi quelle con tratte senza prezzo (segnalate come parziali).
+
+    `pool` è l'insieme di offerte usato per le tratte intermedie (accesso e
+    ultimo miglio): serve il set grezzo, perché un'offerta che porta a uno
+    snodo intermedio verrebbe scartata dai filtri di destinazione.
+    """
     priced = [o for o in offers if o.price is not None]
     if not priced:
         return []
@@ -153,57 +308,97 @@ def build_candidates(
             access_cost=_access_cost(offer, ctx),
         )
 
-    # Combinazioni a due tratte: una "access" per raggiungere la tratta principale.
-    combos: list[Candidate] = []
-    for leg1 in priced:
-        if leg1.mode not in ACCESS_MODES or not leg1.arrive_at:
-            continue
-        for leg2 in priced:
-            if leg2 is leg1 or leg2.mode not in MAIN_MODES or not leg2.depart_at:
+    # Combinazioni a piu' tratte: accesso per raggiungere la tratta principale,
+    # ed eventualmente un ultimo miglio per arrivare a destinazione.
+    if allow_multi_leg:
+        legs_pool = pool if pool is not None else offers
+        access_legs = sorted(
+            (o for o in legs_pool if o.mode in FIRST_MODES and o.arrive_at),
+            key=_price_sort,
+        )[:MAX_SIDE_LEGS]
+        main_legs = sorted(
+            (o for o in legs_pool if o.mode in SECOND_MODES and o.depart_at and o.arrive_at),
+            key=_price_sort,
+        )[:MAX_SIDE_LEGS]
+        for leg1 in access_legs:
+            if _reaches_destination(leg1, ctx):
+                # La prima tratta arriva gia' a destinazione: non serve altro.
                 continue
-            if leg1.source == leg2.source and leg1.external_id == leg2.external_id:
-                continue
-            if leg2.price is None or leg1.price is None:
-                continue
-            if leg2.arrive_at and leg2.arrive_at > latest:
-                continue
-            if not _reaches_destination(leg2, ctx):
-                continue
+            for leg2 in main_legs:
+                if leg2 is leg1:
+                    continue
+                if leg2.arrive_at and leg2.arrive_at > latest:
+                    continue
+                if not _reaches_destination(leg2, ctx):
+                    continue
+                ok, transfer_km = _legs_connected(
+                    leg1,
+                    leg2,
+                    ctx,
+                    max_transfer_km=max_transfer_km,
+                    transfer_min=transfer_min,
+                    max_wait_min=max_wait_min,
+                )
+                if not ok:
+                    continue
+                priced_legs = [leg for leg in (leg1, leg2) if leg.price is not None]
+                if not priced_legs:
+                    continue
+                total = round(sum(leg.price for leg in priced_legs), 2)
+                if ctx.max_price is not None and total > ctx.max_price:
+                    continue
+                candidates[("combo", leg1.fingerprint, leg2.fingerprint)] = Candidate(
+                    id="",
+                    kind="combo",
+                    legs=[leg1, leg2],
+                    total_price=total,
+                    total_duration_min=_duration(leg1.depart_at, leg2.arrive_at),
+                    depart_at=leg1.depart_at,
+                    arrive_at=leg2.arrive_at,
+                    estimated=any(leg.price_is_estimate for leg in priced_legs),
+                    access_cost=_access_cost(leg1, ctx),
+                    transfer_km=transfer_km,
+                    notes=[f"cambio a {leg1.dropoff_name} (~{transfer_km:.1f} km)"]
+                    if transfer_km is not None
+                    else [],
+                    unpriced_legs=2 - len(priced_legs),
+                )
 
-            transfer_km = _transfer_km(leg1, leg2)
-            if transfer_km is not None and transfer_km > max_transfer_km + ctx.radius_km:
+        for candidate in _build_triples(
+            legs_pool,
+            ctx,
+            latest=latest,
+            max_transfer_km=max_transfer_km,
+            transfer_min=transfer_min,
+            max_wait_min=max_wait_min,
+        ):
+            if ctx.max_price is not None and candidate.total_price > ctx.max_price:
                 continue
+            key = ("triple", *(leg.fingerprint for leg in candidate.legs))
+            candidates.setdefault(key, candidate)
 
-            earliest = leg1.arrive_at + timedelta(minutes=transfer_min)
-            if leg2.depart_at < earliest:
-                continue
-            if leg2.depart_at > leg1.arrive_at + timedelta(minutes=max_wait_min):
-                continue
+    all_candidates = list(candidates.values())
 
-            total = round(leg1.price + leg2.price, 2)
-            candidates[("combo", leg1.fingerprint, leg2.fingerprint)] = Candidate(
-                id="",
-                kind="combo",
-                legs=[leg1, leg2],
-                total_price=total,
-                total_duration_min=_duration(leg1.depart_at, leg2.arrive_at),
-                depart_at=leg1.depart_at,
-                arrive_at=leg2.arrive_at,
-                estimated=leg1.price_is_estimate or leg2.price_is_estimate,
-                access_cost=_access_cost(leg1, ctx),
-                transfer_km=transfer_km,
-                notes=[f"cambio a {leg1.dropoff_name} (~{transfer_km:.1f} km)"]
-                if transfer_km is not None
-                else [],
-            )
+    # Prima i piani con tutti i prezzi (ordinati per costo effettivo), poi quelli
+    # con tratte senza prezzo: il loro totale e' solo la somma dei prezzi noti.
+    def _multi_sort(items: list[Candidate]) -> list[Candidate]:
+        return sorted(items, key=lambda c: (c.unpriced_legs, c.total_price, c.total_duration_min or 10**6))
 
-    combos = [c for c in candidates.values() if c.kind == "combo"]
-    combos.sort(key=lambda c: c.total_price)
-    singles_list = [c for c in candidates.values() if c.kind == "single"]
+    singles_list = [c for c in all_candidates if c.kind == "single"]
+    combos = _multi_sort([c for c in all_candidates if c.kind == "combo"])
+    triples = _multi_sort([c for c in all_candidates if c.kind == "triple"])
 
-    ordered = singles_list + combos[:MAX_COMBOS]
-    # Il "piu' economico" e' il costo effettivo: prezzo + costo per raggiungere il ritrovo.
-    ordered.sort(key=lambda c: (c.effective_cost, c.total_duration_min or 10**6))
+    complete = singles_list + [c for c in combos if not c.partial][:MAX_COMBOS] + [
+        c for c in triples if not c.partial
+    ][:MAX_TRIPLES]
+    complete.sort(key=lambda c: (c.effective_cost, c.total_duration_min or 10**6))
+
+    partial = [c for c in combos if c.partial][:MAX_COMBOS] + [
+        c for c in triples if c.partial
+    ][:MAX_TRIPLES]
+    partial.sort(key=lambda c: (c.unpriced_legs, c.effective_cost, c.total_duration_min or 10**6))
+
+    ordered = complete + partial
     for index, candidate in enumerate(ordered, start=1):
         candidate.id = f"c{index}"
     return ordered

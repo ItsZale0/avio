@@ -167,7 +167,10 @@ def format_digest(
     lines.append("")
 
     if plan:
-        lines.append(f"🧠 Piano più economico: €{plan.get('total_price', 0):.2f} · {plan.get('title', '')}")
+        parziale = " (prezzo parziale: verificare le tratte senza prezzo)" if plan.get("partial") else ""
+        lines.append(
+            f"🧠 Piano più economico: €{plan.get('total_price', 0):.2f}{parziale} · {plan.get('title', '')}"
+        )
         explanation = (plan.get("explanation") or "").strip()
         if explanation:
             lines.append(explanation)

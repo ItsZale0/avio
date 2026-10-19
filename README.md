@@ -153,7 +153,8 @@ compilate.
 - **Badge** — *Più economico*, *Migliore*, *Più veloce*, *Più vicino*, *Ribasso*,
   *Sotto budget*, *Stima*.
 - **Piano più economico** — il pianificatore costruisce le combinazioni reali
-  (tratta singola o due tratte collegate) e ordina per **costo effettivo**
+  (tratta singola, due tratte o **tre tratte**: auto/carsharing fino alla stazione,
+  treno, e ultimo miglio fino a destinazione) e ordina per **costo effettivo**
   = prezzo + costo stimato per raggiungere il ritrovo. L'AI sceglie e spiega;
   senza AI sceglie comunque la più economica.
 - **Costo effettivo** — al prezzo aggiunge una stima per raggiungere il punto di ritrovo
@@ -302,7 +303,8 @@ python scripts/make_icons.py
 
 - [x] PWA installabile sul telefono (manifest + service worker + icone)
 - [x] Intelligenza Groq: linguaggio naturale, piano più economico, domande all'utente
-- [x] Ricerche multi-tratta (auto/carsharing + bus) con confronto per costo effettivo
+- [x] Ricerche multi-tratta (auto/carsharing + bus o treno) con confronto per costo effettivo
+- [x] Viaggi a tre tratte: auto/carsharing + treno + ultimo miglio, con costo totale
 - [x] Trenitalia con prezzi reali (+ Italo via aggregatore Omio)
 - [x] Più fonti reali: Omio (treni/bus/voli), Itabus, FlixBus, BlaBlaCar
 - [x] Pannello offerte & codici sconto dalle pagine ufficiali dei vettori

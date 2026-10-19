@@ -476,12 +476,12 @@ function renderPlan() {
   box.innerHTML = `
     <div class="plan-head">
       <div>
-        <div class="eyebrow">${plan.ai ? "🧠 Piano AI · più economico" : "🧮 Piano più economico"}</div>
+        <div class="eyebrow">${plan.ai ? "🧠 Piano AI · più economico" : "🧮 Piano più economico"}${plan.partial ? " · prezzo parziale" : ""}</div>
         <div class="plan-title">${esc(plan.title || "")}</div>
       </div>
       <div class="plan-price">
         <strong>${plan.total_price != null ? euro(plan.total_price) : "—"}</strong>
-        <small>costo totale${plan.ai && confidence != null ? ` · fiducia ${confidence}%` : ""}</small>
+        <small>${plan.partial ? "totale noto · tratte da verificare" : "costo totale"}${plan.ai && confidence != null ? ` · fiducia ${confidence}%` : ""}</small>
       </div>
     </div>
     <div class="plan-explanation">${esc(plan.explanation || "")}</div>
@@ -490,7 +490,10 @@ function renderPlan() {
       ${plan.arrive_at ? `<span>🏁 arrivo ${fmtDate(plan.arrive_at)}</span>` : ""}
       ${duration ? `<span>⏱ ${duration}</span>` : ""}
       ${plan.transfer_km != null ? `<span>🚶 cambio ${plan.transfer_km} km</span>` : ""}
-      ${plan.kind === "combo" ? `<span>🔁 ${plan.steps.length} tratte</span>` : "<span>🎯 tratta diretta</span>"}
+      ${plan.partial ? "<span>💶 prezzo parziale</span>" : ""}
+      ${plan.kind === "single"
+        ? "<span>🎯 tratta diretta</span>"
+        : `<span>🔁 ${plan.steps.length} tratte</span>`}
     </div>
     ${watchouts ? `<div class="plan-watchouts">${watchouts}</div>` : ""}
     ${alts}`;
