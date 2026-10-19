@@ -20,9 +20,16 @@ API_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODELS_URL = "https://api.groq.com/openai/v1/models"
 
 # Modelli gratuiti Groq usati di default. Sovrascrivibili dalle impostazioni.
-DEFAULT_SMART = "llama-3.3-70b-versatile"
-DEFAULT_FAST = "llama-3.1-8b-instant"
-FALLBACK_MODELS = [DEFAULT_SMART, "openai/gpt-oss-120b", "llama-3.1-8b-instant"]
+# Nota: il free tier cambia nel tempo; la lista di fallback include i modelli
+# piu' usati, cosi' l'agente continua a funzionare anche se il default esce.
+DEFAULT_SMART = "openai/gpt-oss-120b"
+DEFAULT_FAST = "openai/gpt-oss-20b"
+FALLBACK_MODELS = [
+    DEFAULT_SMART,
+    "qwen/qwen3.8-27b",
+    DEFAULT_FAST,
+    "allam-2-7b",
+]
 
 
 @dataclass
@@ -88,6 +95,14 @@ class GroqClient:
         return order
 
     async def list_models(self) -> list[str]:
+        return [model["id"] for model in await self.list_models_detailed()]
+
+    async def list_models_detailed(self) -> list[dict]:
+        """Modelli disponibili con contesto e stato, gia' filtrati.
+
+        Si escludono i modelli che non servono a chattare: audio (whisper,
+        tts), embedding e filtri (guard, safeguard).
+        """
         if not self.available:
             return []
         try:
@@ -99,15 +114,23 @@ class GroqClient:
                 payload = response.json()
         except Exception:
             return []
-        models: list[str] = []
+
+        models: list[dict] = []
         for item in payload.get("data", []) if isinstance(payload, dict) else []:
             name = str(item.get("id") or "")
             lowered = name.lower()
-            if any(bad in lowered for bad in ("whisper", "tts", "guard", "embed")):
+            if any(bad in lowered for bad in ("whisper", "tts", "guard", "embed", "safeguard")):
                 continue
-            if name:
-                models.append(name)
-        return sorted(models)
+            if not name:
+                continue
+            models.append(
+                {
+                    "id": name,
+                    "context_length": item.get("context_length"),
+                    "active": bool(item.get("active", True)),
+                }
+            )
+        return sorted(models, key=lambda m: m["id"])
 
     async def chat(
         self,
@@ -128,6 +151,16 @@ class GroqClient:
             result = await self._once(
                 messages, candidate, json_mode, max_tokens, temperature, timeout
             )
+            if result.ok and not result.text.strip():
+                # Il modello ha esaurito i token nel ragionamento e non ha
+                # scritto niente: si considera un fallimento e si prova il
+                # modello successivo.
+                result = ChatResult(
+                    ok=False,
+                    error="risposta vuota (token esauriti nel ragionamento)",
+                    model=result.model,
+                    latency_ms=result.latency_ms,
+                )
             if result.ok:
                 self.last_model = result.model
                 self.total_tokens += result.tokens

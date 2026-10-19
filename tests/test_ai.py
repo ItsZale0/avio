@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import unittest
 import unittest.mock
 from datetime import datetime, timedelta
@@ -14,6 +15,15 @@ from app.timeutil import ROME, iso, now_utc
 # Due snodi lontani dalla destinazione: costringono a usare prima e ultima tratta.
 HUB_A = (46.20, 11.75)
 HUB_B = (46.01, 11.41)
+
+# Modelli Groq pubblicati al momento (free tier). Se il piano cambia, la
+# lista si aggiorna: serve a verificare che i default esistano davvero.
+GROQ_CHAT_MODELS = {
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "qwen/qwen3.8-27b",
+    "allam-2-7b",
+}
 
 
 def make_offer(
@@ -318,6 +328,112 @@ class LateWindowTests(unittest.TestCase):
         kept = _filter_offers([late], ctx, late_minutes=1440)
         self.assertEqual(len(kept), 1)
         self.assertIn("oltre_limite_min", kept[0].details)
+
+
+class GroqModelTests(unittest.IsolatedAsyncioTestCase):
+    """Scelta del modello Groq e gestione delle risposte vuote."""
+
+    def test_default_models_are_real_groq_ids(self):
+        from app.ai.groq import DEFAULT_FAST, DEFAULT_SMART
+
+        # I modelli salvati in precedenza non esistono piu' nel free tier:
+        # i default devono essere fra quelli pubblicati.
+        self.assertIn(DEFAULT_SMART, GROQ_CHAT_MODELS)
+        self.assertIn(DEFAULT_FAST, GROQ_CHAT_MODELS)
+
+    def test_empty_model_falls_back_to_default(self):
+        from app.ai.groq import DEFAULT_FAST, DEFAULT_SMART, GroqClient
+
+        client = GroqClient("chiave", model_smart="", model_fast="  ")
+        self.assertEqual(client.model_smart, DEFAULT_SMART)
+        self.assertEqual(client.model_fast, DEFAULT_FAST)
+
+    def test_model_order_puts_chosen_first(self):
+        from app.ai.groq import GroqClient
+
+        client = GroqClient("chiave", model_smart="qwen/qwen3.8-27b")
+        order = client._model_order(None)
+        self.assertEqual(order[0], "qwen/qwen3.8-27b")
+        # I fallback restano disponibili se il primo non risponde.
+        self.assertGreater(len(order), 1)
+
+    def test_list_models_filters_non_chat_models(self):
+        """Audio, embedding e filtri non devono comparire fra i modelli usabili."""
+        from app.ai.groq import GroqClient
+
+        payload = {
+            "data": [
+                {"id": "openai/gpt-oss-120b", "context_length": 131072},
+                {"id": "whisper-large-v3", "context_length": 448},
+                {"id": "meta-llama/llama-prompt-guard-2-86m", "context_length": 512},
+                {"id": "openai/gpt-oss-safeguard-20b", "context_length": 131072},
+            ]
+        }
+
+        class _Response:
+            status_code = 200
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return payload
+
+        class _Client:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            async def get(self, url, headers=None):
+                return _Response()
+
+        with unittest.mock.patch("app.ai.groq.httpx.AsyncClient", return_value=_Client()):
+            client = GroqClient("chiave")
+            models = asyncio.run(client.list_models_detailed())
+
+        self.assertEqual([m["id"] for m in models], ["openai/gpt-oss-120b"])
+        self.assertEqual(models[0]["context_length"], 131072)
+
+    async def test_empty_answer_is_treated_as_failure(self):
+        """Un modello reasoning che esaurisce i token non deve sembrare riuscito."""
+        from app.ai.groq import ChatResult, GroqClient
+
+        client = GroqClient("chiave", model_smart="modello-che-non-risponde")
+        empty = ChatResult(text="", model="modello-che-non-risponde", ok=True)
+
+        async def fake_once(self, messages, model, json_mode, max_tokens, temperature, timeout, attempt=0):
+            if model == "modello-che-non-risponde":
+                return empty
+            return ChatResult(text="risposta", model=model, ok=True, tokens=10)
+
+        with unittest.mock.patch.object(GroqClient, "_once", fake_once):
+            result = await client.chat([{"role": "user", "content": "ciao"}])
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.text, "risposta")
+        # Il modello vuoto e' stato scartato.
+        self.assertEqual(result.model, client.model_fast)
+
+    async def test_fallback_chain_tries_next_model(self):
+        from app.ai.groq import ChatResult, GroqClient
+
+        client = GroqClient("chiave", model_smart="primo")
+        calls: list[str] = []
+
+        async def fake_once(self, messages, model, json_mode, max_tokens, temperature, timeout, attempt=0):
+            calls.append(model)
+            if model == "primo":
+                return ChatResult(ok=False, error="non risponde", model=model)
+            return ChatResult(text="ok", model=model, ok=True)
+
+        with unittest.mock.patch.object(GroqClient, "_once", fake_once):
+            result = await client.chat([{"role": "user", "content": "ciao"}])
+
+        self.assertTrue(result.ok)
+        self.assertNotEqual(result.model, "primo")
+        self.assertGreaterEqual(len(calls), 2)
 
 
 if __name__ == "__main__":

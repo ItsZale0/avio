@@ -59,8 +59,10 @@ DEFAULTS: dict[str, str] = {
     "ai_enabled": "1",
     "gtfs_enabled": "1",
     "sources_migrated_gtfs": "",
-    "ai_model_smart": "llama-3.3-70b-versatile",
-    "ai_model_fast": "llama-3.1-8b-instant",
+    # Il free tier di Groq cambia: questi sono i modelli disponibili al
+    # momento, ma si possono scegliere altri in Impostazioni -> Intelligenza.
+    "ai_model_smart": "openai/gpt-oss-120b",
+    "ai_model_fast": "openai/gpt-oss-20b",
     "vapid_private_key": "",
     "vapid_public_key": "",
     "telegram_offset": "0",

@@ -1324,8 +1324,6 @@ async function openSettings() {
     $("#sQuietFrom").value = s.quiet_from || "";
     $("#sQuietTo").value = s.quiet_to || "";
     $("#sGroqKey").value = s.groq_api_key || "";
-    $("#sAiSmart").value = s.ai_model_smart || "";
-    $("#sAiFast").value = s.ai_model_fast || "";
     $("#sAiEnabled").checked = (s.ai_enabled || "1") === "1";
     $("#sGtfsEnabled").checked = (s.gtfs_enabled || "1") === "1";
     $("#aiTestResult").textContent = "";
@@ -1335,8 +1333,69 @@ async function openSettings() {
     loadGtfsStatus();
     renderPushStatus();
     openModal("settingsModal");
+    // I modelli si caricano dopo aver aperto il pannello, cosi' la
+    // finestra non resta in attesa.
+    loadModelOptions(s.ai_model_smart, s.ai_model_fast);
   } catch (error) {
     toast(error.message, "error");
+  }
+}
+
+/* Popola i menu dei modelli Groq.
+   - se il modello salvato non e' piu' disponibile, resta comunque
+     selezionabile (con un avviso): il free tier cambia spesso; */
+let _modelDetails = [];
+
+function fillModelSelect(select, selected) {
+  const options = [`<option value="">— modello predefinito —</option>`];
+  for (const model of _modelDetails) {
+    const ctx = model.context_length
+      ? ` · ${Math.round(model.context_length / 1000)}k ctx`
+      : "";
+    const mark = model.id === selected ? " ✓" : "";
+    options.push(
+      `<option value="${esc(model.id)}"${model.id === selected ? " selected" : ""}>` +
+        `${esc(model.id)}${esc(ctx)}${mark}</option>`
+    );
+  }
+  select.innerHTML = options.join("");
+  if (selected && !_modelDetails.some((m) => m.id === selected)) {
+    // Il modello salvato non e' fra quelli disponibili: resta selezionabile
+    // (il free tier di Groq cambia spesso), ma con un avviso.
+    const extra = document.createElement("option");
+    extra.value = selected;
+    extra.textContent = `${selected} (non disponibile ora)`;
+    select.prepend(extra);
+  }
+}
+
+async function loadModelOptions(smart, fast) {
+  const hint = $("#aiTestResult");
+  const smartSelect = $("#sAiSmart");
+  const fastSelect = $("#sAiFast");
+  smartSelect.disabled = true;
+  fastSelect.disabled = true;
+  try {
+    const result = await api("/api/ai/models");
+    _modelDetails = result.details || (result.models || []).map((id) => ({ id, context_length: 0 }));
+    fillModelSelect(smartSelect, smart || result.model_smart);
+    fillModelSelect(fastSelect, fast || result.model_fast);
+    smartSelect.disabled = false;
+    fastSelect.disabled = false;
+    const count = _modelDetails.length;
+    hint.textContent = count
+      ? `${count} modelli disponibili.`
+      : "Nessun modello leggibile (controlla la chiave Groq).";
+    hint.className = "field-hint";
+  } catch (error) {
+    // Senza elenco i select restano con il solo default: si puo' comunque
+    // scrivere un id a mano.
+    smartSelect.innerHTML = `<option value="">— modello predefinito —</option>`;
+    fastSelect.innerHTML = `<option value="">— modello predefinito —</option>`;
+    smartSelect.disabled = false;
+    fastSelect.disabled = false;
+    hint.textContent = "✗ " + error.message;
+    hint.className = "field-hint err";
   }
 }
 
@@ -1361,8 +1420,9 @@ function settingsPayload() {
   return {
     ...personal,
     groq_api_key: $("#sGroqKey").value.trim(),
-    ai_model_smart: $("#sAiSmart").value.trim(),
-    ai_model_fast: $("#sAiFast").value.trim(),
+    // Stringa vuota = torna al modello predefinito dell'app.
+    ai_model_smart: $("#sAiSmart").value,
+    ai_model_fast: $("#sAiFast").value,
     ai_enabled: $("#sAiEnabled").checked ? "1" : "0",
     gtfs_enabled: $("#sGtfsEnabled").checked ? "1" : "0",
   };
@@ -1848,13 +1908,9 @@ async function listAiModels() {
   hint.textContent = "carico l'elenco…";
   hint.className = "field-hint";
   try {
+    // Salva prima: la chiave potrebbe essere appena stata inserita.
     await api("/api/settings", { method: "PUT", body: JSON.stringify(settingsPayload()) });
-    const result = await api("/api/ai/models");
-    const models = result.models || [];
-    hint.textContent = models.length
-      ? `${models.length} modelli disponibili. Esempi: ${models.slice(0, 6).join(", ")}`
-      : "Nessun modello leggibile (controlla la chiave).";
-    hint.className = "field-hint";
+    await loadModelOptions($("#sAiSmart").value, $("#sAiFast").value);
   } catch (error) {
     hint.textContent = "✗ " + error.message;
     hint.className = "field-hint err";

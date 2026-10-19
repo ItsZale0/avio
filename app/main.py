@@ -751,8 +751,10 @@ async def ai_models():
     client = client_from_settings()
     if not client.available:
         raise HTTPException(status_code=400, detail="Chiave Groq non configurata")
+    detailed = await client.list_models_detailed()
     return {
-        "models": await client.list_models(),
+        "models": [model["id"] for model in detailed],
+        "details": detailed,
         "model_smart": client.model_smart,
         "model_fast": client.model_fast,
     }
@@ -777,9 +779,12 @@ async def ai_test():
             {"role": "user", "content": "Di' soltanto: pronto."},
         ],
         model=client.model_fast,
-        max_tokens=20,
+        # I modelli "reasoning" (gpt-oss, qwen) consumano token per il
+        # ragionamento prima della risposta: con pochi token il testo
+        # arriva vuoto.
+        max_tokens=400,
         temperature=0,
-        timeout=20,
+        timeout=40,
     )
     log_call("test", watch_id=None, run_id=None, result=chat)
     return {"ok": chat.ok, "model": chat.model, "reply": chat.text.strip()[:120], "error": chat.error}

@@ -297,13 +297,25 @@
           <small class="field-hint">Senza chiave restano attivi ricerca, avvisi e piani automatici (motore a punteggi), ma niente spiegazioni né domande intelligenti.</small>
         </div>
         <div class="grid-2">
-          <div class="field"><label for="sAiSmart">Modello ragionamento</label><input id="sAiSmart" name="ai_model_smart" placeholder="llama-3.3-70b-versatile" /></div>
-          <div class="field"><label for="sAiFast">Modello veloce</label><input id="sAiFast" name="ai_model_fast" placeholder="llama-3.1-8b-instant" /></div>
+          <div class="field">
+            <label for="sAiSmart">Modello ragionamento</label>
+            <select id="sAiSmart" name="ai_model_smart">
+              <option value="">— carica i modelli —</option>
+            </select>
+            <small class="field-hint">Sceglie il piano e scrive la spiegazione.</small>
+          </div>
+          <div class="field">
+            <label for="sAiFast">Modello veloce</label>
+            <select id="sAiFast" name="ai_model_fast">
+              <option value="">— carica i modelli —</option>
+            </select>
+            <small class="field-hint">Interpreta le richieste e le risposte.</small>
+          </div>
         </div>
         <div class="field inline-field">
           <label class="chip"><input type="checkbox" id="sAiEnabled" checked /> Intelligenza attiva</label>
           <button type="button" class="btn ghost" id="btnTestAi">Prova AI</button>
-          <button type="button" class="btn ghost" id="btnAiModels">Elenca modelli</button>
+          <button type="button" class="btn ghost" id="btnAiModels">Aggiorna elenco modelli</button>
         </div>
         <small class="field-hint" id="aiTestResult"></small>
 

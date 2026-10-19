@@ -64,8 +64,15 @@ fino alla stazione + bus) e **ti fa le domande** che sbloccano un piano migliore
 
 1. Crea una chiave gratuita su <https://console.groq.com/keys>.
 2. Incollala in **Impostazioni → Intelligenza (Groq)** → *Prova AI*.
-3. Modelli di default: `llama-3.3-70b-versatile` (ragionamento) e
-   `llama-3.1-8b-instant` (compiti veloci). Puoi cambiarli o elencarli dai pulsanti.
+3. **Scegli i modelli** nei due menu a tendina: *Modello ragionamento* (sceglie
+   il piano e scrive la spiegazione) e *Modello veloce* (interpreta richieste e
+   risposte). I menu si popolano con i modelli che la tua chiave può usare
+   davvero, con il contesto indicato; il pulsante *Aggiorna elenco modelli* li
+   rilegge quando Groq ne aggiunge di nuovi.
+
+> Il free tier di Groq cambia nel tempo: i modelli salvati che non sono più
+> disponibili restano selezionabili (con un avviso) e l'agente prova
+> automaticamente il modello successivo se uno non risponde.
 
 Senza chiave l'app **funziona lo stesso**: il piano resta (calcolato dal motore
 deterministico) ma senza spiegazioni, domande e interpretazione del linguaggio naturale.

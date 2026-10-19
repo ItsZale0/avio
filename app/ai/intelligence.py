@@ -293,7 +293,9 @@ async def analyze(
                 ),
             },
         ]
-        chat: ChatResult = await client.chat(messages, max_tokens=900, temperature=0.2, timeout=45)
+        chat: ChatResult = await client.chat(
+            messages, max_tokens=2000, temperature=0.2, timeout=45
+        )
         log_call("plan", watch_id=watch["id"], run_id=run_id, result=chat)
         if chat.ok:
             data = chat.json() or {}
@@ -386,7 +388,7 @@ async def parse_trip_text(text: str) -> dict[str, Any]:
             {"role": "user", "content": clean},
         ],
         json_mode=True,
-        max_tokens=700,
+        max_tokens=1800,
         temperature=0.1,
         timeout=30,
     )
@@ -487,7 +489,9 @@ async def interpret_answer(question: dict[str, Any], answer: str) -> dict[str, A
             ],
             model=client.model_fast,
             json_mode=True,
-            max_tokens=250,
+            # I modelli "reasoning" spendono token sul ragionamento prima
+            # della risposta: un limite troppo basso la lascia vuota.
+            max_tokens=1200,
             temperature=0.1,
             timeout=20,
         )
