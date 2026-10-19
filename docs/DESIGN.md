@@ -69,20 +69,33 @@ Documento di architettura della v0.1 e traccia per le iterazioni successive.
 
 | Tabella | Ruolo | Campi chiave |
 |---|---|---|
-| `watches` | una ricerca salvata | `from_place/lat/lon`, `to_place/lat/lon`, `depart_after`, `arrive_by`, `max_price`, `radius_km`, `sources` JSON, `notify` JSON, `interval_min`, `active`, `next_run_at` |
-| `offers` | offerte trovate, una riga per (ricerca, fingerprint) | `source`, `mode`, `operator`, `depart_at`, `arrive_at`, `price`, `price_is_estimate`, `pickup/dropoff`, `score`, `badges` JSON, `details` JSON, `first_seen`, `last_seen`, `prev_price` |
-| `runs` | cronologia esecuzioni | `status` (ok/partial/error), `offers_found`, `alerts_sent`, `errors` JSON, `notes` JSON |
-| `alerts` | feed avvisi | `kind`, `title`, `message`, `read` |
-| `settings` | configurazione runtime | token/SMTP/quiet hours, chiave Groq, modelli, feed GTFS, chiavi VAPID |
-| `push_subscriptions` | dispositivi iscritti alle notifiche push | `endpoint` (unico), `p256dh`, `auth`, `label`, `fail_count`, `last_ok_at` |
+| `users` | account che accedono all'app | `username` (unico), `display_name`, `password_hash` (bcrypt), `is_admin`, `status` (active/pending/disabled), `telegram_chat_id` |
+| `sessions` | sessioni di accesso | `token_hash` (unico, SHA-256), `user_id`, `expires_at`, `last_seen_at` |
+| `password_resets` | token temporanei per il recupero password | `token_hash` (unico), `user_id`, `expires_at` |
+| `user_settings` | impostazioni personali | `user_id` + `key` (PK composta), `value` |
+| `telegram_links` | collegamento fra chat Telegram e account | `code` (unico), `user_id`, `chat_id`, `expires_at` |
+| `watches` | una ricerca salvata | `user_id`, `from_place/lat/lon`, `to_place/lat/lon`, `depart_after`, `arrive_by`, `max_price`, `radius_km`, `sources` JSON, `notify` JSON, `interval_min`, `active`, `next_run_at` |
+| `offers` | offerte trovate, una riga per (ricerca, fingerprint) | `watch_id`, `source`, `mode`, `operator`, `depart_at`, `arrive_at`, `price`, `price_is_estimate`, `pickup/dropoff`, `score`, `badges` JSON, `details` JSON, `first_seen`, `last_seen`, `prev_price` |
+| `runs` | cronologia esecuzioni | `watch_id`, `status` (ok/partial/error), `offers_found`, `alerts_sent`, `errors` JSON, `notes` JSON |
+| `alerts` | feed avvisi | `watch_id`, `kind`, `title`, `message`, `read` |
+| `settings` | configurazione **comune** dell'istanza | chiave Groq, modelli AI, feed GTFS, chiavi VAPID, offset Telegram |
+| `push_subscriptions` | dispositivi iscritti alle notifiche push | `user_id`, `endpoint` (unico), `p256dh`, `auth`, `label`, `fail_count`, `last_ok_at` |
 | `geocache` | cache geocoding | `query`, `lat`, `lon`, `display_name` |
 | `questions` | domande dell'agente all'utente | `watch_id`, `key` (slug, dedupe), `text`, `options` JSON (con `prefs`), `status` (pending/answered/skipped), `answer`, `answer_source` |
-| `plans` | piani calcolati, uno "corrente" per ricerca | `kind` (cheapest/alternative), `title`, `total_price`, `total_duration_min`, `steps` JSON, `explanation`, `watchouts` JSON, `confidence`, `fingerprint`, `is_current` |
+| `plans` | piani calcolati, uno "corrente" per ricerca | `watch_id`, `kind` (cheapest/alternative), `title`, `total_price`, `total_duration_min`, `steps` JSON, `explanation`, `watchouts` JSON, `confidence`, `fingerprint`, `is_current` |
 | `ai_log` | controllo uso/costi AI | `watch_id`, `run_id`, `task`, `model`, `tokens`, `latency_ms`, `ok`, `error` |
 
 La tabella `watches` è stata estesa con `prefs` JSON (preferenze apprese), `ai_summary`,
 `ai_plan_fingerprint`, `ai_best_price`, `ai_updated_at`; `runs` con `notes`, `ai_used`,
 `ai_tokens`, `plan_price`. Le migrazioni sono idempotenti (`db.MIGRATIONS`).
+
+**Multi-utente**: `watches.user_id` e' il punto di innesto. Le tabelle figlie
+(`offers`, `runs`, `alerts`, `questions`, `plans`) non hanno una colonna
+`user_id`: ereditano la separazione dalla ricerca con `ON DELETE CASCADE`, e
+ogni query le filtra per `watch_id IN (SELECT id FROM watches WHERE user_id = ?)`.
+Le ricerche create prima dell'introduzione del login vengono assegnate al primo
+account amministrativo (`db._assign_legacy_watches`), e le impostazioni personali
+di una sola istanza migrano anch'esse (`db._assign_legacy_settings`).
 
 **Fingerprint** = `source:external_id:depart_at` — *senza prezzo*, così un cambio
 prezzo aggiorna la stessa offerta e può generare un avviso di ribasso.
@@ -342,6 +355,18 @@ affidabilità  = rating/5 * 100, default 68
 
 | Metodo | Endpoint | Note |
 |---|---|---|
+| GET | `/api/auth/status` | sessione corrente, serve al frontend per il login |
+| POST | `/api/auth/register` | crea l'account (il primo e' admin, gli altri in attesa) |
+| POST | `/api/auth/login` | accesso: nome utente + password |
+| POST | `/api/auth/logout` | chiude la sessione |
+| GET | `/api/auth/me` | dati dell'utente loggato |
+| POST | `/api/auth/password` | cambia la propria password |
+| GET | `/api/auth/users` | elenco account (**solo admin**) |
+| POST | `/api/auth/users` | crea un account attivo (**solo admin**) |
+| PATCH | `/api/auth/users/{id}` | approva o disabilita un account (**solo admin**) |
+| POST | `/api/auth/users/{id}/password` | reset password di un account (**solo admin**) |
+| POST | `/api/auth/telegram/link` | genera il codice per collegare la chat Telegram |
+| POST | `/api/auth/telegram/confirm` | conferma il codice e associa la chat |
 | GET | `/api/status` | stato agente, fonti, contatori, stato AI |
 | GET/POST | `/api/watches` | elenco / crea (geocoding automatico) |
 | GET/PATCH/DELETE | `/api/watches/{id}` | dettaglio / modifica / elimina |
@@ -377,12 +402,22 @@ affidabilità  = rating/5 * 100, default 68
 | GET | `/sw.js`, `/manifest.webmanifest` | PWA (dalla radice, per lo scope) |
 
 Documentazione interattiva: `http://127.0.0.1:8787/docs`.
-CORS: abilitato solo per le origini in `CARPOOL_CORS_ORIGINS`.
+CORS: abilitato solo per le origini in `CARPOOL_CORS_ORIGINS`, con
+`allow_credentials=True` (serve al cookie di sessione cross-origin).
+
+**Autenticazione**: un middleware blocca le rotte `/api/*` che richiedono una
+sessione valida, tranne quelle pubbliche elencate in `app/deps.py`
+(`PUBLIC_PATHS`: login, registrazione, stato sessione, logout, stato e fonti).
+Le richieste preflight `OPTIONS` passano sempre. Ogni handler chiama
+`deps.require_user(request)` e filtra i dati per l'utente corrente.
 
 ---
 
 ## 10. Frontend
 
+- **Schermata di accesso** a tutto schermo, con due tab (Accedi / Registrati).
+  Al primo avvio (nessun account) si apre direttamente la registrazione. Se
+  l'API risponde 401, il frontend torna qui da solo.
 - Sidebar con ricerche, stato attivo/pausa e miglior prezzo.
 - Dettaglio con 4 KPI, tab **Migliori / Tutte / Mappa / Carsharing & vicino / Link utili / Cronologia**.
 - **Mappa** (Leaflet 1.9 da CDN + OpenStreetMap): partenza/arrivo, punti di ritrovo e
@@ -398,6 +433,11 @@ CORS: abilitato solo per le origini in `CARPOOL_CORS_ORIGINS`.
   link ufficiali ai codici sconto/voucher (cache 6 h, pulsante *Aggiorna*).
 - Modali per ricerca e impostazioni (sezione Groq con *Prova AI* / *Elenca modelli*);
   drawer avvisi.
+- Impostazioni → **Account**: dati dell'utente, cambio password, e (solo per
+  l'amministratore) l'elenco degli account con Approva / Disabilita e la creazione
+  di un nuovo account.
+- Impostazioni → **Telegram**: *Collega la mia chat* genera un codice da
+  inoltrare al bot (`/link CODICE`).
 - Impostazioni → **Notifiche push**: stato dei dispositivi, *Attiva* / *Disattiva su questo
   dispositivo* (iscrizione `pushManager`) e *Invia prova*.
 - Polling ogni 30 s; refresh immediato dopo creazione o "Cerca ora".
@@ -411,14 +451,28 @@ CORS: abilitato solo per le origini in `CARPOOL_CORS_ORIGINS`.
 ## 11. Sicurezza e privacy
 
 - Bind predefinito su `127.0.0.1`: nessuna esposizione di rete.
+- **Accesso multi-utente**: nome utente + password (bcrypt, 12 round) e sessione
+  in cookie `HttpOnly` (`SameSite=None; Secure` su HTTPS, per reggere il
+  frontend su un dominio diverso; `Lax` in locale). Nel database finisce solo
+  l'hash SHA-256 del token di sessione, mai il token.
+- **Separazione dei dati**: `watches.user_id` collega ogni ricerca al suo
+  proprietario;Offerte, avvisi, piani, domande e cronologia ereditano la
+  separazione via `ON DELETE CASCADE`. Ogni endpoint filtra per l'utente
+  corrente, e le impostazioni personali (Telegram, SMTP, fascia di silenzio)
+  vivono in `user_settings`, separate dalle comuni.
+- Ruoli: il **primo account** è amministratore; gli altri si registrano ma
+  restano in attesa di approvazione. Solo l'amministratore tocca le impostazioni
+  comuni (chiave Groq, modelli, orari GTFS) e l'elenco degli account.
+- Notifiche: Telegram e push sono inviati al solo proprietario della ricerca
+  (`push_subscriptions.user_id`, `users.telegram_chat_id`).
 - Nessun dato inviato a terzi oltre alle query necessarie (Nominatim, fonti,
   Telegram/SMTP, **Groq** per le richieste AI).
 - L'AI riceve, per pianificare, la richiesta di viaggio e le offerte raccolte
   (orari, prezzi, nomi dei punti). Non riceve credenziali né il database.
 - Segreti salvati nel DB locale e **mascherati** nelle risposte API.
 - Il file `.env` e `data/` sono in `.gitignore`.
-- Per il telefono: **Cloudflare Tunnel** (HTTPS) e, in caso, Cloudflare Access;
-  l'app non ha autenticazione propria, quindi l'URL va tenuto riservato.
+- Per il telefono: **Cloudflare Tunnel** (HTTPS) e, in caso, Cloudflare Access.
+  L'accesso protegge i dati, non il canale: l'URL resta da tenere riservato.
   Vedi `docs/DEPLOY.md`.
 
 ---
@@ -437,6 +491,11 @@ python -m unittest discover -s tests -v
   con costo totale, rifiuto per cambio lontano, cambio troppo corto o ultimo miglio
   fuori destinazione, `allow_multi_leg`), fallback senza chiave Groq, domanda quando
   l'arrivo è oltre il limite, finestra di flessibilità (`flexible_days`).
+- `tests/test_auth.py`: hash e verifica password, normalizzazione dello username,
+  stato degli account (attivo / in attesa / disabilitato), sessioni (creazione,
+  revoca, scadenza, token mai in chiaro), separazione dei dati per utente
+  (ricerche, avvisi, cascade), impostazioni personali vs comuni, push e
+  Telegram per-utente, migrazione delle ricerche pre-login al primo admin.
 
 ---
 
