@@ -521,10 +521,6 @@ async def skip_question(question_id: int):
 # --------------------------------------------------------------------------- #
 # Frontend statico (dashboard + PWA)
 # --------------------------------------------------------------------------- #
-if WEB_DIR.exists():
-    app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
-
-
 def _web_file(name: str, media_type: str | None = None, cache: str = "no-store"):
     path = WEB_DIR / name
     if not path.exists():
@@ -563,6 +559,13 @@ async def favicon():
     if path.exists():
         return FileResponse(path)
     return Response(status_code=204)
+
+
+# I file statici stanno nella radice del frontend (layout GitHub Pages).
+# Il mount va registrato IN FONDO, cosi' le route /api e /config.json
+# dichiarate sopra hanno la precedenza.
+if WEB_DIR.exists():
+    app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
 
 
 if __name__ == "__main__":

@@ -1,14 +1,18 @@
 /* Carpool Hunter - service worker minimale.
    Strategia: rete per prima (il codice cambia spesso), cache come rete di
-   sicurezza quando sei offline. I dati (/api) non vengono mai messi in cache. */
-const CACHE = "carpool-v4";
+   sicurezza quando sei offline. I dati (/api) non vengono mai messi in cache.
+
+   I path sono relativi alla base dello SW, cosi' funziona sia in locale (/)
+   sia su GitHub Pages (/carpool-intelligence/). */
+const BASE = new URL("./", self.location).pathname;
+const CACHE = "carpool-v5";
 const SHELL = [
-  "/",
-  "/static/styles.css",
-  "/static/app.js",
-  "/static/favicon.svg",
-  "/manifest.webmanifest",
-  "/static/icons/icon-192.png",
+  BASE,
+  "styles.css",
+  "app.js",
+  "favicon.svg",
+  "manifest.webmanifest",
+  "icons/icon-192.png",
 ];
 
 self.addEventListener("install", (event) => {
@@ -35,7 +39,7 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   // Mai in cache: API, configurazione e origini esterne (tunnel/Pages).
   if (url.origin !== self.location.origin) return;
-  if (url.pathname.startsWith("/api/") || url.pathname === "/config.json") return;
+  if (url.pathname.startsWith(BASE + "api/") || url.pathname === BASE + "config.json") return;
 
   event.respondWith(
     // Rete per prima: se il PC e' raggiungibile vedi sempre l'ultima versione.
@@ -47,7 +51,7 @@ self.addEventListener("fetch", (event) => {
         }
         return response;
       })
-      .catch(() => caches.match(request).then((cached) => cached || caches.match("/")))
+      .catch(() => caches.match(request).then((cached) => cached || caches.match(BASE)))
   );
 });
 
@@ -64,9 +68,9 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
-      icon: "/static/icons/icon-192.png",
-      badge: "/static/icons/icon-192.png",
-      data: { url: data.url || "/" },
+      icon: BASE + "icons/icon-192.png",
+      badge: BASE + "icons/icon-192.png",
+      data: { url: data.url || BASE },
       tag: data.tag || "carpool",
     })
   );
@@ -74,7 +78,7 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const target = (event.notification.data && event.notification.data.url) || "/";
+  const target = (event.notification.data && event.notification.data.url) || BASE;
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
       for (const client of list) {

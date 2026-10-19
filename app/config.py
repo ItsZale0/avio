@@ -12,7 +12,10 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(os.getenv("CARPOOL_DATA_DIR", str(BASE_DIR / "data")))
-WEB_DIR = BASE_DIR / "web"
+# Il frontend statico sta in `static/` (deploy GitHub Pages) oppure nella
+# cartella `web/` (vecchio layout): usa la prima che contiene index.html.
+_WEB_CANDIDATES = (BASE_DIR / "static", BASE_DIR / "web")
+WEB_DIR = next((p for p in _WEB_CANDIDATES if (p / "index.html").exists()), BASE_DIR / "static")
 
 HOST = os.getenv("HOST", "127.0.0.1")
 PORT = int(os.getenv("PORT", "8787"))
