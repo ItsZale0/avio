@@ -67,25 +67,42 @@ l'URL resta segreto anche se qualcuno lo indovina.
    alla schermata Home. In alternativa tieni **Telegram** tra i canali. Richiede
    `pip install pywebpush` sul PC.
 
-## 4. (Opzionale) Interfaccia su Cloudflare Pages
+## 4. Interfaccia su GitHub Pages
 
-Cosi' l'app parte anche se il PC e' spento (mostrando solo lo stato salvato) e
-carica piu' in fretta. L'API resta dietro il tunnel.
-
-```powershell
-python scripts/build_pages.py --api https://carpool.tuodominio.it
-npx wrangler pages deploy dist-pages --project-name carpool-hunter
-```
-
-Poi consenti l'origine di Pages nel backend, in `.env`:
+Il frontend statico (cartella `static/`) e' gia' pubblicato su GitHub Pages:
 
 ```
-CARPOOL_CORS_ORIGINS=https://carpool-hunter.pages.dev
+https://<tuo-utente>.github.io/<nome-repo>/
+```
+
+Il deploy e' automatico: ogni push su `main` che tocca `static/` fa partire il
+workflow `.github/workflows/pages.yml`, che copia `static/` nell'artefatto
+Pages e lo pubblica.
+
+La pagina e' un *client* dell'API: per funzionare deve sapere dove si trova il
+backend. Si imposta con la variabile di repository **`CARPOOL_API_BASE`**
+(Settings → Secrets and variables → Actions → Variables):
+
+| Nome | Valore | Esempio |
+| --- | --- | --- |
+| `CARPOOL_API_BASE` | URL pubblico del backend (tunnel) | `https://carpool.tuodominio.it` |
+
+Il workflow la copia in `config.json` dentro l'artefatto. Senza questa variabile
+la pagina si apre ma resta "offline", perche' non sa a chi chiedere i dati.
+
+Nel backend, in `.env`, consenti l'origine di Pages:
+
+```
+CARPOOL_CORS_ORIGINS=https://<tuo-utente>.github.io
 CARPOOL_PUBLIC_URL=https://carpool.tuodominio.it
 ```
 
 e riavvia l'agente. `CARPOOL_PUBLIC_URL` e' l'indirizzo che compare nei link
 delle notifiche.
+
+> **Alternativa: Cloudflare Pages.** Se preferisci l'hosting su Cloudflare, il bundle
+> si prepara con `python scripts/build_pages.py --api https://carpool.tuodominio.it`
+> e si pubblica con `npx wrangler pages deploy dist-pages --project-name carpool-hunter`.
 
 ## 4bis. Orari GTFS (treni e bus)
 
@@ -104,20 +121,27 @@ orari anche per le coincidenze con un cambio. Per rimandare l'aggiornamento
 in Impostazioni → *Orari GTFS*, oppure rilancia `gtfs-update`. Se non ti serve,
 spegni la fonte con `gtfs_enabled = 0`.
 
-## 5. Codice su GitHub (repo privato)
+## 5. Codice su GitHub
 
-Il repo serve per il codice e i backup, non per far girare l'agente.
+Il repo serve per il codice, i backup e per pubblicare l'interfaccia.
 
 ```powershell
 git init -b main
 git add .
 git commit -m "Carpool Hunter: ricerca passaggi + intelligenza Groq"
-git remote add origin git@github.com:TUONOME/carpool-hunter.git
+git remote add origin https://github.com/TUONOME/carpool-intelligence.git
 git push -u origin main
 ```
 
 `.gitignore` esclude `.env` e `data/` (il database con le tue ricerche e i
 token), quindi restano sul PC.
+
+> **Pubblico o privato?** Il piano gratuito di GitHub non permette GitHub Pages
+> su repo privati. Con repo privato l'interfaccia si pubblica su Cloudflare
+> Pages (vedi sezione 4); con repo pubblico si usa GitHub Pages. La protezione
+> dei dati resta la stessa in entrambi i casi: i segreti (`telegram_token`,
+> `groq_api_key`, `smtp_password`, `vapid_private_key`) stanno solo in
+> `data/carpool.db` e in `.env`, mai nel repo.
 
 **Alternativa ad "agente sempre acceso"**: un workflow GitHub Actions con cron
 oraria puo' eseguire `python -m app.cli run-due` sui runner gratuiti (2000
@@ -131,9 +155,10 @@ migliore.
 | --- | --- |
 | Agente sul PC | 0 (solo elettricita') |
 | Cloudflare Tunnel | 0 |
-| Cloudflare Pages | 0 |
+| GitHub Pages | 0 (repo pubblico) |
+| Cloudflare Pages | 0 (repo privato) |
 | Modelli Groq (free tier) | 0 entro i limiti di richieste/giorno |
-| GitHub repo privato | 0 |
+| GitHub repo | 0 |
 
 ## Sicurezza
 
