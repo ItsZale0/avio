@@ -67,7 +67,8 @@ def watch_to_dict(row) -> dict[str, Any]:
 
     data = db.row_to_dict(row) or {}
     raw_sources = db.load_json(data.get("sources"), list(DEFAULT_SOURCES))
-    if set(raw_sources) <= LEGACY_SOURCES:
+    legacy_part = set(raw_sources) - {"gtfs"}
+    if raw_sources and legacy_part and legacy_part <= LEGACY_SOURCES:
         # Ricerca creata con le vecchie fonti (anche i dati simulati "demo"):
         # la portiamo alle fonti reali complete, cosi' copre anche le nuove.
         data["sources"] = list(DEFAULT_SOURCES)
@@ -81,6 +82,32 @@ def watch_to_dict(row) -> dict[str, Any]:
     data["offers_count"] = int(data.get("offers_count") or 0)
     data["best_price"] = data.get("best_price")
     return data
+
+
+def migrate_sources() -> int:
+    """Aggiunge una sola volta le nuove fonti (GTFS) alle ricerche gia' esistenti."""
+    from .services import settings as settings_service
+
+    if settings_service.get("sources_migrated_gtfs") == "1":
+        return 0
+    changed = 0
+    with db.db() as conn:
+        for row in conn.execute("SELECT id, sources FROM watches"):
+            original = db.load_json(row["sources"], list(DEFAULT_SOURCES))
+            sources = list(original)
+            legacy_part = set(sources) - {"gtfs"}
+            if legacy_part and legacy_part <= LEGACY_SOURCES:
+                sources = list(DEFAULT_SOURCES)
+            if "gtfs" not in sources:
+                sources.append("gtfs")
+            if sources != original:
+                conn.execute(
+                    "UPDATE watches SET sources = ? WHERE id = ?",
+                    (db.dump_json(sources), row["id"]),
+                )
+                changed += 1
+    settings_service.update({"sources_migrated_gtfs": "1"})
+    return changed
 
 
 def create_watch(payload: WatchIn, resolved: dict | None = None) -> dict[str, Any]:

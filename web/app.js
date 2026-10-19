@@ -97,12 +97,14 @@ const BADGES = {
   price_drop: "Ribasso",
   under_budget: "Sotto budget",
   estimate: "Stima",
+  orario: "Orario",
 };
 
 const MODE_LABEL = {
   rideshare: "Passaggio",
   bus: "Autobus",
   train: "Treno",
+  tram: "Tram",
   flight: "Volo",
   carsharing: "Carsharing",
   transit: "Mezzi pubblici",
@@ -213,6 +215,7 @@ function bindEvents() {
   $("#btnAiFill").addEventListener("click", aiFill);
   $("#btnTestAi").addEventListener("click", testAi);
   $("#btnAiModels").addEventListener("click", listAiModels);
+  $("#btnGtfsUpdate").addEventListener("click", updateGtfs);
 
   $("#questionsCard").addEventListener("click", (event) => {
     const button = event.target.closest("[data-answer]");
@@ -571,7 +574,9 @@ function offerCard(offer, suppressNew = false) {
   if (offer.details?.disponibilita) detailBits.push(esc(offer.details.disponibilita));
 
   const priceHtml = offer.price == null
-    ? `<div class="price" style="font-size:15px;color:var(--muted)">da verificare</div>`
+    ? (offer.details?.orario_gtfs
+        ? `<div class="price" style="font-size:14px;color:var(--muted)">solo orario<small>prezzo da tariffa ufficiale</small></div>`
+        : `<div class="price" style="font-size:15px;color:var(--muted)">da verificare</div>`)
     : `<div class="price">${offer.prev_price && offer.prev_price > offer.price
         ? `<span class="was">${euro(offer.prev_price)}</span>` : ""}${euro(offer.price)}
         ${offer.price_is_estimate ? "<small>stima, non prezzo finale</small>" : ""}
@@ -637,7 +642,7 @@ function renderAll(panel) {
   for (const offer of state.offers) {
     (groups[offer.mode] ||= []).push(offer);
   }
-  const order = ["rideshare", "bus", "train", "flight", "carsharing", "transit"];
+  const order = ["rideshare", "bus", "train", "tram", "flight", "carsharing", "transit"];
   const initial = isInitialRun();
   const html = order.filter((mode) => groups[mode]?.length).map((mode) => `
     <div class="group-title">${esc(MODE_LABEL[mode] || mode)} · ${groups[mode].length}</div>
@@ -754,7 +759,7 @@ function openWatchModal(watch) {
     name: "", from_place: "", to_place: "",
     depart_after: "", arrive_by: "", max_price: "", passengers: 1, radius_km: 5,
     interval_min: 60,
-    sources: ["blablacar", "flixbus", "itabus", "trenitalia", "omio", "carsharing", "transit"],
+    sources: ["blablacar", "flixbus", "itabus", "trenitalia", "omio", "carsharing", "transit", "gtfs"],
     notify: ["web", "telegram"],
   };
 
@@ -1002,10 +1007,12 @@ async function openSettings() {
     $("#sAiSmart").value = s.ai_model_smart || "";
     $("#sAiFast").value = s.ai_model_fast || "";
     $("#sAiEnabled").checked = (s.ai_enabled || "1") === "1";
+    $("#sGtfsEnabled").checked = (s.gtfs_enabled || "1") === "1";
     $("#aiTestResult").textContent = "";
     $("#settingsError").classList.add("hidden");
     $("#telegramTestResult").textContent = "";
     $("#emailTestResult").textContent = "";
+    loadGtfsStatus();
     openModal("settingsModal");
   } catch (error) {
     toast(error.message, "error");
@@ -1031,6 +1038,7 @@ function settingsPayload() {
     ai_model_smart: $("#sAiSmart").value.trim(),
     ai_model_fast: $("#sAiFast").value.trim(),
     ai_enabled: $("#sAiEnabled").checked ? "1" : "0",
+    gtfs_enabled: $("#sGtfsEnabled").checked ? "1" : "0",
   };
 }
 
@@ -1046,6 +1054,62 @@ async function submitSettings(event) {
     errorBox.textContent = error.message;
     errorBox.classList.remove("hidden");
   }
+}
+
+let gtfsPoll = null;
+
+async function loadGtfsStatus() {
+  try {
+    renderGtfs(await api("/api/gtfs"));
+  } catch (error) {
+    $("#gtfsStatus").textContent = "✗ " + error.message;
+    $("#gtfsStatus").className = "field-hint err";
+    $("#gtfsFeeds").innerHTML = "";
+  }
+}
+
+function renderGtfs(data) {
+  const hint = $("#gtfsStatus");
+  const box = $("#gtfsFeeds");
+  const imported = (data.feeds || []).filter((feed) => feed.imported).length;
+  if (data.running) {
+    hint.textContent = (data.log || []).slice(-1)[0] || "aggiornamento in corso…";
+    hint.className = "field-hint";
+  } else {
+    hint.textContent = `${imported}/${(data.feeds || []).length} feed importati · ${data.enabled ? "attivi" : "disattivati"}`;
+    hint.className = "field-hint" + (imported ? " ok" : "");
+  }
+  box.innerHTML = (data.feeds || []).map((feed) => `
+    <div class="gtfs-feed ${feed.imported ? "on" : ""}">
+      <span class="gtfs-dot"></span>
+      <span class="gtfs-name">${esc(feed.label)}</span>
+      <span class="gtfs-meta">${feed.imported ? `${feed.stops} fermate · ${feed.trips} corse` : (feed.license || "")}</span>
+    </div>`).join("");
+}
+
+async function updateGtfs() {
+  const hint = $("#gtfsStatus");
+  hint.textContent = "avvio aggiornamento…";
+  hint.className = "field-hint";
+  try {
+    await api("/api/gtfs/update", { method: "POST" });
+  } catch (error) {
+    hint.textContent = "✗ " + error.message;
+    hint.className = "field-hint err";
+    return;
+  }
+  if (gtfsPoll) clearInterval(gtfsPoll);
+  gtfsPoll = setInterval(async () => {
+    try {
+      const data = await api("/api/gtfs");
+      renderGtfs(data);
+      if (!data.running) {
+        clearInterval(gtfsPoll);
+        gtfsPoll = null;
+        toast("Orari GTFS aggiornati");
+      }
+    } catch (_) { /* ignora errori di polling */ }
+  }, 3000);
 }
 
 async function testTelegram() {

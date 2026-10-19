@@ -6,6 +6,7 @@ from .base import Adapter
 from .blablacar import BlaBlaCarAdapter
 from .carsharing import CarsharingAdapter
 from .flixbus import FlixBusAdapter
+from .gtfs import GtfsAdapter
 from .itabus import ItabusAdapter
 from .omio import OmioAdapter
 from .transit import TransitAdapter
@@ -19,6 +20,7 @@ _INSTANCES: list[Adapter] = [
     OmioAdapter(),
     CarsharingAdapter(),
     TransitAdapter(),
+    GtfsAdapter(),
 ]
 
 ADAPTERS: dict[str, Adapter] = {adapter.id: adapter for adapter in _INSTANCES}

@@ -9,14 +9,14 @@ Documento di architettura della v0.1 e traccia per le iterazioni successive.
 | Requisito utente | Come è risolto |
 |---|---|
 | Inserire luogo, data e **ora di arrivo massimo** | Form con partenza, arrivo, `depart_after`, `arrive_by`, budget, passeggeri, raggio |
-| Cercare su **più fonti possibili** | Adapter indipendenti (BlaBlaCar, Omio, Trenitalia, FlixBus, Itabus, carsharing, mezzi pubblici) + link precompilati |
+| Cercare su **più fonti possibili** | Adapter indipendenti (BlaBlaCar, Omio, Trenitalia, FlixBus, Itabus, carsharing, mezzi pubblici, **orari GTFS**) + link precompilati |
 | Agente che cerca **ogni ora** e avvisa | Scheduler interno, intervallo configurabile (15 min–6 h), digest solo sulle novità |
 | Sapere qual è il **modo più economico** | Badge *Più economico* + ordinamento per prezzo e punteggio |
 | **Carsharing vicino** | Stima costo one-way per provider/città + fermate/stazioni entro pochi minuti a piedi |
 | Interfaccia | Dashboard web locale, responsive, in italiano |
 | Avvisi | Telegram, email, dashboard, notifica desktop |
 
-**Non obiettivi v0.1:** prenotare, pagare, scraping massivo, orari GTFS reali, app mobile nativa.
+**Non obiettivi v0.1:** prenotare, pagare, scraping massivo, app mobile nativa.
 
 ---
 
@@ -180,6 +180,48 @@ se scrivi un nuovo viaggio in chat, crea la ricerca. Nessun webhook, nessun serv
 pubblico: basta il token del bot già configurato.
 
 ---
+
+## 4ter. Orari GTFS e motore di coincidenze
+
+Gli orari ufficiali di treni e bus arrivano dai **feed GTFS aperti** delle agenzie
+regionali, in un database dedicato (`data/gtfs.db`) separato da `carpool.db`.
+
+**Catalogo** (`app/gtfs/feeds.py`) — solo feed pubblici verificati, con licenza:
+
+| Feed | Copertura | Note |
+|---|---|---|
+| `trentino-extraurbano` | Provincia di Trento: bus + ferrovia Trento–Malè | ~2.860 fermate |
+| `trentino-urbano` | Trento e Rovereto | ~1.100 fermate |
+| `trenord` | Treni regionali della Lombardia (dati.lombardia.it) | ~567 fermate |
+| `busitalia-veneto-tram` | Tram di Padova | ~48 fermate |
+
+Veneto e Vicenza non pubblicano un GTFS aperto: i treni veneti restano coperti
+dall'adapter `trenitalia` dal vivo. Il **prezzo non è nel GTFS**, quindi non viene
+inventato: la card mostra "solo orario" e rimanda alla tariffa ufficiale.
+
+**Motore** (`app/gtfs/engine.py`) — `find_connections()`:
+
+1. **Fermate vicine**: le più prossime entro il raggio, più alcune delle più
+   trafficate del raggio (una stazione importante può essere poco più lontana ma
+   servire molte più corse).
+2. **Corridoio**: solo le fermate entro ~30 km dal segmento partenza→arrivo, per
+   evitare cambi assurdi.
+3. **Tratte dirette**: stessa corsa dalla partenza all'arrivo.
+4. **Un cambio**: `partenza → X → arrivo` con attesa minima 5 min e massima 3 h.
+   Lo stesso punto di cambio spesso ha **due fermate distinte a pochi metri**
+   (es. "Mezzana. Ftm" e "Mezzana. Staz Ftm"): il motore collega anche fermate
+   entro 400 m a piedi, aggiungendo il tempo di camminata all'attesa.
+5. **Pareto**: scarta i collegamenti dominati (parte prima e arriva dopo).
+
+I risultati diventano `Offer` con `details["tappe"]` (una voce per tratta, con
+eventuale passo a piedi), `orario_gtfs = True` e `price = None`. Nello scoring le
+offerte senza prezzo vengono valutate su tempo/vicinanza/affidabilità rinormalizzati
+e ricevono il badge **`orario`**; non possono vincere il badge *miglior valore*
+(che richiede un prezzo reale).
+
+**Aggiornamento**: `python -m app.cli gtfs-update` oppure Impostazioni → Orari GTFS
+→ *Aggiorna orari* (`POST /api/gtfs/update`, in background). Lo stato è in
+`GET /api/gtfs`. La fonte si spegne con `gtfs_enabled = 0`.
 
 ---
 
@@ -366,7 +408,8 @@ python -m unittest discover -s tests -v
 ```
 
 - `tests/test_core.py`: distanze, geocoding offline, filtri temporali/budget/raggio,
-  scoring e badge, costo effettivo, generazione link.
+  scoring e badge, costo effettivo, generazione link, import GTFS e coincidenze
+  (tratta diretta, Pareto, cambio a piedi tra fermate a pochi metri).
 - `tests/test_ai.py`: planner (più economico, combo a 2 tratte, rifiuto per cambio
   lontano o orari incompatibili), fallback senza chiave Groq, domanda quando l'arrivo
   è oltre il limite, finestra di flessibilità (`flexible_days`).
@@ -375,8 +418,11 @@ python -m unittest discover -s tests -v
 
 ## 13. Prossime iterazioni (ordine consigliato)
 
-1. **GTFS regionale** (Veneto/Trentino, Lombardia) per orari reali di treni/bus:
-   l'adapter `transit` diventa un vero motore di coincidenze (e alimenta le combo).
+1. ~~**GTFS regionale**~~ ✔ **fatto**: motore di coincidenze su feed GTFS aperti
+   (Trentino, Lombardia, tram di Padova), tratte dirette + un cambio anche tra
+   fermate a pochi metri, badge `orario` e `gtfs-update` in Impostazioni.
+   Restano da valutare GTFS-RT (ritardi in tempo reale) e nuovi feed quando le
+   regioni li pubblicano (Veneto).
 2. **Trenitalia/Italo**: verificare endpoint pubblici o accordi; altrimenti deep link
    con prezzi manuali.
 3. **Mappa**: Leaflet con offerte, punti di ritrovo e zone carsharing.

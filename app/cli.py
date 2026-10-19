@@ -17,11 +17,14 @@ import json
 import sys
 
 from . import db, store
+from .gtfs import status as gtfs_status
+from .gtfs import update as gtfs_update
 from .services import search
 
 
 async def _run(force_all: bool, limit: int) -> int:
     db.init_db()
+    store.migrate_sources()
     if force_all:
         watches = [w for w in store.list_watches() if w["active"]][:limit]
     else:
@@ -51,6 +54,12 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("list", help="elenca le ricerche salvate")
 
+    sub.add_parser("gtfs-list", help="mostra i feed GTFS e lo stato dell'import")
+
+    gtfs_parser = sub.add_parser("gtfs-update", help="scarica e importa gli orari GTFS")
+    gtfs_parser.add_argument("--feed", action="append", help="id del feed (ripetibile); default: tutti")
+    gtfs_parser.add_argument("--force", action="store_true", help="riscarica anche se gia' presente")
+
     args = parser.parse_args(argv)
 
     if args.command == "list":
@@ -61,6 +70,24 @@ def main(argv: list[str] | None = None) -> int:
                 f" · ogni {watch['interval_min']} min · {watch['offers_count']} offerte"
             )
         return 0
+
+    if args.command == "gtfs-list":
+        for row in gtfs_status():
+            state = f"importato {row['imported_at'][:19]}" if row["imported"] else "non importato"
+            print(f"[{row['id']}] {row['label']} · {row['region']} · {state} · {row['stops']} fermate")
+        return 0
+
+    if args.command == "gtfs-update":
+        def echo(message: str) -> None:
+            print("  " + message, flush=True)
+
+        results = gtfs_update(args.feed, force=args.force, progress=echo)
+        failures = 0
+        for row in results:
+            print(f"→ {row['feed']}: {row.get('status')}")
+            if row.get("status") != "ok":
+                failures += 1
+        return 1 if failures else 0
 
     return asyncio.run(_run(args.all, max(1, args.limit)))
 

@@ -85,6 +85,11 @@ def score_offers(offers: list[Offer], ctx: SearchContext) -> dict[str, dict]:
             price_score = 90.0 if not offer.price_is_estimate else 76.0
 
         access = _access_cost(offer, ctx)
+        # Le offerte con prezzo si punteggiano normalmente. Gli orari GTFS
+        # (prezzo non presente nel feed) vengono punteggiati su tempo/vicinanza/
+        # affidabilita' rinormalizzati; le altre offerte senza prezzo restano
+        # fuori classifica e non compaiono tra le "migliori".
+        has_schedule = bool(offer.details.get("orario_gtfs"))
         if price_score is not None:
             score = (
                 MODEL_WEIGHTS["price"] * price_score
@@ -96,6 +101,21 @@ def score_offers(offers: list[Offer], ctx: SearchContext) -> dict[str, dict]:
             if score > best_score:
                 best_score = score
                 best_fp = offer.fingerprint
+        elif has_schedule:
+            weight_sum = (
+                MODEL_WEIGHTS["time"] + MODEL_WEIGHTS["proximity"] + MODEL_WEIGHTS["reliability"]
+            )
+            score = round(
+                (
+                    MODEL_WEIGHTS["time"] * _time_score(offer, ctx)
+                    + MODEL_WEIGHTS["proximity"] * _proximity_score(offer, ctx)
+                    + MODEL_WEIGHTS["reliability"] * _reliability_score(offer)
+                )
+                / weight_sum,
+                1,
+            )
+            # Gli orari senza prezzo non concorrono al badge "miglior valore":
+            # non conosciamo il costo, quindi non possiamo dire che sia il migliore.
 
         result[offer.fingerprint] = {
             "score": score,
@@ -125,6 +145,8 @@ def score_offers(offers: list[Offer], ctx: SearchContext) -> dict[str, dict]:
         info = result[offer.fingerprint]
         if offer.price_is_estimate:
             info["badges"].append("estimate")
+        if offer.details.get("orario_gtfs"):
+            info["badges"].append("orario")
         if (
             ctx.max_price is not None
             and offer.price is not None

@@ -27,6 +27,8 @@ DEFAULTS: dict[str, str] = {
     "notify_enabled": "1",
     "groq_api_key": "",
     "ai_enabled": "1",
+    "gtfs_enabled": "1",
+    "sources_migrated_gtfs": "",
     "ai_model_smart": "llama-3.3-70b-versatile",
     "ai_model_fast": "llama-3.1-8b-instant",
     "telegram_offset": "0",
@@ -51,6 +53,7 @@ def _env_defaults() -> dict[str, str]:
         "ai_enabled": "AI_ENABLED",
         "ai_model_smart": "AI_MODEL_SMART",
         "ai_model_fast": "AI_MODEL_FAST",
+        "gtfs_enabled": "GTFS_ENABLED",
     }
     values = dict(DEFAULTS)
     for key, env_name in mapping.items():

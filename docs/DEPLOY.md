@@ -84,6 +84,23 @@ CARPOOL_PUBLIC_URL=https://carpool.tuodominio.it
 e riavvia l'agente. `CARPOOL_PUBLIC_URL` e' l'indirizzo che compare nei link
 delle notifiche.
 
+## 4bis. Orari GTFS (treni e bus)
+
+Gli orari ufficiali stanno in un database separato, `data/gtfs.db` (escluso da
+git). Alla prima accensione va riempito una volta:
+
+```powershell
+python -m app.cli gtfs-update
+python -m app.cli gtfs-list
+```
+
+Ci vogliono pochi secondi per i feed del Trentino e una decina di secondi per
+Trenord; occupa qualche centinaio di MB. Da quel momento le ricerche usano gli
+orari anche per le coincidenze con un cambio. Per rimandare l'aggiornamento
+(pubblicano i feed nuovi ogni qualche mese), usa il pulsante **Aggiorna orari**
+in Impostazioni → *Orari GTFS*, oppure rilancia `gtfs-update`. Se non ti serve,
+spegni la fonte con `gtfs_enabled = 0`.
+
 ## 5. Codice su GitHub (repo privato)
 
 Il repo serve per il codice e i backup, non per far girare l'agente.

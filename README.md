@@ -100,6 +100,7 @@ Tutte le fonti restituiscono **dati reali** al momento del controllo: nessuna of
 | **BlaBlaCar** | passaggi in auto | ⚙️ richiede chiave | Chiave gratuita su [dev.blablacar.com](https://dev.blablacar.com). Senza chiave resta il link di ricerca. |
 | **Carsharing** | auto condivisa | ✅ | **Stima** di costo (non un preventivo) su tariffe Enjoy, Free2Move, Ubeeqo, E-Vai. |
 | **Mezzi pubblici vicini** | fermate/stazioni | ⚠️ best effort | OpenStreetMap Overpass: fermate vicine, non orari. A volte lento/indisponibile. |
+| **Orari GTFS** | treni e bus locali (Trentino, Lombardia, tram di Padova) | ✅ | Orari **ufficiali** da feed GTFS aperti, con coincidenze dirette e con **un cambio**. Il GTFS non contiene i prezzi: le card mostrano "solo orario". |
 
 > Trenitalia/Omio/FlixBus/Itabus sono **endpoint non ufficiali** usati dai rispettivi siti/app: possono
 > cambiare senza preavviso. Ogni fonte che cade è segnalata nelle note del giro e le altre restano attive.
@@ -189,6 +190,11 @@ app/
     omio.py            aggregatore treni + bus + voli
     carsharing.py      stime noleggio one-way
     transit.py         fermate vicine (Overpass)
+    gtfs.py            orari reali da feed GTFS + coincidenze
+  gtfs/
+    feeds.py           catalogo dei feed aperti (Trentino, Lombardia, Padova)
+    importer.py        da zip GTFS a SQLite (data/gtfs.db)
+    engine.py          coincidenze: dirette + un cambio, anche a piedi
   services/
     search.py          motore: fonti -> filtri -> punteggi -> piano -> avvisi
     scheduler.py       tick 20s, polling Telegram 45s
@@ -235,6 +241,10 @@ python -m uvicorn app.main:app --reload --port 8787
 python -m app.cli run-due
 python -m app.cli run-due --all
 
+# orari GTFS (treni/bus): stato dei feed e aggiornamento import
+python -m app.cli gtfs-list
+python -m app.cli gtfs-update
+
 # rigenera le icone PWA
 python scripts/make_icons.py
 ```
@@ -251,6 +261,9 @@ python scripts/make_icons.py
 - L'app non ha autenticazione: tienila su `127.0.0.1` o dietro un tunnel con URL segreto
   (meglio con **Cloudflare Access**). Se la esponi in rete, metti login e HTTPS.
 - Orari e disponibilità dei mezzi pubblici non sono inclusi: i link puntano a Google Maps.
+- **Orari GTFS**: treni e bus locali sono coperti dove esiste un feed aperto (Trentino,
+  Lombardia, tram di Padova). Il GTFS **non contiene i prezzi**: le card mostrano
+  "solo orario" e rimandano alla tariffa ufficiale dell'operatore.
 - **L'AI non inventa prezzi**: sceglie solo tra le offerte raccolte. Restano possibili
   errori di interpretazione della richiesta o della risposta: l'ultima parola è la tua.
 
@@ -264,7 +277,7 @@ python scripts/make_icons.py
 - [x] Trenitalia con prezzi reali (+ Italo via aggregatore Omio)
 - [x] Più fonti reali: Omio (treni/bus/voli), Itabus, FlixBus, BlaBlaCar
 - [x] Pannello offerte & codici sconto dalle pagine ufficiali dei vettori
-- [ ] Adapter GTFS/GTFS-RT per orari reali di treni e bus locali
+- [x] Orari GTFS reali (treni/bus) con motore di coincidenze dirette + 1 cambio
 - [ ] Mappa delle offerte e delle zone carsharing
 - [ ] Web Push (oltre a Telegram) per la PWA
 - [ ] Scraping opzionale (Playwright) attivabile per singola fonte

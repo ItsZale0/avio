@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__, db, geo, notify, store
+from . import gtfs as gtfs_service
 from .adapters import sources_meta
 from .ai import intelligence
 from .ai.groq import ai_enabled, client_from_settings, log_call
@@ -42,6 +43,7 @@ log = logging.getLogger("carpool")
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     db.init_db()
+    store.migrate_sources()
     scheduler.start()
     log.info("%s pronto su http://%s:%s", APP_NAME, HOST, PORT)
     yield
@@ -253,6 +255,49 @@ async def read_alerts(payload: dict | None = None):
 async def promos(refresh: bool = False):
     """Offerte del momento e codici sconto dalle pagine ufficiali dei vettori."""
     return await promos_service.get_promos(force=refresh)
+
+
+# --------------------------------------------------------------------------- #
+# Orari GTFS (treni e bus): stato e aggiornamento dei feed aperti
+# --------------------------------------------------------------------------- #
+_gtfs_state: dict = {"running": False, "log": [], "results": []}
+
+
+def _gtfs_run(feed_ids):
+    _gtfs_state["running"] = True
+    try:
+        def log_line(message: str) -> None:
+            _gtfs_state["log"].append(message)
+
+        _gtfs_state["results"] = gtfs_service.update(feed_ids, force=True, progress=log_line)
+    except Exception as exc:  # noqa: BLE001
+        _gtfs_state["log"].append(f"Errore: {type(exc).__name__}: {exc}")
+        _gtfs_state["results"] = [{"feed": feed_ids or "tutti", "status": "errore", "error": str(exc)}]
+    finally:
+        _gtfs_state["running"] = False
+
+
+@app.get("/api/gtfs")
+async def gtfs_status_endpoint():
+    """Stato dei feed GTFS: quali sono importati e quanti orari contengono."""
+    return {
+        "enabled": app_settings.get("gtfs_enabled", "1") == "1",
+        "running": bool(_gtfs_state["running"]),
+        "log": list(_gtfs_state["log"])[-6:],
+        "results": list(_gtfs_state["results"]),
+        "feeds": gtfs_service.status(),
+    }
+
+
+@app.post("/api/gtfs/update")
+async def gtfs_update_endpoint(feed: list[str] | None = Query(None)):
+    """Scarica e importa gli orari (in background). Senza `feed`, aggiorna tutti."""
+    if _gtfs_state["running"]:
+        return {"status": "running"}
+    _gtfs_state["log"] = []
+    _gtfs_state["results"] = []
+    asyncio.create_task(asyncio.to_thread(_gtfs_run, feed))
+    return {"status": "started"}
 
 
 # --------------------------------------------------------------------------- #

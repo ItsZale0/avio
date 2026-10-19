@@ -202,5 +202,134 @@ class PromosTest(unittest.TestCase):
         )
 
 
+class GtfsTest(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+
+        from app.gtfs import db as gtfsdb
+
+        self._Path = Path
+        self._tmp = tempfile.TemporaryDirectory()
+        self._old_path = gtfsdb.GTFS_DB_PATH
+        gtfsdb.GTFS_DB_PATH = Path(self._tmp.name) / "gtfs.db"
+        gtfsdb.init()
+
+    def tearDown(self):
+        from app.gtfs import db as gtfsdb
+
+        gtfsdb.GTFS_DB_PATH = self._old_path
+        self._tmp.cleanup()
+
+    def _feed_zip(self):
+        import io
+        import zipfile
+
+        files = {
+            "agency.txt": "agency_id,agency_name,agency_url,agency_timezone\n"
+            "A1,Azienda Test,https://example.org,Europe/Rome\n",
+            "stops.txt": "stop_id,stop_name,stop_lat,stop_lon\n"
+            "S1,Alfa,45.0000,11.0000\nS2,Beta,45.1000,11.1000\nS3,Gamma,45.2000,11.2000\n",
+            "routes.txt": "route_id,agency_id,route_short_name,route_long_name,route_type\n"
+            "R1,A1,101,Alfa-Beta-Gamma,3\n",
+            "trips.txt": "route_id,service_id,trip_id,trip_headsign\nR1,WK,T1,Gamma\n",
+            "stop_times.txt": "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n"
+            "T1,08:00:00,08:00:00,S1,1\nT1,08:30:00,08:30:00,S2,2\nT1,09:00:00,09:00:00,S3,3\n",
+            "calendar.txt": "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,"
+            "start_date,end_date\nWK,1,1,1,1,1,1,1,20260101,20261231\n",
+        }
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            for name, content in files.items():
+                archive.writestr(name, content)
+        path = self._Path(self._tmp.name) / "feed.zip"
+        path.write_bytes(buffer.getvalue())
+        return path
+
+    def test_import_and_direct_connection(self):
+        from app.gtfs import engine, importer
+
+        importer.import_feed("test-feed", self._feed_zip())
+        journeys = engine.find_connections(
+            feeds=["test-feed"],
+            from_lat=45.0, from_lon=11.0, to_lat=45.2, to_lon=11.2,
+            day=datetime(2026, 6, 15).date(), radius_km=3.0,
+        )
+        self.assertTrue(journeys)
+        self.assertEqual(journeys[0]["legs"][0]["dep_name"], "Alfa")
+        self.assertEqual(journeys[0]["legs"][-1]["arr_name"], "Gamma")
+
+    def test_pareto_drops_dominated(self):
+        from app.gtfs import engine
+
+        def journey(dep, arr):
+            return {
+                "transfers": 0,
+                "legs": [{"trip_id": f"t{dep}", "dep_sec": dep}, {"trip_id": f"t{arr}", "arr_sec": arr}],
+            }
+
+        kept = engine._pareto([journey(100, 200), journey(100, 300), journey(150, 250)])
+        arrivals = sorted(item["legs"][-1]["arr_sec"] for item in kept)
+        self.assertEqual(arrivals, [200, 250])
+
+    def _walk_feed_zip(self):
+        """Due linee che si incontrano solo cambiando tra due fermate a pochi metri."""
+        import io
+        import zipfile
+
+        files = {
+            "agency.txt": "agency_id,agency_name,agency_url,agency_timezone\n"
+            "A1,Azienda Test,https://example.org,Europe/Rome\n",
+            "stops.txt": "stop_id,stop_name,stop_lat,stop_lon\n"
+            "S1,Alfa,45.0000,11.0000\n"
+            "S2,Beta,45.1000,11.1000\n"
+            "S4,Beta Stazione,45.1005,11.1005\n"
+            "S5,Delta,45.2500,11.2500\n",
+            "routes.txt": "route_id,agency_id,route_short_name,route_long_name,route_type\n"
+            "R1,A1,101,Alfa-Beta,3\nR2,A1,202,Beta-Delta,3\n",
+            "trips.txt": "route_id,service_id,trip_id,trip_headsign\n"
+            "R1,WK,T1,Beta\nR2,WK,T2,Delta\n",
+            "stop_times.txt": "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n"
+            "T1,08:00:00,08:00:00,S1,1\nT1,08:30:00,08:30:00,S2,2\n"
+            "T2,08:40:00,08:40:00,S4,1\nT2,09:10:00,09:10:00,S5,2\n",
+            "calendar.txt": "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,"
+            "start_date,end_date\nWK,1,1,1,1,1,1,1,20260101,20261231\n",
+        }
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            for name, content in files.items():
+                archive.writestr(name, content)
+        path = self._Path(self._tmp.name) / "walk.zip"
+        path.write_bytes(buffer.getvalue())
+        return path
+
+    def test_transfer_between_nearby_stops(self):
+        from app.gtfs import engine, importer
+
+        importer.import_feed("walk-feed", self._walk_feed_zip())
+        journeys = engine.find_connections(
+            feeds=["walk-feed"],
+            from_lat=45.0, from_lon=11.0, to_lat=45.25, to_lon=11.25,
+            day=datetime(2026, 6, 15).date(), radius_km=2.0,
+        )
+        self.assertTrue(journeys)
+        with_change = [item for item in journeys if item["transfers"] == 1]
+        self.assertTrue(with_change)
+        second = with_change[0]["legs"][1]
+        self.assertEqual(second["dep_name"], "Beta Stazione")
+        self.assertGreater(second.get("walk_km") or 0, 0)
+
+
+class GtfsScoringTest(unittest.TestCase):
+    def test_schedule_gets_score_without_price(self):
+        ctx = make_context()
+        schedule = make_offer(
+            price=None, source="gtfs", external_id="s1", mode="bus", details={"orario_gtfs": True}
+        )
+        ranked = score_offers([schedule], ctx)
+        self.assertIsNotNone(ranked[schedule.fingerprint]["score"])
+        self.assertIn("orario", ranked[schedule.fingerprint]["badges"])
+
+
 if __name__ == "__main__":
     unittest.main()

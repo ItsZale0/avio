@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-DEFAULT_SOURCES = ["blablacar", "flixbus", "itabus", "trenitalia", "omio", "carsharing", "transit"]
+DEFAULT_SOURCES = ["blablacar", "flixbus", "itabus", "trenitalia", "omio", "carsharing", "transit", "gtfs"]
 DEFAULT_NOTIFY = ["web", "telegram"]
 
 
@@ -147,6 +147,7 @@ class SettingsIn(BaseModel):
     ai_enabled: str | None = None
     ai_model_smart: str | None = None
     ai_model_fast: str | None = None
+    gtfs_enabled: str | None = None
 
 
 class ParseRequest(BaseModel):
