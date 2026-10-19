@@ -15,7 +15,7 @@ import shutil
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
-WEB = BASE / "web"
+WEB = BASE / "static"
 
 SKIP = {"__pycache__", ".DS_Store"}
 

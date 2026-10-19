@@ -143,7 +143,8 @@ async function api(path, options = {}) {
 
 async function loadRuntimeConfig() {
   // Prova il file di config locale; su Pages contiene l'URL del backend.
-  const candidates = ["/config.json", "config.json"];
+  // Prima il path relativo: su GitHub Pages la root e' /<repo>/, non "/".
+  const candidates = ["config.json", "/config.json"];
   for (const path of candidates) {
     try {
       const response = await fetch(path, { cache: "no-store" });

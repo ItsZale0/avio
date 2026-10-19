@@ -232,9 +232,10 @@ app/
     promos.py          offerte + codici sconto dalle pagine ufficiali
     push.py            notifiche push (VAPID) per la PWA
     settings.py        impostazioni a runtime
-web/
+static/
   index.html, styles.css, app.js
-  manifest.webmanifest, sw.js, icons/    PWA
+  manifest.webmanifest, sw.js, icons/    PWA (pubblicata su GitHub Pages)
+.github/workflows/pages.yml  deploy automatico del frontend su GitHub Pages
 scripts/
   make_icons.py        genera le icone PWA
   build_pages.py       bundle per Cloudflare Pages

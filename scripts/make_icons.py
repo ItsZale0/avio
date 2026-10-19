@@ -2,7 +2,7 @@
 
 Uso: python scripts/make_icons.py
 
-Le icone sono gia' versionate in `web/icons/`: questo script serve solo se
+Le icone sono gia' versionate in `static/icons/`: questo script serve solo se
 vuoi cambiarle (colori, forma, dimensioni).
 """
 
@@ -12,7 +12,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-WEB = Path(__file__).resolve().parent.parent / "web"
+WEB = Path(__file__).resolve().parent.parent / "static"
 ICONS = WEB / "icons"
 
 BG_TOP = (16, 24, 34)
