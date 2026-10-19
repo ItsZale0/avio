@@ -1,6 +1,7 @@
 param(
     [int]$Port = 8787,
-    [switch]$NoInstall
+    [switch]$NoInstall,
+    [switch]$NoTunnel
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,9 +26,31 @@ if (-not (Test-Path ".env") -and (Test-Path ".env.example")) {
 }
 
 $env:PYTHONUTF8 = "1"
+
+# --- Agente ---------------------------------------------------------------
 Write-Host ""
 Write-Host "  Carpool Hunter -> http://127.0.0.1:$Port" -ForegroundColor Green
+
+# Il tunnel parte in un processo separato: quando lo script viene chiuso,
+# l'agente continua a girare (e' il servizio Windows che lo rilancia).
+$tunnelProcess = $null
+if (-not $NoTunnel) {
+    Write-Host "  Avvio il tunnel Cloudflare..." -ForegroundColor Cyan
+    $tunnelProcess = Start-Process -FilePath $venvPython `
+        -ArgumentList "scripts\tunnel.py", "--port", $Port `
+        -WorkingDirectory $PSScriptRoot `
+        -PassThru -WindowStyle Minimized
+}
+
 Write-Host "  Premi CTRL+C per fermare l'agente." -ForegroundColor DarkGray
 Write-Host ""
 
-& $venvPython -m uvicorn app.main:app --host 127.0.0.1 --port $Port
+try {
+    & $venvPython -m uvicorn app.main:app --host 127.0.0.1 --port $Port
+}
+finally {
+    if ($tunnelProcess -and -not $tunnelProcess.HasExited) {
+        Write-Host "Chiudo il tunnel..." -ForegroundColor DarkGray
+        Stop-Process -Id $tunnelProcess.Id -Force -ErrorAction SilentlyContinue
+    }
+}

@@ -125,12 +125,20 @@ const MODE_COLOR = {
 const MAX_MAP_OFFERS = 40;
 
 async function api(path, options = {}) {
-  const response = await fetch(API_BASE + path, {
-    headers: { "Content-Type": "application/json" },
-    // La sessione vive in un cookie HttpOnly: va sempre mandato.
-    credentials: "include",
-    ...options,
-  });
+  let response;
+  try {
+    response = await fetch(API_BASE + path, {
+      headers: { "Content-Type": "application/json" },
+      // La sessione vive in un cookie HttpOnly: va sempre mandato.
+      credentials: "include",
+      ...options,
+    });
+  } catch (error) {
+    // Rete irraggiungibile: il tunnel e' probabilmente stato riavviato
+    // con un URL nuovo. Si ricarica la pagina per riprovare.
+    scheduleApiRetry();
+    throw new Error("Server non raggiungibile");
+  }
   if (response.status === 401) {
     // Sessione scaduta o assente: torna alla schermata di accesso.
     showAuthScreen();
@@ -151,7 +159,11 @@ async function api(path, options = {}) {
 async function loadRuntimeConfig() {
   // Prova il file di config locale; su Pages contiene l'URL del backend.
   // Prima il path relativo: su GitHub Pages la root e' /<repo>/, non "/".
-  const candidates = ["config.json", "/config.json"];
+  // `cache: "no-store"` e i query param servono a non prendere una copia
+  // vecchia: se il tunnel e' stato riavviato, l'URL e' cambiato e quello
+  // precedente non porta piu' da nessuna parte.
+  const stamp = Date.now();
+  const candidates = [`config.json?ts=${stamp}`, "/config.json"];
   for (const path of candidates) {
     try {
       const response = await fetch(path, { cache: "no-store" });
@@ -164,6 +176,17 @@ async function loadRuntimeConfig() {
       return;
     } catch (_) { /* prova il successivo */ }
   }
+}
+
+/* Se l'API non risponde, il tunnel potrebbe essere stato riavviato con un
+   URL nuovo: si ricarica la pagina per prendere il config.json fresco. */
+let _apiRetry = 0;
+function scheduleApiRetry() {
+  if (_apiRetry > 0) return;
+  _apiRetry = setTimeout(() => {
+    _apiRetry = 0;
+    window.location.reload();
+  }, 4000);
 }
 
 function toast(message, kind = "") {

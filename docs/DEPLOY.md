@@ -10,7 +10,31 @@ affittare, nessun IP pubblico, nessuna porta aperta sul router.
                                     ┌─────────────┴─────────────┐
                                     │                           │
                               PWA sul telefono        (opzionale) UI su
-                              installata in home      Cloudflare Pages
+                              installata in home      GitHub Pages
+```
+
+## 0. Avvio con un comando
+
+`start.bat` (o `start.ps1`) avvia **agente + tunnel** insieme:
+
+```powershell
+start.bat
+```
+
+Il tunnel "quick" assegna un URL nuovo a ogni avvio. Per questo
+`scripts/tunnel.py`, appena avviato, fa tre cose da solo:
+
+1. scrive l'URL pubblico in `.env` (`CARPOOL_PUBLIC_URL`);
+2. aggiorna la variabile GitHub `CARPOOL_API_BASE`, cosi' la dashboard su
+   GitHub Pages punta al tunnel giusto;
+3. rilancia il deploy di GitHub Pages, che rigenera `config.json`.
+
+Serve un token GitHub con scope `repo` nella variabile d'ambiente
+`GITHUB_TOKEN` (senza, i passi 2-3 vengono saltati e basta riavviare il
+deploy a mano dalla tab *Actions*).
+
+```powershell
+setx GITHUB_TOKEN "ghp_..."
 ```
 
 ## 1. Avvia l'agente automaticamente
@@ -26,6 +50,13 @@ Perche' l'agente cerchi ogni ora anche quando non lo lanci a mano:
    - Arguments: `-NoProfile -ExecutionPolicy Bypass -File "C:\percorso\start.ps1" -NoInstall`
    - Start in: `C:\percorso\`
 5. *Settings*: spunta *If the task fails, restart every 1 minute*.
+
+Oppure, in PowerShell **come amministratore**:
+
+```powershell
+python scripts\install_autostart.py            # crea la task
+python scripts\install_autostart.py --remove   # la toglie
+```
 
 Alternativa rapida: crea un collegamento a `start.bat` dentro
 `shell:startup` (Win+R → `shell:startup`).
@@ -89,6 +120,11 @@ backend. Si imposta con la variabile di repository **`CARPOOL_API_BASE`**
 
 Il workflow la copia in `config.json` dentro l'artefatto. Senza questa variabile
 la pagina si apre ma resta "offline", perche' non sa a chi chiedere i dati.
+
+**Con il tunnel "quick" l'URL cambia a ogni avvio**: per questo
+`scripts/tunnel.py` aggiorna la variabile e rilancia il deploy da solo
+(vedi sezione 0). Con un tunnel con nome e dominio tuo l'URL e' fisso e
+non serve fare nulla.
 
 Nel backend, in `.env`, consenti l'origine di Pages:
 

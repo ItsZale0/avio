@@ -18,6 +18,12 @@ Al primo avvio crea `.venv`, installa le dipendenze e apre il server su:
 
 **http://127.0.0.1:8787**
 
+Lo script avvia anche il **tunnel Cloudflare**, che rende l'app raggiungibile
+dal telefono. Il tunnel "quick" assegna un URL nuovo a ogni avvio: per questo
+`scripts/tunnel.py` aggiorna da solo il `.env`, la variabile GitHub
+`CARPOOL_API_BASE` e rilancia il deploy di GitHub Pages. Per farlo serve un
+token GitHub con scope `repo` in `GITHUB_TOKEN` (`setx GITHUB_TOKEN "ghp_..."`).
+
 Poi:
 
 1. **Crea il tuo account**: al primo avvio compare il form di registrazione.
@@ -257,8 +263,10 @@ Dockerfile            immagine per il deploy su un server/container
 scripts/
   make_icons.py        genera le icone PWA
   build_pages.py       bundle per Cloudflare Pages
-  export_deploy.py     esporta il database per il server
+  export_deploy.py     esporta il database per un server
   install_oracle.sh    installazione completa su VM Ubuntu (Oracle Cloud)
+  tunnel.py            tunnel Cloudflare + allineamento automatico di Pages
+  install_autostart.py avvio automatico dell'agente (Task Scheduler)
 data/                  database SQLite (generato)
 docs/DESIGN.md         architettura e roadmap
 docs/DEPLOY.md         telefono, tunnel, Pages, GitHub
