@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0b1220" />
+  <title>Carpool Hunter</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="ambient"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">🚗</span>
+      <div>
+        <h1>Carpool Hunter</h1>
+        <p>passaggi, bus e carsharing · Italia</p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div class="agent-pill" id="agentStatus" title="Stato dell'agente">
+        <span class="dot"></span><span id="agentText">connessione…</span>
+      </div>
+      <div class="ai-pill" id="aiStatus" title="Intelligenza Groq">
+        <span class="dot"></span><span id="aiText">AI…</span>
+      </div>
+      <button class="btn icon hidden" id="btnInstall" title="Installa l'app">⬇️</button>
+      <button class="btn primary" id="btnNew">+ Nuova ricerca</button>
+      <button class="btn icon" id="btnAlerts" title="Avvisi">
+        🔔<span class="badge hidden" id="alertBadge">0</span>
+      </button>
+      <button class="btn icon" id="btnSettings" title="Impostazioni">⚙️</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <span>Ricerche</span>
+        <span class="count" id="watchCount">0</span>
+      </div>
+      <div class="watch-list" id="watchList"></div>
+      <div class="sidebar-foot">
+        <span class="hint">L'agente controlla ogni ora le fonti attive e ti avvisa solo quando trova qualcosa di nuovo.</span>
+      </div>
+    </aside>
+
+    <section class="content">
+      <div class="empty" id="emptyState">
+        <div class="empty-emoji">🛣️</div>
+        <h2>Nessuna ricerca ancora</h2>
+        <p>Dimmi da dove parti, dove devi arrivare e entro quando. Ci pensa l'agente a cercare ogni ora sulle fonti che scegli.</p>
+        <button class="btn primary big" id="btnEmptyNew">Crea la prima ricerca</button>
+      </div>
+
+      <div id="detail" class="detail hidden">
+        <div class="detail-head">
+          <div class="detail-title">
+            <div class="route-line">
+              <h2 id="watchTitle">—</h2>
+              <span class="pill" id="watchState">attiva</span>
+            </div>
+            <p class="muted" id="watchSub">—</p>
+          </div>
+          <div class="detail-actions">
+            <button class="btn" id="btnRunNow">▶ Cerca ora</button>
+            <button class="btn ghost" id="btnToggleWatch">Pausa</button>
+            <button class="btn ghost" id="btnEditWatch">Modifica</button>
+            <button class="btn danger-ghost" id="btnDeleteWatch">Elimina</button>
+          </div>
+        </div>
+
+        <div class="stat-grid">
+          <div class="stat"><span class="stat-label">Miglior prezzo</span><strong id="statBest">—</strong><small id="statBestNote">&nbsp;</small></div>
+          <div class="stat"><span class="stat-label">Offerte attive</span><strong id="statCount">—</strong><small id="statCountNote">&nbsp;</small></div>
+          <div class="stat"><span class="stat-label">Ultima ricerca</span><strong id="statLastRun">—</strong><small id="statLastRunNote">&nbsp;</small></div>
+          <div class="stat"><span class="stat-label">Prossima ricerca</span><strong id="statNextRun">—</strong><small id="statNextRunNote">&nbsp;</small></div>
+        </div>
+
+        <div class="plan-card hidden" id="planCard"></div>
+        <div class="questions-card hidden" id="questionsCard"></div>
+
+        <div class="tabs" id="tabs">
+          <button class="tab active" data-tab="best">Migliori</button>
+          <button class="tab" data-tab="all">Tutte <span class="tabcount" id="countAll"></span></button>
+          <button class="tab" data-tab="nearby">Carsharing &amp; vicino</button>
+          <button class="tab" data-tab="links">Link utili</button>
+          <button class="tab" data-tab="runs">Cronologia</button>
+        </div>
+
+        <div class="tab-panel" id="tabPanel">
+          <div class="loading">Caricamento…</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===================== MODALE RICERCA ===================== -->
+  <div class="modal-backdrop hidden" id="watchModal">
+    <div class="modal">
+      <div class="modal-head">
+        <h3 id="watchModalTitle">Nuova ricerca</h3>
+        <button class="btn icon ghost" data-close="watchModal">✕</button>
+      </div>
+      <form id="watchForm" class="modal-body">
+        <div class="ai-box">
+          <label for="fAiText">Descrivi il viaggio a parole (facoltativo)</label>
+          <textarea id="fAiText" rows="2" placeholder="Es. Da Thiene a Trento, devo arrivare entro domani alle 11, budget 20€, ho una valigia"></textarea>
+          <div class="ai-box-actions">
+            <button type="button" class="btn primary small" id="btnAiFill">✨ Compila con l'AI</button>
+            <small class="field-hint" id="aiFillHint"></small>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="fName">Nome (facoltativo)</label>
+          <input id="fName" name="name" placeholder="Es. Weekend a Roma" maxlength="120" />
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label for="fFrom">Da <span class="req">*</span></label>
+            <div class="input-row">
+              <input id="fFrom" name="from_place" required placeholder="Milano" />
+              <button type="button" class="btn ghost tiny" data-geo="fFrom">📍</button>
+            </div>
+            <small class="field-hint" id="geoFrom"></small>
+          </div>
+          <div class="field">
+            <label for="fTo">A <span class="req">*</span></label>
+            <div class="input-row">
+              <input id="fTo" name="to_place" required placeholder="Roma" />
+              <button type="button" class="btn ghost tiny" data-geo="fTo">📍</button>
+            </div>
+            <small class="field-hint" id="geoTo"></small>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label for="fDepart">Partenza non prima di</label>
+            <input id="fDepart" name="depart_after" type="datetime-local" />
+          </div>
+          <div class="field">
+            <label for="fArrive">Arrivo entro <span class="req">*</span></label>
+            <input id="fArrive" name="arrive_by" type="datetime-local" required />
+          </div>
+        </div>
+
+        <div class="grid-3">
+          <div class="field">
+            <label for="fPrice">Budget max (€)</label>
+            <input id="fPrice" name="max_price" type="number" min="0" step="0.5" placeholder="es. 30" />
+          </div>
+          <div class="field">
+            <label for="fPassengers">Passeggeri</label>
+            <input id="fPassengers" name="passengers" type="number" min="1" max="8" value="1" />
+          </div>
+          <div class="field">
+            <label for="fRadius">Raggio ritrovo (km)</label>
+            <input id="fRadius" name="radius_km" type="number" min="0.5" max="100" step="0.5" value="5" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Fonti da interrogare</label>
+          <div class="chips" id="sourcesBox"></div>
+          <small class="field-hint">Le fonti senza API vengono aperte come link di ricerca pronti.</small>
+        </div>
+
+        <div class="field">
+          <label>Avvisami su</label>
+          <div class="chips" id="notifyBox">
+            <label class="chip"><input type="checkbox" name="notify" value="web" checked /> Dashboard</label>
+            <label class="chip"><input type="checkbox" name="notify" value="telegram" /> Telegram</label>
+            <label class="chip"><input type="checkbox" name="notify" value="email" /> Email</label>
+            <label class="chip"><input type="checkbox" name="notify" value="desktop" /> Notifica desktop</label>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="fInterval">Ogni quanto cercare</label>
+          <select id="fInterval" name="interval_min">
+            <option value="15">15 minuti</option>
+            <option value="30">30 minuti</option>
+            <option value="60" selected>Ogni ora</option>
+            <option value="120">Ogni 2 ore</option>
+            <option value="180">Ogni 3 ore</option>
+            <option value="360">Ogni 6 ore</option>
+          </select>
+        </div>
+
+        <div class="form-error hidden" id="watchError"></div>
+
+        <div class="modal-foot">
+          <button type="button" class="btn ghost" data-close="watchModal">Annulla</button>
+          <button type="submit" class="btn primary" id="btnSaveWatch">Avvia ricerca</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===================== MODALE IMPOSTAZIONI ===================== -->
+  <div class="modal-backdrop hidden" id="settingsModal">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>Impostazioni</h3>
+        <button class="btn icon ghost" data-close="settingsModal">✕</button>
+      </div>
+      <form id="settingsForm" class="modal-body">
+        <div class="section-title">Telegram</div>
+        <div class="grid-2">
+          <div class="field">
+            <label for="sTelegramToken">Bot token</label>
+            <input id="sTelegramToken" name="telegram_token" type="password" placeholder="123456:ABC…" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="sTelegramChat">Chat ID</label>
+            <input id="sTelegramChat" name="telegram_chat_id" placeholder="es. 123456789" />
+          </div>
+        </div>
+        <button type="button" class="btn ghost" id="btnTestTelegram">Invia messaggio di prova</button>
+        <small class="field-hint" id="telegramTestResult"></small>
+
+        <div class="section-title">Email</div>
+        <div class="grid-2">
+          <div class="field"><label for="sSmtpHost">Server SMTP</label><input id="sSmtpHost" name="smtp_host" placeholder="smtp.gmail.com" /></div>
+          <div class="field"><label for="sSmtpPort">Porta</label><input id="sSmtpPort" name="smtp_port" placeholder="587" /></div>
+          <div class="field"><label for="sSmtpUser">Utente</label><input id="sSmtpUser" name="smtp_user" placeholder="tu@email.it" autocomplete="off" /></div>
+          <div class="field"><label for="sSmtpPassword">Password / app password</label><input id="sSmtpPassword" name="smtp_password" type="password" autocomplete="new-password" /></div>
+          <div class="field"><label for="sSmtpFrom">Mittente</label><input id="sSmtpFrom" name="smtp_from" placeholder="tu@email.it" /></div>
+          <div class="field"><label for="sSmtpTo">Destinatario</label><input id="sSmtpTo" name="smtp_to" placeholder="tu@email.it" /></div>
+        </div>
+        <div class="field inline-field">
+          <label class="chip"><input type="checkbox" id="sSmtpTls" checked /> STARTTLS</label>
+          <button type="button" class="btn ghost" id="btnTestEmail">Invia email di prova</button>
+        </div>
+        <small class="field-hint" id="emailTestResult"></small>
+
+        <div class="section-title">Agente</div>
+        <div class="grid-2">
+          <div class="field"><label for="sQuietFrom">Silenzio dalle</label><input id="sQuietFrom" name="quiet_from" type="time" /></div>
+          <div class="field"><label for="sQuietTo">Silenzio fino alle</label><input id="sQuietTo" name="quiet_to" type="time" /></div>
+        </div>
+        <div class="field">
+          <label class="chip"><input type="checkbox" id="sNotifyEnabled" checked /> Notifiche push attive</label>
+        </div>
+
+        <div class="section-title">Intelligenza (Groq)</div>
+        <div class="field">
+          <label for="sGroqKey">Chiave API Groq (gratuita su console.groq.com)</label>
+          <input id="sGroqKey" name="groq_api_key" type="password" autocomplete="off" />
+          <small class="field-hint">Senza chiave restano attivi ricerca, avvisi e piani automatici (motore a punteggi), ma niente spiegazioni né domande intelligenti.</small>
+        </div>
+        <div class="grid-2">
+          <div class="field"><label for="sAiSmart">Modello ragionamento</label><input id="sAiSmart" name="ai_model_smart" placeholder="llama-3.3-70b-versatile" /></div>
+          <div class="field"><label for="sAiFast">Modello veloce</label><input id="sAiFast" name="ai_model_fast" placeholder="llama-3.1-8b-instant" /></div>
+        </div>
+        <div class="field inline-field">
+          <label class="chip"><input type="checkbox" id="sAiEnabled" checked /> Intelligenza attiva</label>
+          <button type="button" class="btn ghost" id="btnTestAi">Prova AI</button>
+          <button type="button" class="btn ghost" id="btnAiModels">Elenca modelli</button>
+        </div>
+        <small class="field-hint" id="aiTestResult"></small>
+
+        <div class="section-title">BlaBlaCar API</div>
+        <div class="field">
+          <label for="sBlaKey">Chiave API (gratuita su dev.blablacar.com)</label>
+          <input id="sBlaKey" name="blablacar_api_key" type="password" autocomplete="off" />
+          <small class="field-hint">Senza chiave restano disponibili i link di ricerca diretti.</small>
+        </div>
+
+        <div class="form-error hidden" id="settingsError"></div>
+        <div class="modal-foot">
+          <button type="button" class="btn ghost" data-close="settingsModal">Annulla</button>
+          <button type="submit" class="btn primary">Salva impostazioni</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===================== DRAWER AVVISI ===================== -->
+  <div class="drawer-backdrop hidden" id="alertsDrawer">
+    <aside class="drawer">
+      <div class="drawer-head">
+        <h3>Avvisi</h3>
+        <div>
+          <button class="btn ghost tiny" id="btnReadAll">Segna letti</button>
+          <button class="btn icon ghost" data-close="alertsDrawer">✕</button>
+        </div>
+      </div>
+      <div class="drawer-body" id="alertsList"></div>
+    </aside>
+  </div>
+
+  <div class="toasts" id="toasts"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

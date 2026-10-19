@@ -1,0 +1,1201 @@
+/* Carpool Hunter - frontend vanilla JS */
+
+const state = {
+  watches: [],
+  selectedId: null,
+  watch: null,
+  offers: [],
+  links: [],
+  runs: [],
+  alerts: [],
+  sources: [],
+  settings: {},
+  ai: {},
+  plan: null,
+  planAlternatives: [],
+  questions: [],
+  tab: "best",
+  editingId: null,
+  lastAlertId: Number(localStorage.getItem("ch_last_alert") || 0),
+  booted: false,
+  polling: null,
+};
+
+// Base dell'API: vuota quando frontend e backend sono sullo stesso host.
+// Su Cloudflare Pages punta al tunnel (es. https://carpool.miodominio.it).
+let API_BASE = "";
+
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+const esc = (value) =>
+  String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[ch]));
+
+const euro = (value) =>
+  value == null ? "—" : "€" + Number(value).toFixed(2).replace(".", ",");
+
+const dtf = new Intl.DateTimeFormat("it-IT", {
+  weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
+});
+const dfShort = new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "short" });
+const tf = new Intl.DateTimeFormat("it-IT", { hour: "2-digit", minute: "2-digit" });
+
+function fmtDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return isNaN(d) ? "—" : dtf.format(d);
+}
+function fmtDay(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return isNaN(d) ? "—" : dfShort.format(d);
+}
+function fmtTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return isNaN(d) ? "—" : tf.format(d);
+}
+function fmtDuration(minutes) {
+  if (!minutes) return "";
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
+  return h ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m`;
+}
+function relative(iso) {
+  if (!iso) return "—";
+  const diff = new Date(iso).getTime() - Date.now();
+  if (isNaN(diff)) return "—";
+  const mins = Math.round(diff / 60000);
+  if (Math.abs(mins) < 1) return "adesso";
+  if (mins > 0) {
+    if (mins < 60) return `tra ${mins} min`;
+    const hours = Math.round(mins / 60);
+    if (hours < 24) return `tra ${hours} h`;
+    return `tra ${Math.round(hours / 24)} g`;
+  }
+  const past = Math.abs(mins);
+  if (past < 60) return `${past} min fa`;
+  const hours = Math.round(past / 60);
+  if (hours < 24) return `${hours} h fa`;
+  return `${Math.round(hours / 24)} g fa`;
+}
+function toLocalInput(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+const BADGES = {
+  cheapest: "Più economico",
+  best_value: "Miglior scelta",
+  fastest: "Più veloce",
+  closest: "Più vicino",
+  price_drop: "Ribasso",
+  under_budget: "Sotto budget",
+  estimate: "Stima",
+};
+
+const MODE_LABEL = {
+  rideshare: "Passaggio",
+  bus: "Autobus",
+  train: "Treno",
+  carsharing: "Carsharing",
+  transit: "Mezzi pubblici",
+};
+
+async function api(path, options = {}) {
+  const response = await fetch(API_BASE + path, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const data = await response.json();
+      detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail ?? data);
+    } catch (_) { /* ignore */ }
+    throw new Error(detail || `Errore ${response.status}`);
+  }
+  if (response.status === 204) return null;
+  return response.json();
+}
+
+async function loadRuntimeConfig() {
+  // Prova il file di config locale; su Pages contiene l'URL del backend.
+  const candidates = ["/config.json", "config.json"];
+  for (const path of candidates) {
+    try {
+      const response = await fetch(path, { cache: "no-store" });
+      if (!response.ok) continue;
+      const config = await response.json();
+      if (config && typeof config.apiBase === "string" && config.apiBase) {
+        API_BASE = config.apiBase.replace(/\/$/, "");
+        return;
+      }
+      return;
+    } catch (_) { /* prova il successivo */ }
+  }
+}
+
+function toast(message, kind = "") {
+  const el = document.createElement("div");
+  el.className = `toast ${kind}`;
+  el.textContent = message;
+  $("#toasts").appendChild(el);
+  setTimeout(() => el.remove(), 5200);
+}
+
+function openModal(id) { $("#" + id).classList.remove("hidden"); }
+function closeModal(id) { $("#" + id).classList.add("hidden"); }
+
+/* ------------------------------------------------------------------ */
+/* Bootstrap                                                          */
+/* ------------------------------------------------------------------ */
+document.addEventListener("DOMContentLoaded", async () => {
+  bindEvents();
+  registerServiceWorker();
+  try {
+    await loadRuntimeConfig();
+    const status = await loadStatus();
+    state.sources = status.sources || [];
+    await Promise.all([loadWatches(), loadSettings()]);
+    if (state.watches.length) {
+      await selectWatch(state.watches[0].id);
+    } else {
+      showEmpty(true);
+    }
+    await loadAlerts(true);
+    state.booted = true;
+    startPolling();
+  } catch (error) {
+    toast("Impossibile contattare il server: " + error.message, "error");
+    $("#agentStatus").classList.add("offline");
+    $("#agentText").textContent = "offline";
+  }
+});
+
+function bindEvents() {
+  $("#btnNew").addEventListener("click", () => openWatchModal(null));
+  $("#btnEmptyNew").addEventListener("click", () => openWatchModal(null));
+  $("#btnSettings").addEventListener("click", openSettings);
+  $("#btnAlerts").addEventListener("click", () => { openModal("alertsDrawer"); loadAlerts(false); });
+  $("#btnReadAll").addEventListener("click", markAllRead);
+
+  $("#watchList").addEventListener("click", (event) => {
+    const item = event.target.closest(".watch-item");
+    if (item) selectWatch(Number(item.dataset.id));
+  });
+
+  $("#tabs").addEventListener("click", (event) => {
+    const button = event.target.closest(".tab");
+    if (!button) return;
+    state.tab = button.dataset.tab;
+    $$(".tab").forEach((tab) => tab.classList.toggle("active", tab === button));
+    renderTab();
+  });
+
+  $("#btnRunNow").addEventListener("click", runNow);
+  $("#btnToggleWatch").addEventListener("click", toggleWatch);
+  $("#btnEditWatch").addEventListener("click", () => openWatchModal(state.watch));
+  $("#btnDeleteWatch").addEventListener("click", deleteWatch);
+
+  $("#watchForm").addEventListener("submit", submitWatch);
+  $("#settingsForm").addEventListener("submit", submitSettings);
+  $("#btnTestTelegram").addEventListener("click", testTelegram);
+  $("#btnTestEmail").addEventListener("click", testEmail);
+  $("#btnAiFill").addEventListener("click", aiFill);
+  $("#btnTestAi").addEventListener("click", testAi);
+  $("#btnAiModels").addEventListener("click", listAiModels);
+
+  $("#questionsCard").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-answer]");
+    if (!button) return;
+    answerQuestion(Number(button.dataset.qid), button.dataset.answer);
+  });
+
+  document.addEventListener("click", (event) => {
+    const closer = event.target.closest("[data-close]");
+    if (closer) closeModal(closer.dataset.close);
+    const geoButton = event.target.closest("[data-geo]");
+    if (geoButton) checkGeo(geoButton.dataset.geo);
+    if (event.target.classList.contains("modal-backdrop")) {
+      event.target.classList.add("hidden");
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      $$(".modal-backdrop, .drawer-backdrop").forEach((el) => el.classList.add("hidden"));
+    }
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) refreshAll();
+  });
+}
+
+function startPolling() {
+  if (state.polling) clearInterval(state.polling);
+  state.polling = setInterval(() => {
+    if (!document.hidden) refreshAll();
+  }, 30000);
+}
+
+async function refreshAll() {
+  if (!state.booted) return;
+  try {
+    await loadStatus();
+    await loadWatches();
+    if (state.selectedId) await loadDetail(state.selectedId);
+    await loadAlerts(false);
+  } catch (_) {
+    /* un giro fallito non deve rompere la UI */
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Stato agente                                                       */
+/* ------------------------------------------------------------------ */
+async function loadStatus() {
+  const status = await api("/api/status");
+  const running = status.scheduler?.running;
+  $("#agentStatus").classList.toggle("offline", !running);
+  const active = status.active_watches ?? 0;
+  $("#agentText").textContent = running
+    ? `agente attivo · ${active} ${active === 1 ? "ricerca" : "ricerche"}`
+    : "agente in pausa";
+
+  const ai = status.ai || {};
+  state.ai = ai;
+  const aiPill = $("#aiStatus");
+  if (aiPill) {
+    aiPill.classList.toggle("off", !ai.active);
+    $("#aiText").textContent = ai.active
+      ? `AI ${shortModel(ai.model_smart)}`
+      : ai.configured
+        ? "AI disattivata"
+        : "AI non configurata";
+  }
+  if (status.sources && !state.sources.length) state.sources = status.sources;
+  return status;
+}
+
+function shortModel(model) {
+  if (!model) return "";
+  const name = String(model).split("/").pop();
+  return name.length > 18 ? name.slice(0, 17) + "…" : name;
+}
+
+/* ------------------------------------------------------------------ */
+/* Ricerche                                                           */
+/* ------------------------------------------------------------------ */
+async function loadWatches() {
+  state.watches = await api("/api/watches");
+  $("#watchCount").textContent = state.watches.length;
+  renderWatchList();
+}
+
+function renderWatchList() {
+  const box = $("#watchList");
+  if (!state.watches.length) {
+    box.innerHTML = `<div class="hint" style="padding:10px 8px">Nessuna ricerca. Creane una con “+ Nuova ricerca”.</div>`;
+    return;
+  }
+  box.innerHTML = state.watches.map((watch) => {
+    const active = watch.id === state.selectedId;
+    const route = `${esc(watch.from_place)} <span class="arrow">→</span> ${esc(watch.to_place)}`;
+    const price = watch.best_price != null ? euro(watch.best_price) : "—";
+    return `
+      <div class="watch-item ${active ? "active" : ""} ${watch.active ? "" : "paused"}" data-id="${watch.id}">
+        <div class="watch-route"><span class="watch-status-dot"></span>${route}</div>
+        ${watch.name ? `<div class="watch-name">${esc(watch.name)}</div>` : ""}
+        <div class="watch-meta">
+          <span>entro ${fmtDay(watch.arrive_by)}</span>
+          <span class="price">${price}</span>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+async function selectWatch(id) {
+  state.selectedId = id;
+  renderWatchList();
+  await loadDetail(id);
+  state.tab = "best";
+  $$(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === "best"));
+}
+
+async function loadDetail(id) {
+  const [watch, offers, links, runs] = await Promise.all([
+    api(`/api/watches/${id}`),
+    api(`/api/watches/${id}/offers`),
+    api(`/api/watches/${id}/links`),
+    api(`/api/watches/${id}/runs`),
+  ]);
+  state.watch = watch;
+  state.offers = offers;
+  state.links = links.links || [];
+  state.runs = runs;
+  try {
+    const plan = await api(`/api/watches/${id}/plan`);
+    state.plan = plan.plan || null;
+    state.planAlternatives = plan.alternatives || [];
+    state.questions = plan.questions || [];
+  } catch (_) {
+    state.plan = null;
+    state.planAlternatives = [];
+    state.questions = [];
+  }
+  showEmpty(false);
+  renderDetail();
+  renderTab();
+}
+
+function showEmpty(empty) {
+  $("#emptyState").classList.toggle("hidden", !empty);
+  $("#detail").classList.toggle("hidden", empty);
+}
+
+function renderDetail() {
+  const watch = state.watch;
+  if (!watch) return;
+
+  $("#watchTitle").textContent = `${watch.from_place} → ${watch.to_place}`;
+  const statePill = $("#watchState");
+  statePill.textContent = watch.active ? "attiva" : "in pausa";
+  statePill.classList.toggle("off", !watch.active);
+
+  const sources = (watch.sources || []).map((s) => {
+    const meta = state.sources.find((item) => item.id === s);
+    return meta ? meta.label.replace(" (dati simulati)", "") : s;
+  }).join(", ");
+  $("#watchSub").textContent =
+    `entro ${fmtDate(watch.arrive_by)} · budget ${watch.max_price != null ? euro(watch.max_price) : "libero"} · ` +
+    `ogni ${watch.interval_min} min · raggio ${watch.radius_km} km · ${sources}`;
+
+  $("#btnToggleWatch").textContent = watch.active ? "Pausa" : "Riprendi";
+
+  const priced = state.offers.filter((o) => o.price != null && !o.price_is_estimate);
+  const best = priced.length ? Math.min(...priced.map((o) => o.price)) : null;
+  const bestOffer = priced.find((o) => o.price === best);
+  $("#statBest").textContent = best != null ? euro(best) : "—";
+  $("#statBestNote").textContent = bestOffer ? (bestOffer.operator || bestOffer.source) : "in attesa di offerte";
+
+  $("#statCount").textContent = state.offers.length;
+  const transitCount = state.offers.filter((o) => o.mode === "transit").length;
+  $("#statCountNote").textContent = transitCount ? `${transitCount} combinazioni mezzi` : "offerte attive";
+
+  $("#statLastRun").textContent = watch.last_run_at ? relative(watch.last_run_at) : "mai";
+  const lastRun = state.runs[0];
+  $("#statLastRunNote").textContent = lastRun
+    ? `${lastRun.offers_found} offerte · ${lastRun.status === "ok" ? "ok" : lastRun.status}`
+    : "nessuna esecuzione";
+
+  $("#statNextRun").textContent = watch.active ? relative(watch.next_run_at) : "—";
+  $("#statNextRunNote").textContent = watch.active ? "controllo automatico" : "ricerca in pausa";
+
+  $("#countAll").textContent = state.offers.length;
+  renderPlan();
+  renderQuestions();
+}
+
+/* ------------------------------------------------------------------ */
+/* Piano AI + domande                                                 */
+/* ------------------------------------------------------------------ */
+function renderPlan() {
+  const box = $("#planCard");
+  const plan = state.plan;
+  if (!plan) {
+    box.classList.add("hidden");
+    box.innerHTML = "";
+    return;
+  }
+  box.classList.remove("hidden");
+
+  const steps = (plan.steps || []).map((step) => {
+    const dep = step.depart_at ? fmtTime(step.depart_at) : "—";
+    const arr = step.arrive_at ? fmtTime(step.arrive_at) : "—";
+    const day = step.depart_at ? fmtDay(step.depart_at) : "";
+    const price = step.price != null ? euro(step.price) : "da verificare";
+    const link = step.deeplink
+      ? ` <a href="${esc(step.deeplink)}" target="_blank" rel="noreferrer">apri ↗</a>`
+      : "";
+    return `
+      <div class="plan-step">
+        <span class="idx">${step.leg || 1}</span>
+        <div class="ps-main">
+          <b>${esc(step.operator || step.source || "")}</b>
+          <small>${esc(MODE_LABEL[step.mode] || step.mode || "")} · ${dep} → ${arr} ${day} ·
+            ${esc(step.pickup_name || "")} → ${esc(step.dropoff_name || "")}${step.price_is_estimate ? " · stima" : ""}</small>
+        </div>
+        <span class="ps-price">${price}${link}</span>
+      </div>`;
+  }).join("");
+
+  const duration = fmtDuration(plan.total_duration_min);
+  const confidence = plan.confidence != null ? Math.round(Number(plan.confidence) * 100) : null;
+  const watchouts = (plan.watchouts || []).map((w) => `<span>⚠️ ${esc(w)}</span>`).join("");
+  const alts = state.planAlternatives.length
+    ? `<div class="plan-alts">
+         <h4>Alternative più economiche</h4>
+         ${state.planAlternatives.map((alt) => `
+           <div class="plan-alt">
+             <span>${esc(alt.title || "")} ${alt.total_duration_min ? "· " + fmtDuration(alt.total_duration_min) : ""}</span>
+             <b>${alt.total_price != null ? euro(alt.total_price) : "—"}</b>
+           </div>`).join("")}
+       </div>`
+    : "";
+
+  box.innerHTML = `
+    <div class="plan-head">
+      <div>
+        <div class="eyebrow">${plan.ai ? "🧠 Piano AI · più economico" : "🧮 Piano più economico"}</div>
+        <div class="plan-title">${esc(plan.title || "")}</div>
+      </div>
+      <div class="plan-price">
+        <strong>${plan.total_price != null ? euro(plan.total_price) : "—"}</strong>
+        <small>costo totale${plan.ai && confidence != null ? ` · fiducia ${confidence}%` : ""}</small>
+      </div>
+    </div>
+    <div class="plan-explanation">${esc(plan.explanation || "")}</div>
+    ${steps ? `<div class="plan-steps">${steps}</div>` : ""}
+    <div class="plan-meta">
+      ${plan.arrive_at ? `<span>🏁 arrivo ${fmtDate(plan.arrive_at)}</span>` : ""}
+      ${duration ? `<span>⏱ ${duration}</span>` : ""}
+      ${plan.transfer_km != null ? `<span>🚶 cambio ${plan.transfer_km} km</span>` : ""}
+      ${plan.kind === "combo" ? `<span>🔁 ${plan.steps.length} tratte</span>` : "<span>🎯 tratta diretta</span>"}
+    </div>
+    ${watchouts ? `<div class="plan-watchouts">${watchouts}</div>` : ""}
+    ${alts}`;
+}
+
+function renderQuestions() {
+  const box = $("#questionsCard");
+  const questions = state.questions || [];
+  if (!questions.length) {
+    box.classList.add("hidden");
+    box.innerHTML = "";
+    return;
+  }
+  box.classList.remove("hidden");
+  box.innerHTML = `
+    <h4>❓ L'agente ha bisogno di un'informazione</h4>
+    ${questions.map((question) => {
+      const options = (question.options || []).map((option) =>
+        `<button class="btn" data-qid="${question.id}" data-answer="${esc(option.id)}">${esc(option.label)}</button>`
+      ).join("");
+      const skip = `<button class="btn ghost" data-qid="${question.id}" data-answer="skip">Salta</button>`;
+      return `<div class="q-item">
+        <p>${esc(question.text)}</p>
+        <div class="q-options">${options}${skip}</div>
+      </div>`;
+    }).join("")}`;
+}
+
+async function answerQuestion(questionId, answer) {
+  try {
+    const endpoint = answer === "skip" ? "skip" : "answer";
+    const options = answer === "skip"
+      ? { method: "POST" }
+      : { method: "POST", body: JSON.stringify({ answer, source: "web" }) };
+    await api(`/api/questions/${questionId}/${endpoint}`, options);
+    toast("Grazie: aggiorno la ricerca.");
+    await refreshAll();
+    setTimeout(refreshAll, 4000);
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+
+function renderTab() {
+  const panel = $("#tabPanel");
+  if (!state.watch) return;
+  if (state.tab === "best") return renderBest(panel);
+  if (state.tab === "all") return renderAll(panel);
+  if (state.tab === "nearby") return renderNearby(panel);
+  if (state.tab === "links") return renderLinks(panel);
+  if (state.tab === "runs") return renderRuns(panel);
+}
+
+function isInitialRun() {
+  if (state.offers.length < 2) return false;
+  const times = state.offers
+    .map((o) => (o.first_seen ? new Date(o.first_seen).getTime() : 0))
+    .filter((t) => t > 0);
+  if (!times.length) return false;
+  const spread = Math.max(...times) - Math.min(...times);
+  return spread < 5 * 60 * 1000;
+}
+
+function offerCard(offer, suppressNew = false) {
+  const badges = (offer.badges || []).filter((b) => BADGES[b]);
+  const isNew = offer.first_seen && (Date.now() - new Date(offer.first_seen).getTime() < 2 * 3600 * 1000);
+  if (isNew && !suppressNew && !badges.includes("new")) badges.unshift("new");
+
+  const tagHtml = badges.map((b) =>
+    `<span class="tag ${b === "new" ? "new" : b}">${b === "new" ? "Nuovo" : BADGES[b]}</span>`
+  ).join("");
+
+  const dep = offer.depart_at ? fmtTime(offer.depart_at) : "—";
+  const arr = offer.arrive_at ? fmtTime(offer.arrive_at) : "—";
+  const dayLabel = offer.depart_at ? fmtDay(offer.depart_at) : "";
+  const duration = fmtDuration(offer.duration_min);
+  const pickupKm = offer.details?.distanza_pickup_km;
+  const dropoffKm = offer.details?.distanza_dropoff_km;
+  const effective = offer.details?.costo_effettivo;
+
+  const detailBits = [];
+  if (duration) detailBits.push(`⏱ ${duration}`);
+  if (offer.seats) detailBits.push(`👤 ${offer.seats} posti`);
+  if (offer.rating) detailBits.push(`★ ${Number(offer.rating).toFixed(1)}`);
+  if (effective != null && offer.price != null && Math.abs(effective - offer.price) > 0.01) {
+    detailBits.push(`💶 costo eff. ${euro(effective)}`);
+  }
+  if (offer.details?.partenza_alternativa) {
+    detailBits.push(`🚩 partenza da ${esc(offer.details.partenza_alternativa)} (~${offer.details.distanza_partenza_km || 0} km)`);
+  }
+  if (offer.details?.arrivo_alternativo) {
+    detailBits.push(`🏁 arrivo a ${esc(offer.details.arrivo_alternativo)} (~${offer.details.distanza_arrivo_km || 0} km)`);
+  }
+  if (offer.details?.tariffa) detailBits.push(esc(offer.details.tariffa));
+  if (offer.details?.disponibilita) detailBits.push(esc(offer.details.disponibilita));
+
+  const priceHtml = offer.price == null
+    ? `<div class="price" style="font-size:15px;color:var(--muted)">da verificare</div>`
+    : `<div class="price">${offer.prev_price && offer.prev_price > offer.price
+        ? `<span class="was">${euro(offer.prev_price)}</span>` : ""}${euro(offer.price)}
+        ${offer.price_is_estimate ? "<small>stima, non prezzo finale</small>" : ""}
+      </div>`;
+
+  return `
+    <article class="offer ${offer.price_is_estimate ? "estimate" : ""}">
+      <div class="offer-main">
+        <div class="offer-top">
+          <span class="operator">${esc(offer.operator || offer.source)}</span>
+          <span class="source-tag">${esc(MODE_LABEL[offer.mode] || offer.mode)}</span>
+          ${tagHtml}
+        </div>
+        <div class="times">
+          <strong>${dep}</strong><span class="sep">→</span><strong>${arr}</strong>
+          <span class="dur">${dayLabel}${duration ? " · " + duration : ""}</span>
+        </div>
+        <div class="places">
+          <span>↑ ${esc(offer.pickup_name || "—")}${pickupKm != null ? ` <span class="km">· ${pickupKm} km</span>` : ""}</span>
+          <span>↓ ${esc(offer.dropoff_name || "—")}${dropoffKm != null ? ` <span class="km">· ${dropoffKm} km</span>` : ""}</span>
+        </div>
+        ${detailBits.length ? `<div class="details-line">${detailBits.map((b) => `<span>${b}</span>`).join("")}</div>` : ""}
+      </div>
+      <div class="offer-side">
+        ${priceHtml}
+        ${offer.score != null ? `<div class="score">punteggio <b>${Math.round(offer.score)}</b>/100</div>` : ""}
+        ${offer.deeplink ? `<a class="btn small" href="${esc(offer.deeplink)}" target="_blank" rel="noreferrer">Apri ↗</a>` : ""}
+      </div>
+    </article>`;
+}
+
+function renderBest(panel) {
+  const offers = state.offers
+    .filter((o) => o.mode !== "transit" && o.score != null)
+    .sort((a, b) => (b.score || 0) - (a.score || 0));
+
+  if (!offers.length) {
+    const notes = (state.runs[0]?.notes || []).slice(0, 2).join(" ");
+    const text = "L'agente sta cercando. Puoi forzare un controllo con “Cerca ora”." + (notes ? " " + notes : "");
+    panel.innerHTML = emptyTab("Ancora nessuna offerta con prezzo", text, true);
+    return;
+  }
+  const initial = isInitialRun();
+  panel.innerHTML = `<div class="offers">${offers.map((o) => offerCard(o, initial)).join("")}</div>`;
+}
+
+function renderAll(panel) {
+  if (!state.offers.length) {
+    panel.innerHTML = emptyTab("Nessuna offerta salvata", "Avvia una ricerca o allarga il raggio/budget.");
+    return;
+  }
+  const groups = {};
+  for (const offer of state.offers) {
+    (groups[offer.mode] ||= []).push(offer);
+  }
+  const order = ["rideshare", "bus", "train", "carsharing", "transit"];
+  const initial = isInitialRun();
+  const html = order.filter((mode) => groups[mode]?.length).map((mode) => `
+    <div class="group-title">${esc(MODE_LABEL[mode] || mode)} · ${groups[mode].length}</div>
+    <div class="offers">${groups[mode]
+      .sort((a, b) => (b.score || 0) - (a.score || 0))
+      .map((o) => offerCard(o, initial)).join("")}</div>
+  `).join("");
+  panel.innerHTML = html;
+}
+
+function renderNearby(panel) {
+  const offers = state.offers.filter((o) => o.mode === "carsharing" || o.mode === "transit");
+  if (!offers.length) {
+    panel.innerHTML = emptyTab(
+      "Nessuna alternativa vicina",
+      "Il carsharing viene stimato solo per tratte coperte dal provider; le fermate vicine compaiono se la fonte è attiva."
+    );
+    return;
+  }
+  panel.innerHTML = `<div class="offers">${offers.map((o) => offerCard(o, isInitialRun())).join("")}</div>`;
+}
+
+function renderLinks(panel) {
+  if (!state.links.length) {
+    panel.innerHTML = emptyTab("Nessun link", "Aggiungi una ricerca per generare i link.");
+    return;
+  }
+  panel.innerHTML = `<div class="links-grid">${state.links.map((link) => `
+    <a class="link-card" href="${esc(link.url)}" target="_blank" rel="noreferrer">
+      <div class="lc-head"><strong>${esc(link.label)}</strong><span class="lc-arrow">↗</span></div>
+      <small>${esc(link.note || "")}</small>
+    </a>`).join("")}</div>`;
+}
+
+function renderRuns(panel) {
+  if (!state.runs.length) {
+    panel.innerHTML = emptyTab("Nessuna esecuzione", "La cronologia comparirà dopo il primo controllo.");
+    return;
+  }
+  panel.innerHTML = `<div>${state.runs.map((run) => `
+    <div class="run-row">
+      <span>${fmtDate(run.started_at)}</span>
+      <span class="run-status ${esc(run.status)}">${esc(run.status)}</span>
+      <span>${run.offers_found} offerte · ${run.alerts_sent} avvisi</span>
+            <span class="run-errors" title="${esc((run.errors || []).join(" · "))}">
+        ${run.errors?.length ? esc(run.errors.join(" · ")) : (run.notes?.length ? esc(run.notes.join(" · ")) : `(${esc(run.trigger)})`)}
+      </span>
+    </div>`).join("")}</div>`;
+}
+
+function emptyTab(title, text, withLinks = false) {
+  return `<div class="empty" style="margin-top:40px"><div class="empty-emoji">🕵️</div>
+    <h2 style="font-size:18px">${esc(title)}</h2>
+    <p style="font-size:13px">${esc(text)}</p>
+    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+      <button class="btn" onclick="runNow()">▶ Cerca ora</button>
+      ${withLinks ? `<button class="btn ghost" onclick="document.querySelector('[data-tab=links]').click()">🔗 Link utili</button>` : ""}
+    </div></div>`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Azioni sulla ricerca                                               */
+/* ------------------------------------------------------------------ */
+async function runNow() {
+  if (!state.watch) return;
+  try {
+    toast("Ricerca avviata…");
+    await api(`/api/watches/${state.watch.id}/run`, { method: "POST" });
+    setTimeout(refreshAll, 2500);
+    setTimeout(refreshAll, 7000);
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+
+async function toggleWatch() {
+  if (!state.watch) return;
+  try {
+    await api(`/api/watches/${state.watch.id}/toggle`, { method: "POST" });
+    await loadWatches();
+    await loadDetail(state.watch.id);
+    toast(state.watch.active ? "Ricerca in pausa" : "Ricerca ripresa");
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+
+async function deleteWatch() {
+  if (!state.watch) return;
+  if (!confirm(`Eliminare la ricerca ${state.watch.from_place} → ${state.watch.to_place}?`)) return;
+  try {
+    await api(`/api/watches/${state.watch.id}`, { method: "DELETE" });
+    state.selectedId = null;
+    state.watch = null;
+    await loadWatches();
+    if (state.watches.length) await selectWatch(state.watches[0].id);
+    else showEmpty(true);
+    toast("Ricerca eliminata");
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Modale ricerca                                                     */
+/* ------------------------------------------------------------------ */
+function openWatchModal(watch) {
+  state.editingId = watch?.id || null;
+  $("#watchModalTitle").textContent = watch ? "Modifica ricerca" : "Nuova ricerca";
+  $("#btnSaveWatch").textContent = watch ? "Salva modifiche" : "Avvia ricerca";
+  $("#watchError").classList.add("hidden");
+
+  const defaults = {
+    name: "", from_place: "", to_place: "",
+    depart_after: "", arrive_by: "", max_price: "", passengers: 1, radius_km: 5,
+    interval_min: 60, sources: ["demo", "blablacar", "flixbus", "carsharing", "transit"],
+    notify: ["web", "telegram"],
+  };
+
+  const data = watch ? {
+    ...watch,
+    depart_after: toLocalInput(watch.depart_after),
+    arrive_by: toLocalInput(watch.arrive_by),
+    max_price: watch.max_price ?? "",
+  } : defaults;
+
+  if (!watch) {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(18, 0, 0, 0);
+    const morning = new Date(tomorrow);
+    morning.setHours(8, 0, 0, 0);
+    data.arrive_by = toLocalInput(tomorrow.toISOString());
+    data.depart_after = toLocalInput(morning.toISOString());
+  }
+
+  $("#fName").value = data.name || "";
+  $("#fFrom").value = data.from_place || "";
+  $("#fTo").value = data.to_place || "";
+  $("#fDepart").value = data.depart_after || "";
+  $("#fArrive").value = data.arrive_by || "";
+  $("#fPrice").value = data.max_price ?? "";
+  $("#fPassengers").value = data.passengers || 1;
+  $("#fRadius").value = data.radius_km || 5;
+  $("#fInterval").value = String(data.interval_min || 60);
+  $("#geoFrom").textContent = "";
+  $("#geoTo").textContent = "";
+  $("#fAiText").value = "";
+  $("#aiFillHint").textContent = "";
+  $("#aiFillHint").className = "field-hint";
+  const formQuestions = $("#formQuestions");
+  if (formQuestions) formQuestions.remove();
+
+  const selectedSources = data.sources || defaults.sources;
+  $("#sourcesBox").innerHTML = state.sources.map((source) => {
+    const checked = selectedSources.includes(source.id) ? "checked" : "";
+    const soon = source.requires ? `<span class="soon">link</span>` : "";
+    const demo = source.is_demo ? `<span class="soon">demo</span>` : "";
+    return `<label class="chip" title="${esc(source.description)}">
+      <input type="checkbox" name="source" value="${esc(source.id)}" ${checked} />
+      ${esc(source.label)} ${soon}${demo}
+    </label>`;
+  }).join("");
+
+  const notify = data.notify || defaults.notify;
+  $$("#notifyBox input[name=notify]").forEach((input) => {
+    input.checked = notify.includes(input.value);
+  });
+
+  openModal("watchModal");
+  setTimeout(() => $("#fFrom").focus(), 60);
+}
+
+async function aiFill() {
+  const text = $("#fAiText").value.trim();
+  const hint = $("#aiFillHint");
+  if (!text) {
+    hint.textContent = "Scrivi prima una frase sul viaggio.";
+    hint.className = "field-hint err";
+    return;
+  }
+  const button = $("#btnAiFill");
+  button.disabled = true;
+  hint.textContent = "L'AI sta leggendo…";
+  hint.className = "field-hint";
+  try {
+    const result = await api("/api/ai/parse", { method: "POST", body: JSON.stringify({ text }) });
+    const trip = result.trip || {};
+    if (trip.from_place) $("#fFrom").value = trip.from_place;
+    if (trip.to_place) $("#fTo").value = trip.to_place;
+    if (trip.arrive_by) $("#fArrive").value = toLocalInput(trip.arrive_by);
+    if (trip.depart_after) $("#fDepart").value = toLocalInput(trip.depart_after);
+    if (trip.max_price != null) $("#fPrice").value = trip.max_price;
+    if (trip.passengers) $("#fPassengers").value = trip.passengers;
+    if (trip.radius_km) $("#fRadius").value = trip.radius_km;
+    if (trip.notes && !$("#fName").value) $("#fName").value = trip.notes.slice(0, 120);
+
+    const missing = result.missing || [];
+    const questions = result.questions || [];
+    if (missing.length) {
+      hint.textContent = "Manca ancora: " + missing.map(fieldLabel).join(", ") + ".";
+      hint.className = "field-hint err";
+    } else {
+      hint.textContent = "Compilato. Controlla i campi e premi Avvia ricerca.";
+      hint.className = "field-hint ok";
+    }
+    if (questions.length) {
+      renderFormQuestions(questions);
+    }
+  } catch (error) {
+    hint.textContent = error.message;
+    hint.className = "field-hint err";
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function fieldLabel(name) {
+  return { from_place: "partenza", to_place: "destinazione", arrive_by: "orario di arrivo" }[name] || name;
+}
+
+function renderFormQuestions(questions) {
+  let box = $("#formQuestions");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "formQuestions";
+    box.className = "questions-card";
+    $("#aiFillHint").closest(".ai-box").appendChild(box);
+  }
+  box.innerHTML = questions.map((question) => `
+    <div class="q-item">
+      <p>${esc(question.text)}</p>
+      <div class="q-options">
+        ${(question.options || []).map((option) =>
+          `<button type="button" class="btn" data-fill="${esc(option.label)}">${esc(option.label)}</button>`
+        ).join("")}
+      </div>
+    </div>`).join("");
+  box.querySelectorAll("[data-fill]").forEach((button) => {
+    button.addEventListener("click", () => {
+      $("#fAiText").value = ($("#fAiText").value + " " + button.dataset.fill).trim();
+      box.remove();
+      aiFill();
+    });
+  });
+}
+
+async function checkGeo(fieldId) {
+  const input = $("#" + fieldId);
+  const hint = $(fieldId === "fFrom" ? "#geoFrom" : "#geoTo");
+  const query = input.value.trim();
+  if (!query) return;
+  hint.textContent = "cerco…";
+  hint.className = "field-hint";
+  try {
+    const result = await api("/api/geocode?q=" + encodeURIComponent(query));
+    if (!result.found) {
+      hint.textContent = "località non trovata, prova con “Città” o “Città Stazione”";
+      hint.className = "field-hint err";
+      return;
+    }
+    const short = (result.name || query).split(",").slice(0, 2).join(",");
+    hint.textContent = `✓ ${short} (${result.lat.toFixed(3)}, ${result.lon.toFixed(3)})`;
+    hint.className = "field-hint ok";
+  } catch (error) {
+    hint.textContent = error.message;
+    hint.className = "field-hint err";
+  }
+}
+
+async function submitWatch(event) {
+  event.preventDefault();
+  const errorBox = $("#watchError");
+  errorBox.classList.add("hidden");
+
+  const fromPlace = $("#fFrom").value.trim();
+  const toPlace = $("#fTo").value.trim();
+  const arriveLocal = $("#fArrive").value;
+  const departLocal = $("#fDepart").value;
+
+  const fail = (message) => {
+    errorBox.textContent = message;
+    errorBox.classList.remove("hidden");
+  };
+
+  if (!fromPlace || !toPlace) return fail("Inserisci partenza e arrivo.");
+  if (!arriveLocal) return fail("Indica entro quando devi arrivare.");
+  if (departLocal && new Date(departLocal) >= new Date(arriveLocal)) {
+    return fail("La partenza minima deve essere precedente all'arrivo massimo.");
+  }
+
+  const sources = $$("#sourcesBox input[name=source]:checked").map((i) => i.value);
+  if (!sources.length) return fail("Seleziona almeno una fonte.");
+  const notify = $$("#notifyBox input[name=notify]:checked").map((i) => i.value);
+
+  const payload = {
+    name: $("#fName").value.trim() || null,
+    from_place: fromPlace,
+    to_place: toPlace,
+    depart_after: departLocal ? new Date(departLocal).toISOString() : null,
+    arrive_by: new Date(arriveLocal).toISOString(),
+    max_price: $("#fPrice").value ? Number($("#fPrice").value) : null,
+    passengers: Number($("#fPassengers").value || 1),
+    radius_km: Number($("#fRadius").value || 5),
+    interval_min: Number($("#fInterval").value || 60),
+    sources,
+    notify,
+    active: true,
+  };
+
+  const button = $("#btnSaveWatch");
+  button.disabled = true;
+  button.textContent = "Salvo…";
+  try {
+    let watch;
+    if (state.editingId) {
+      watch = await api(`/api/watches/${state.editingId}`, {
+        method: "PATCH", body: JSON.stringify(payload),
+      });
+    } else {
+      watch = await api("/api/watches", { method: "POST", body: JSON.stringify(payload) });
+    }
+    closeModal("watchModal");
+    await loadWatches();
+    await selectWatch(watch.id);
+    toast(state.editingId ? "Ricerca aggiornata" : "Ricerca avviata: primo controllo in corso…");
+    setTimeout(refreshAll, 3000);
+    setTimeout(refreshAll, 8000);
+  } catch (error) {
+    fail(error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = state.editingId ? "Salva modifiche" : "Avvia ricerca";
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Impostazioni                                                       */
+/* ------------------------------------------------------------------ */
+async function loadSettings() {
+  state.settings = await api("/api/settings");
+}
+
+async function openSettings() {
+  try {
+    await loadSettings();
+    const s = state.settings;
+    $("#sTelegramToken").value = s.telegram_token || "";
+    $("#sTelegramChat").value = s.telegram_chat_id || "";
+    $("#sSmtpHost").value = s.smtp_host || "";
+    $("#sSmtpPort").value = s.smtp_port || "587";
+    $("#sSmtpUser").value = s.smtp_user || "";
+    $("#sSmtpPassword").value = s.smtp_password || "";
+    $("#sSmtpFrom").value = s.smtp_from || "";
+    $("#sSmtpTo").value = s.smtp_to || "";
+    $("#sSmtpTls").checked = (s.smtp_tls || "1") === "1";
+    $("#sNotifyEnabled").checked = (s.notify_enabled || "1") === "1";
+    $("#sQuietFrom").value = s.quiet_from || "";
+    $("#sQuietTo").value = s.quiet_to || "";
+    $("#sBlaKey").value = s.blablacar_api_key || "";
+    $("#sGroqKey").value = s.groq_api_key || "";
+    $("#sAiSmart").value = s.ai_model_smart || "";
+    $("#sAiFast").value = s.ai_model_fast || "";
+    $("#sAiEnabled").checked = (s.ai_enabled || "1") === "1";
+    $("#aiTestResult").textContent = "";
+    $("#settingsError").classList.add("hidden");
+    $("#telegramTestResult").textContent = "";
+    $("#emailTestResult").textContent = "";
+    openModal("settingsModal");
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+
+function settingsPayload() {
+  return {
+    telegram_token: $("#sTelegramToken").value.trim(),
+    telegram_chat_id: $("#sTelegramChat").value.trim(),
+    smtp_host: $("#sSmtpHost").value.trim(),
+    smtp_port: $("#sSmtpPort").value.trim(),
+    smtp_user: $("#sSmtpUser").value.trim(),
+    smtp_password: $("#sSmtpPassword").value,
+    smtp_from: $("#sSmtpFrom").value.trim(),
+    smtp_to: $("#sSmtpTo").value.trim(),
+    smtp_tls: $("#sSmtpTls").checked ? "1" : "0",
+    blablacar_api_key: $("#sBlaKey").value.trim(),
+    quiet_from: $("#sQuietFrom").value,
+    quiet_to: $("#sQuietTo").value,
+    notify_enabled: $("#sNotifyEnabled").checked ? "1" : "0",
+    groq_api_key: $("#sGroqKey").value.trim(),
+    ai_model_smart: $("#sAiSmart").value.trim(),
+    ai_model_fast: $("#sAiFast").value.trim(),
+    ai_enabled: $("#sAiEnabled").checked ? "1" : "0",
+  };
+}
+
+async function submitSettings(event) {
+  event.preventDefault();
+  const errorBox = $("#settingsError");
+  errorBox.classList.add("hidden");
+  try {
+    await api("/api/settings", { method: "PUT", body: JSON.stringify(settingsPayload()) });
+    closeModal("settingsModal");
+    toast("Impostazioni salvate");
+  } catch (error) {
+    errorBox.textContent = error.message;
+    errorBox.classList.remove("hidden");
+  }
+}
+
+async function testTelegram() {
+  const hint = $("#telegramTestResult");
+  hint.textContent = "invio…";
+  hint.className = "field-hint";
+  try {
+    await api("/api/settings", { method: "PUT", body: JSON.stringify(settingsPayload()) });
+    const result = await api("/api/settings/test-telegram", { method: "POST" });
+    hint.textContent = result.ok ? "✓ messaggio inviato" : "✗ " + result.error;
+    hint.className = "field-hint " + (result.ok ? "ok" : "err");
+  } catch (error) {
+    hint.textContent = "✗ " + error.message;
+    hint.className = "field-hint err";
+  }
+}
+
+async function testEmail() {
+  const hint = $("#emailTestResult");
+  hint.textContent = "invio…";
+  hint.className = "field-hint";
+  try {
+    await api("/api/settings", { method: "PUT", body: JSON.stringify(settingsPayload()) });
+    const result = await api("/api/settings/test-email", { method: "POST" });
+    hint.textContent = result.ok ? "✓ email inviata" : "✗ " + result.error;
+    hint.className = "field-hint " + (result.ok ? "ok" : "err");
+  } catch (error) {
+    hint.textContent = "✗ " + error.message;
+    hint.className = "field-hint err";
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Avvisi                                                             */
+/* ------------------------------------------------------------------ */
+async function loadAlerts(initial = false) {
+  const alerts = await api("/api/alerts?limit=40");
+  state.alerts = alerts;
+  const unread = alerts.filter((a) => !a.read);
+  const badge = $("#alertBadge");
+  badge.textContent = unread.length;
+  badge.classList.toggle("hidden", unread.length === 0);
+
+  if (alerts.length) {
+    const maxId = Math.max(...alerts.map((a) => a.id));
+    if (!initial && maxId > state.lastAlertId) {
+      const newest = alerts.filter((a) => a.id > state.lastAlertId);
+      newest.slice(0, 2).forEach((alert) => toast(alert.title + " · " + routeOfAlert(alert)));
+      maybeDesktopNotify(newest);
+    }
+    state.lastAlertId = Math.max(state.lastAlertId, maxId);
+    localStorage.setItem("ch_last_alert", String(state.lastAlertId));
+  }
+
+  renderAlerts();
+}
+
+function routeOfAlert(alert) {
+  const watch = state.watches.find((w) => w.id === alert.watch_id);
+  return watch ? `${watch.from_place} → ${watch.to_place}` : "";
+}
+
+function renderAlerts() {
+  const box = $("#alertsList");
+  if (!state.alerts.length) {
+    box.innerHTML = `<div class="hint" style="padding:20px 0">Nessun avviso. Quando l'agente trova qualcosa di nuovo lo vedrai qui.</div>`;
+    return;
+  }
+  box.innerHTML = state.alerts.map((alert) => `
+    <div class="alert-item ${alert.read ? "" : "unread"}">
+      <h4>${esc(alert.title)}</h4>
+      <time>${fmtDate(alert.created_at)} · ${esc(routeOfAlert(alert))}</time>
+      <p>${esc(alert.message)}</p>
+    </div>`).join("");
+}
+
+function maybeDesktopNotify(alerts) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  for (const alert of alerts) {
+    const watch = state.watches.find((w) => w.id === alert.watch_id);
+    if (!watch || !watch.notify?.includes("desktop")) continue;
+    try {
+      new Notification("Carpool Hunter · " + alert.title, {
+        body: routeOfAlert(alert),
+        tag: "carpool-" + alert.id,
+      });
+    } catch (_) { /* ignore */ }
+  }
+}
+
+async function markAllRead() {
+  try {
+    await api("/api/alerts/read", { method: "POST", body: JSON.stringify({}) });
+    await loadAlerts(false);
+    toast("Avvisi segnati come letti");
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* AI: prova e modelli                                                */
+/* ------------------------------------------------------------------ */
+async function testAi() {
+  const hint = $("#aiTestResult");
+  hint.textContent = "provo…";
+  hint.className = "field-hint";
+  try {
+    await api("/api/settings", { method: "PUT", body: JSON.stringify(settingsPayload()) });
+    const result = await api("/api/ai/test", { method: "POST" });
+    if (result.ok) {
+      hint.textContent = `✓ risposta da ${shortModel(result.model)}: “${result.reply}”`;
+      hint.className = "field-hint ok";
+      await loadStatus();
+    } else {
+      hint.textContent = "✗ " + (result.error || "nessuna risposta");
+      hint.className = "field-hint err";
+    }
+  } catch (error) {
+    hint.textContent = "✗ " + error.message;
+    hint.className = "field-hint err";
+  }
+}
+
+async function listAiModels() {
+  const hint = $("#aiTestResult");
+  hint.textContent = "carico l'elenco…";
+  hint.className = "field-hint";
+  try {
+    await api("/api/settings", { method: "PUT", body: JSON.stringify(settingsPayload()) });
+    const result = await api("/api/ai/models");
+    const models = result.models || [];
+    hint.textContent = models.length
+      ? `${models.length} modelli disponibili. Esempi: ${models.slice(0, 6).join(", ")}`
+      : "Nessun modello leggibile (controlla la chiave).";
+    hint.className = "field-hint";
+  } catch (error) {
+    hint.textContent = "✗ " + error.message;
+    hint.className = "field-hint err";
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* PWA: service worker e installazione                                */
+/* ------------------------------------------------------------------ */
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+  navigator.serviceWorker.register("sw.js").catch(() => { /* offline non disponibile */ });
+}
+
+let deferredPrompt = null;
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  deferredPrompt = event;
+  const button = $("#btnInstall");
+  if (button) {
+    button.classList.remove("hidden");
+    button.addEventListener("click", async () => {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      await deferredPrompt.userChoice;
+      deferredPrompt = null;
+      button.classList.add("hidden");
+    }, { once: true });
+  }
+});
+
+/* Rende disponibile runNow() agli onclick inline generati da emptyTab */
+window.runNow = runNow;
