@@ -88,6 +88,7 @@
         <div class="tabs" id="tabs">
           <button class="tab active" data-tab="best">Migliori</button>
           <button class="tab" data-tab="all">Tutte <span class="tabcount" id="countAll"></span></button>
+          <button class="tab" data-tab="map">Mappa</button>
           <button class="tab" data-tab="nearby">Carsharing &amp; vicino</button>
           <button class="tab" data-tab="links">Link utili</button>
           <button class="tab" data-tab="runs">Cronologia</button>
@@ -320,6 +321,10 @@
 
   <div class="toasts" id="toasts"></div>
 
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 /* Carpool Hunter - service worker minimale.
    Strategia: rete per prima (il codice cambia spesso), cache come rete di
    sicurezza quando sei offline. I dati (/api) non vengono mai messi in cache. */
-const CACHE = "carpool-v2";
+const CACHE = "carpool-v3";
 const SHELL = [
   "/",
   "/static/styles.css",

@@ -257,6 +257,32 @@ async def promos(refresh: bool = False):
     return await promos_service.get_promos(force=refresh)
 
 
+@app.get("/api/carsharing/zones")
+async def carsharing_zones():
+    """Città coperte dal carsharing, con coordinate, per la mappa."""
+    from .adapters.carsharing import load_providers
+
+    zones = []
+    for provider in load_providers():
+        for city in provider.get("cities", []):
+            key = str(city).strip().lower()
+            coords = geo.CITIES.get(key)
+            if not coords:
+                continue
+            zones.append(
+                {
+                    "provider": provider.get("name") or provider.get("id"),
+                    "city": key.title(),
+                    "lat": coords[0],
+                    "lon": coords[1],
+                    "url": provider.get("url"),
+                    "note": provider.get("note", ""),
+                    "intercity": bool(provider.get("intercity_one_way")),
+                }
+            )
+    return {"zones": zones}
+
+
 # --------------------------------------------------------------------------- #
 # Orari GTFS (treni e bus): stato e aggiornamento dei feed aperti
 # --------------------------------------------------------------------------- #

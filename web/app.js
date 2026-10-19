@@ -19,6 +19,8 @@ const state = {
   lastAlertId: Number(localStorage.getItem("ch_last_alert") || 0),
   booted: false,
   polling: null,
+  carsharingZones: null,
+  showZones: true,
 };
 
 // Base dell'API: vuota quando frontend e backend sono sullo stesso host.
@@ -109,6 +111,18 @@ const MODE_LABEL = {
   carsharing: "Carsharing",
   transit: "Mezzi pubblici",
 };
+
+const MODE_COLOR = {
+  rideshare: "#e8833a",
+  bus: "#2f7d4f",
+  train: "#3563c9",
+  tram: "#8b5cf6",
+  flight: "#0e9aa7",
+  carsharing: "#d19b12",
+  transit: "#7b8794",
+};
+
+const MAX_MAP_OFFERS = 40;
 
 async function api(path, options = {}) {
   const response = await fetch(API_BASE + path, {
@@ -522,6 +536,7 @@ function renderTab() {
   if (!state.watch) return;
   if (state.tab === "best") return renderBest(panel);
   if (state.tab === "all") return renderAll(panel);
+  if (state.tab === "map") return renderMap(panel);
   if (state.tab === "nearby") return renderNearby(panel);
   if (state.tab === "links") return renderLinks(panel);
   if (state.tab === "runs") return renderRuns(panel);
@@ -663,6 +678,133 @@ function renderNearby(panel) {
     return;
   }
   panel.innerHTML = `<div class="offers">${offers.map((o) => offerCard(o, isInitialRun())).join("")}</div>`;
+}
+
+let mapView = null;
+let mapLayer = null;
+
+function ensureMap(canvas) {
+  if (mapView && mapView.getContainer() !== canvas) {
+    mapView.remove();
+    mapView = null;
+  }
+  if (!mapView) {
+    mapView = L.map(canvas, { zoomControl: true });
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "© OpenStreetMap",
+    }).addTo(mapView);
+  }
+  return mapView;
+}
+
+async function renderMap(panel) {
+  if (typeof L === "undefined") {
+    panel.innerHTML = emptyTab(
+      "Mappa non disponibile",
+      "La libreria della mappa (Leaflet) non è stata caricata: controlla la connessione e ricarica la pagina."
+    );
+    return;
+  }
+  if (!state.carsharingZones) {
+    try {
+      const data = await api("/api/carsharing/zones");
+      state.carsharingZones = data.zones || [];
+    } catch (_) {
+      state.carsharingZones = [];
+    }
+  }
+  panel.innerHTML = `
+    <div class="map-toolbar">
+      <label class="map-toggle"><input type="checkbox" id="mapZones" ${state.showZones ? "checked" : ""} /> Zone carsharing</label>
+      <span class="map-hint" id="mapLegend"></span>
+    </div>
+    <div class="map-canvas" id="mapCanvas"></div>`;
+  $("#mapZones").addEventListener("change", (event) => {
+    state.showZones = event.target.checked;
+    drawMap();
+  });
+
+  const map = ensureMap($("#mapCanvas"));
+  map.invalidateSize();
+  drawMap();
+}
+
+function drawMap() {
+  if (!mapView) return;
+  if (mapLayer) mapView.removeLayer(mapLayer);
+  mapLayer = L.layerGroup().addTo(mapView);
+
+  const bounds = [];
+  const watch = state.watch || {};
+  const origin = [watch.from_lat, watch.from_lon];
+  const dest = [watch.to_lat, watch.to_lon];
+
+  const dot = (lat, lon, color, radius) =>
+    L.circleMarker([lat, lon], {
+      radius,
+      color,
+      weight: 2,
+      fillColor: color,
+      fillOpacity: 0.85,
+    });
+
+  if (origin[0] != null && origin[1] != null) {
+    dot(origin[0], origin[1], "#1f9d55", 9)
+      .bindPopup(`<strong>Partenza</strong><br>${esc(watch.from_place || "")}`)
+      .addTo(mapLayer);
+    bounds.push(origin);
+  }
+  if (dest[0] != null && dest[1] != null) {
+    dot(dest[0], dest[1], "#d64545", 9)
+      .bindPopup(`<strong>Arrivo</strong><br>${esc(watch.to_place || "")}`)
+      .addTo(mapLayer);
+    bounds.push(dest);
+  }
+
+  let placed = 0;
+  for (const offer of state.offers.slice(0, MAX_MAP_OFFERS)) {
+    const a = [offer.pickup_lat, offer.pickup_lon];
+    const b = [offer.dropoff_lat, offer.dropoff_lon];
+    if (a[0] == null || a[1] == null || b[0] == null || b[1] == null) continue;
+    const color = MODE_COLOR[offer.mode] || "#7b8794";
+    L.polyline([a, b], { color, weight: 2, opacity: 0.55, dashArray: "5,6" }).addTo(mapLayer);
+    const label = `<strong>${esc(MODE_LABEL[offer.mode] || offer.mode)}</strong><br>${esc(offer.operator || "")}`;
+    const price = offer.price != null ? `${euro(offer.price)}${offer.price_is_estimate ? " (stima)" : ""}` : "solo orario";
+    dot(a[0], a[1], color, 6)
+      .bindPopup(`${label}<br>Partenza: ${fmtTime(offer.depart_at)}<br>${price}`)
+      .addTo(mapLayer);
+    dot(b[0], b[1], color, 4).bindPopup(`${label}<br>Arrivo: ${fmtTime(offer.arrive_at)}`).addTo(mapLayer);
+    bounds.push(a, b);
+    placed += 1;
+  }
+
+  if (state.showZones) {
+    for (const zone of state.carsharingZones || []) {
+      L.circle([zone.lat, zone.lon], {
+        radius: 9000,
+        color: "#d19b12",
+        weight: 1,
+        fillColor: "#d19b12",
+        fillOpacity: 0.08,
+      })
+        .bindPopup(`<strong>${esc(zone.provider)}</strong><br>Carsharing a ${esc(zone.city)}`)
+        .addTo(mapLayer);
+    }
+  }
+
+  if (bounds.length >= 2) {
+    mapView.fitBounds(bounds, { padding: [30, 30], maxZoom: 12 });
+  } else if (bounds.length === 1) {
+    mapView.setView(bounds[0], 11);
+  } else {
+    mapView.setView([42.5, 12.5], 5);
+  }
+
+  const zones = state.showZones ? (state.carsharingZones || []).length : 0;
+  $("#mapLegend").textContent = `${placed} offerte sulla mappa · ${zones} zone carsharing`;
+
+  setTimeout(() => mapView && mapView.invalidateSize(), 60);
 }
 
 function renderLinks(panel) {

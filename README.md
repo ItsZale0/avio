@@ -164,6 +164,22 @@ Le tariffe del carsharing sono in `data/carsharing.json` (crealo partendo dai de
 
 ---
 
+## Mappa
+
+La scheda **Mappa** (Leaflet + OpenStreetMap) disegna, per la ricerca selezionata:
+
+- **partenza** (verde) e **arrivo** (rosso);
+- ogni offerta come **punto di ritrovo → punto di arrivo** uniti da una linea
+  tratteggiata, con un colore per mezzo (auto, bus, treno, tram, volo, carsharing);
+- cliccando un punto si vede operatore, orari e prezzo;
+- le **zone carsharing** coperte (cerchi gialli, disattivabili con la casella in alto).
+
+Le zone arrivano da `GET /api/carsharing/zones`, cioè dall'elenco città dei provider in
+`data/carsharing.json`. La mappa ha bisogno di internet per le "mattonelle" della cartina:
+senza connessione resta il resto dell'app.
+
+---
+
 ## Struttura del progetto
 
 ```
@@ -279,7 +295,7 @@ python scripts/make_icons.py
 - [x] Più fonti reali: Omio (treni/bus/voli), Itabus, FlixBus, BlaBlaCar
 - [x] Pannello offerte & codici sconto dalle pagine ufficiali dei vettori
 - [x] Orari GTFS reali (treni/bus) con motore di coincidenze dirette + 1 cambio
-- [ ] Mappa delle offerte e delle zone carsharing
+- [x] Mappa (Leaflet/OpenStreetMap) con offerte, punti di ritrovo e zone carsharing
 - [ ] Web Push (oltre a Telegram) per la PWA
 - [ ] Scraping opzionale (Playwright) attivabile per singola fonte
 - [ ] Export calendario (.ics) e condivisione di una ricerca

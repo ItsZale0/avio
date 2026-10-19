@@ -356,6 +356,9 @@ affidabilità  = rating/5 * 100, default 68
 | POST | `/api/ai/parse` | frase in italiano → campi di ricerca |
 | POST | `/api/ai/test` | prova rapida del modello |
 | GET | `/api/promos` | offerte + codici sconto dalle pagine ufficiali (cache 6 h) |
+| GET | `/api/carsharing/zones` | città coperte dal carsharing con coordinate (mappa) |
+| GET | `/api/gtfs` | stato e feed degli orari GTFS |
+| POST | `/api/gtfs/update` | riscarica e reimporta i feed (in background) |
 | GET | `/api/geocode?q=` | verifica località |
 | GET | `/config.json` | `apiBase` per il frontend (Pages/tunnel) |
 | GET | `/sw.js`, `/manifest.webmanifest` | PWA (dalla radice, per lo scope) |
@@ -368,7 +371,11 @@ CORS: abilitato solo per le origini in `CARPOOL_CORS_ORIGINS`.
 ## 10. Frontend
 
 - Sidebar con ricerche, stato attivo/pausa e miglior prezzo.
-- Dettaglio con 4 KPI, tab **Migliori / Tutte / Carsharing & vicino / Link utili / Cronologia**.
+- Dettaglio con 4 KPI, tab **Migliori / Tutte / Mappa / Carsharing & vicino / Link utili / Cronologia**.
+- **Mappa** (Leaflet 1.9 da CDN + OpenStreetMap): partenza/arrivo, punti di ritrovo e
+  arrivo di ogni offerta con linea tratteggiata e colore per mezzo, popup con operatore,
+  orari e prezzo, zone carsharing (cerchi) attivabili/disattivabili. Se Leaflet non è
+  disponibile (offline) mostra un messaggio invece della mappa.
 - **Card "Piano più economico"** in testa: titolo, prezzo totale, passi con orari e
   link, avvertenze, alternative più economiche, percentuale di fiducia.
 - **Card domande**: pulsanti per rispondere in un tocco (o "Salta").
@@ -423,9 +430,9 @@ python -m unittest discover -s tests -v
    fermate a pochi metri, badge `orario` e `gtfs-update` in Impostazioni.
    Restano da valutare GTFS-RT (ritardi in tempo reale) e nuovi feed quando le
    regioni li pubblicano (Veneto).
-2. **Trenitalia/Italo**: verificare endpoint pubblici o accordi; altrimenti deep link
-   con prezzi manuali.
-3. **Mappa**: Leaflet con offerte, punti di ritrovo e zone carsharing.
+2. **BlaBlaCar**: ✔ **fatto** — API pubblica dismessa, fonte solo link di ricerca.
+3. ~~**Mappa**~~ ✔ **fatto**: Leaflet + OpenStreetMap, offerte con punti di ritrovo/arrivo
+   e linea, popup con operatore/orari/prezzo, zone carsharing da `/api/carsharing/zones`.
 4. **Web Push** per la PWA, oltre a Telegram (richiede VAPID + pywebpush).
 5. **Scraping opzionale** con Playwright, attivabile per fonte e con rate limit,
    rispettando robots.txt e ToS.
