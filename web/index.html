@@ -33,6 +33,7 @@
       <button class="btn icon" id="btnAlerts" title="Avvisi">
         🔔<span class="badge hidden" id="alertBadge">0</span>
       </button>
+      <button class="btn icon" id="btnPromos" title="Offerte e codici sconto">🏷️</button>
       <button class="btn icon" id="btnSettings" title="Impostazioni">⚙️</button>
     </div>
   </header>
@@ -280,6 +281,22 @@
           <button type="submit" class="btn primary">Salva impostazioni</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- ===================== MODALE OFFERTE & SCONTI ===================== -->
+  <div class="modal-backdrop hidden" id="promosModal">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>🏷️ Offerte &amp; codici sconto</h3>
+        <div>
+          <button class="btn ghost tiny" id="btnRefreshPromos">Aggiorna</button>
+          <button class="btn icon ghost" data-close="promosModal">✕</button>
+        </div>
+      </div>
+      <div class="modal-body" id="promosBody">
+        <div class="loading">Carico le offerte…</div>
+      </div>
     </div>
   </div>
 

@@ -217,7 +217,16 @@ Non serve toccare il motore: filtri, scoring, deduplica e avvisi sono automatici
 | `transit` | Overpass (OSM) con 3 mirror | media | nessun orario, solo fermate vicine |
 
 I **link utili** (BlaBlaCar, FlixBus, Omio, Trainline, Trenitalia, Italo, Google Maps,
-app carsharing) sono sempre disponibili e non dipendono da API.
+app carsharing, codici sconto treni) sono sempre disponibili e non dipendono da API.
+
+### Offerte e codici sconto
+
+Oltre alle fonti di viaggio, un servizio separato (`app/services/promos.py`) legge le
+**pagine offerte ufficiali** (Trainline, Italo) ed estrae le offerte del momento
+(titolo + link), più un elenco verificato di pagine **codici sconto/voucher** (Italo,
+Trenitalia, FlixBus) e aggregatori (Cuponation, Groupon). **Nessun codice è inventato**:
+dove non è pubblicamente leggibile si linka la pagina ufficiale. La lettura è in cache
+per 6 ore (`?refresh=true` per forzarla) ed è esposta su `GET /api/promos`.
 
 ---
 
@@ -298,6 +307,7 @@ affidabilità  = rating/5 * 100, default 68
 | GET | `/api/ai/models` | elenco modelli Groq disponibili |
 | POST | `/api/ai/parse` | frase in italiano → campi di ricerca |
 | POST | `/api/ai/test` | prova rapida del modello |
+| GET | `/api/promos` | offerte + codici sconto dalle pagine ufficiali (cache 6 h) |
 | GET | `/api/geocode?q=` | verifica località |
 | GET | `/config.json` | `apiBase` per il frontend (Pages/tunnel) |
 | GET | `/sw.js`, `/manifest.webmanifest` | PWA (dalla radice, per lo scope) |
@@ -316,6 +326,8 @@ CORS: abilitato solo per le origini in `CARPOOL_CORS_ORIGINS`.
 - **Card domande**: pulsanti per rispondere in un tocco (o "Salta").
 - Modale ricerca con campo in linguaggio naturale + **✨ Compila con l'AI**.
 - Chip stato AI nella barra in alto (modello attivo / non configurata).
+- Pulsante **🏷️ Offerte & codici sconto** in alto: pannello con offerte del momento e
+  link ufficiali ai codici sconto/voucher (cache 6 h, pulsante *Aggiorna*).
 - Modali per ricerca e impostazioni (sezione Groq con *Prova AI* / *Elenca modelli*);
   drawer avvisi.
 - Polling ogni 30 s; refresh immediato dopo creazione o "Cerca ora".

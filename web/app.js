@@ -183,6 +183,8 @@ function bindEvents() {
   $("#btnNew").addEventListener("click", () => openWatchModal(null));
   $("#btnEmptyNew").addEventListener("click", () => openWatchModal(null));
   $("#btnSettings").addEventListener("click", openSettings);
+  $("#btnPromos").addEventListener("click", () => openPromos(false));
+  $("#btnRefreshPromos").addEventListener("click", () => openPromos(true));
   $("#btnAlerts").addEventListener("click", () => { openModal("alertsDrawer"); loadAlerts(false); });
   $("#btnReadAll").addEventListener("click", markAllRead);
 
@@ -1129,6 +1131,51 @@ async function markAllRead() {
   } catch (error) {
     toast(error.message, "error");
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Offerte e codici sconto                                            */
+/* ------------------------------------------------------------------ */
+async function openPromos(force = false) {
+  openModal("promosModal");
+  const body = $("#promosBody");
+  body.innerHTML = `<div class="loading">Carico le offerte…</div>`;
+  try {
+    const data = await api("/api/promos" + (force ? "?refresh=true" : ""));
+    renderPromos(data);
+  } catch (error) {
+    body.innerHTML = `<div class="form-error">${esc(error.message)}</div>`;
+  }
+}
+
+function promoCards(items, subtitle) {
+  return items.map((item) => `
+    <a class="link-card" href="${esc(item.url)}" target="_blank" rel="noreferrer">
+      <div class="lc-head"><strong>${esc(item.title || item.operator)}</strong><span class="lc-arrow">↗</span></div>
+      <small>${esc(subtitle(item))}</small>
+    </a>`).join("");
+}
+
+function renderPromos(data) {
+  const offers = data.offers || [];
+  const coupons = data.coupons || [];
+  const errors = data.errors || [];
+  const updated = data.updated_at ? fmtDate(data.updated_at) : "";
+
+  const offersHtml = offers.length
+    ? promoCards(offers, (o) => `${o.operator || ""} · offerta`)
+    : `<div class="hint" style="padding:10px 0">Nessuna offerta letta adesso: riprova tra poco o apri le pagine dei vettori qui sotto.</div>`;
+
+  $("#promosBody").innerHTML = `
+    <p class="muted" style="margin:0 0 14px">
+      Offerte e codici letti direttamente dalle pagine ufficiali dei vettori.
+      ${updated ? `Ultimo aggiornamento: ${esc(updated)}.` : ""}
+    </p>
+    <div class="section-title">🔥 Offerte del momento</div>
+    <div class="links-grid">${offersHtml}</div>
+    <div class="section-title">🎟️ Codici sconto &amp; voucher</div>
+    <div class="links-grid">${promoCards(coupons, (c) => `${c.operator || ""}${c.note ? " · " + c.note : ""}`)}</div>
+    ${errors.length ? `<small class="field-hint">Alcune pagine non hanno risposto: ${esc(errors.join(" · "))}</small>` : ""}`;
 }
 
 /* ------------------------------------------------------------------ */

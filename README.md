@@ -105,8 +105,23 @@ Tutte le fonti restituiscono **dati reali** al momento del controllo: nessuna of
 > cambiare senza preavviso. Ogni fonte che cade è segnalata nelle note del giro e le altre restano attive.
 
 Ogni ricerca include sempre la scheda **Link utili** con ricerche precompilate su
-BlaBlaCar, FlixBus, Omio, Trainline, Trenitalia, Italo, Google Maps e app di carsharing:
-è il fallback affidabile quando una fonte non ha API.
+BlaBlaCar, FlixBus, Omio, Trainline, Trenitalia, Italo, Google Maps e app di carsharing,
+più i link ai **codici sconto** dei treni: è il fallback affidabile quando una fonte non ha API.
+
+### Offerte e codici sconto
+
+Il pulsante **🏷️** in alto apre il pannello *Offerte & codici sconto*, che legge **solo
+dalle pagine ufficiali** dei vettori e mostra:
+
+- le **offerte del momento** (Trenitalia, Frecciarossa, Italo, last minute, carte
+  sconto, studenti, Black Friday…) estratte dalle pagine offerte di Trainline e Italo;
+- i **codici sconto / voucher** con il link diretto alle pagine ufficiali
+  (codici promo Italo, codice sconto Trenitalia, voucher FlixBus) e agli aggregatori
+  (Cuponation, Groupon).
+
+**Nessun codice è inventato**: dove un codice non è pubblicamente leggibile, il pannello
+ti porta alla pagina ufficiale che lo contiene. Le pagine vengono lette al momento e
+messe in cache per 6 ore (pulsante **Aggiorna** per forzare).
 
 ### BlaBlaCar: come ottenere la chiave
 
@@ -175,6 +190,7 @@ app/
     scheduler.py       tick 20s, polling Telegram 45s
     questions.py       ciclo di vita delle domande + invio Telegram
     telegram_bot.py    risposte da chat, nuovi viaggi scritti in chat
+    promos.py          offerte + codici sconto dalle pagine ufficiali
     settings.py        impostazioni a runtime
 web/
   index.html, styles.css, app.js
@@ -243,6 +259,7 @@ python scripts/make_icons.py
 - [x] Ricerche multi-tratta (auto/carsharing + bus) con confronto per costo effettivo
 - [x] Trenitalia con prezzi reali (+ Italo via aggregatore Omio)
 - [x] Più fonti reali: Omio (treni/bus/voli), Itabus, FlixBus, BlaBlaCar
+- [x] Pannello offerte & codici sconto dalle pagine ufficiali dei vettori
 - [ ] Adapter GTFS/GTFS-RT per orari reali di treni e bus locali
 - [ ] Mappa delle offerte e delle zone carsharing
 - [ ] Web Push (oltre a Telegram) per la PWA

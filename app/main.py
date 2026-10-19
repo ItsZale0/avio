@@ -28,6 +28,7 @@ from .schemas import (
     WatchOut,
     WatchUpdate,
 )
+from .services import promos as promos_service
 from .services import questions as questions_service
 from .services import scheduler
 from .services import search
@@ -243,6 +244,15 @@ async def read_alerts(payload: dict | None = None):
     if payload and isinstance(payload.get("ids"), list):
         ids = [int(i) for i in payload["ids"]]
     return {"updated": store.mark_alerts_read(ids)}
+
+
+# --------------------------------------------------------------------------- #
+# Offerte e codici sconto (pagine ufficiali)
+# --------------------------------------------------------------------------- #
+@app.get("/api/promos")
+async def promos(refresh: bool = False):
+    """Offerte del momento e codici sconto dalle pagine ufficiali dei vettori."""
+    return await promos_service.get_promos(force=refresh)
 
 
 # --------------------------------------------------------------------------- #

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from app.adapters.base import Offer, SearchContext
 from app.geo import haversine_km, offline_lookup
 from app.scoring import score_offers
+from app.services.promos import _extract_offers
 from app.services.search import _filter_offers
 from app.store import links_for_watch
 
@@ -161,6 +162,44 @@ class LinksTest(unittest.TestCase):
         blablacar = next(link for link in links if link["id"] == "blablacar")
         self.assertIn("Milano", blablacar["url"])
         self.assertIn("Roma", blablacar["url"])
+
+    def test_links_include_discount_pages(self):
+        watch = {
+            "id": 1,
+            "from_place": "Milano",
+            "to_place": "Roma",
+            "depart_after": None,
+            "arrive_by": datetime.now(timezone.utc).isoformat(),
+            "passengers": 1,
+        }
+        ids = {link["id"] for link in links_for_watch(watch)}
+        self.assertIn("codici-italo", ids)
+        self.assertIn("codici-treni", ids)
+
+
+class PromosTest(unittest.TestCase):
+    def test_extract_offers_filters_nav_and_resolves_urls(self):
+        page = {
+            "operator": "Test",
+            "url": "https://example.com/offerte",
+            "href": r"^https://example\.com/offerte/[a-z0-9\-]+/?$",
+            "deny": {"offerte treni"},
+        }
+        body = """
+        <a href="/offerte/treni-last-minute">Treni last minute</a>
+        <a href="/offerte">Offerte treni</a>
+        <a href="https://example.com/altro">Altro</a>
+        <a href="/offerte/studenti">Sconti per Studenti su Treni e Pullman</a>
+        """
+        offers = _extract_offers(page, body)
+        titles = [offer["title"] for offer in offers]
+        self.assertIn("Treni last minute", titles)
+        self.assertIn("Sconti per Studenti su Treni e Pullman", titles)
+        self.assertNotIn("Offerte treni", titles)
+        self.assertTrue(all(offer["operator"] == "Test" for offer in offers))
+        self.assertEqual(
+            offers[0]["url"], "https://example.com/offerte/treni-last-minute"
+        )
 
 
 if __name__ == "__main__":

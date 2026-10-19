@@ -364,6 +364,20 @@ def links_for_watch(watch: dict[str, Any]) -> list[dict[str, str]]:
             "url": "https://www.italotreno.it/",
             "note": "Alta velocita'",
         },
+        {
+            "id": "codici-italo",
+            "label": "Codici promo Italo",
+            "url": "https://www.italotreno.com/it/offerte-treno/codicepromo",
+            "note": "Codici sconto ufficiali Italo",
+        },
+        {
+            "id": "codici-treni",
+            "label": "Codici sconto treni",
+            "url": (
+                "https://www.thetrainline.com/it/compagnie-ferroviarie/trenitalia/codice-sconto"
+            ),
+            "note": "Codici e promozioni Trenitalia",
+        },
     ]
 
     if watch.get("from_lat") is not None and watch.get("to_lat") is not None:
