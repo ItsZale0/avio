@@ -62,7 +62,7 @@ class PlannerTests(unittest.TestCase):
         base = now_utc() + timedelta(hours=3)
         arrive_by = base + timedelta(hours=6)
         offers = [
-            make_offer("demo", "a", "bus", 20.0, base, 120),
+            make_offer("itabus", "a", "bus", 20.0, base, 120),
             make_offer("flixbus", "b", "bus", 8.0, base, 180),
         ]
         candidates = build_candidates(offers, context(arrive_by))
@@ -115,7 +115,7 @@ class IntelligenceFallbackTests(unittest.IsolatedAsyncioTestCase):
         base = now_utc() + timedelta(hours=2)
         arrive_by = base + timedelta(hours=6)
         offers = [
-            make_offer("demo", "a", "bus", 15.0, base, 100),
+            make_offer("itabus", "a", "bus", 15.0, base, 100),
             make_offer("flixbus", "b", "bus", 7.5, base, 140),
         ]
         ctx = context(arrive_by)

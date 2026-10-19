@@ -103,6 +103,7 @@ const MODE_LABEL = {
   rideshare: "Passaggio",
   bus: "Autobus",
   train: "Treno",
+  flight: "Volo",
   carsharing: "Carsharing",
   transit: "Mezzi pubblici",
 };
@@ -371,7 +372,7 @@ function renderDetail() {
 
   const sources = (watch.sources || []).map((s) => {
     const meta = state.sources.find((item) => item.id === s);
-    return meta ? meta.label.replace(" (dati simulati)", "") : s;
+    return meta ? meta.label : s;
   }).join(", ");
   $("#watchSub").textContent =
     `entro ${fmtDate(watch.arrive_by)} · budget ${watch.max_price != null ? euro(watch.max_price) : "libero"} · ` +
@@ -621,7 +622,7 @@ function renderAll(panel) {
   for (const offer of state.offers) {
     (groups[offer.mode] ||= []).push(offer);
   }
-  const order = ["rideshare", "bus", "train", "carsharing", "transit"];
+  const order = ["rideshare", "bus", "train", "flight", "carsharing", "transit"];
   const initial = isInitialRun();
   const html = order.filter((mode) => groups[mode]?.length).map((mode) => `
     <div class="group-title">${esc(MODE_LABEL[mode] || mode)} · ${groups[mode].length}</div>
@@ -737,7 +738,8 @@ function openWatchModal(watch) {
   const defaults = {
     name: "", from_place: "", to_place: "",
     depart_after: "", arrive_by: "", max_price: "", passengers: 1, radius_km: 5,
-    interval_min: 60, sources: ["demo", "blablacar", "flixbus", "carsharing", "transit"],
+    interval_min: 60,
+    sources: ["blablacar", "flixbus", "itabus", "trenitalia", "omio", "carsharing", "transit"],
     notify: ["web", "telegram"],
   };
 
@@ -779,10 +781,9 @@ function openWatchModal(watch) {
   $("#sourcesBox").innerHTML = state.sources.map((source) => {
     const checked = selectedSources.includes(source.id) ? "checked" : "";
     const soon = source.requires ? `<span class="soon">link</span>` : "";
-    const demo = source.is_demo ? `<span class="soon">demo</span>` : "";
     return `<label class="chip" title="${esc(source.description)}">
       <input type="checkbox" name="source" value="${esc(source.id)}" ${checked} />
-      ${esc(source.label)} ${soon}${demo}
+      ${esc(source.label)} ${soon}
     </label>`;
   }).join("");
 

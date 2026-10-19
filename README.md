@@ -1,10 +1,11 @@
 # Carpool Hunter
 
-Dashboard + agente che cerca **passaggi in auto, autobus, treno e carsharing** su più fonti,
-ti mostra **il modo più economico** per fare quel viaggio (anche combinando più tratte) e ti
+Dashboard + agente che cerca **passaggi in auto, treno, autobus, carsharing e voli** su più fonti
+reali, ti mostra **il modo più economico** per fare quel viaggio (anche combinando più tratte) e ti
 avvisa su Telegram/email quando trova qualcosa di nuovo. Se un dato manca, **te lo chiede**.
 
-> Pensato per l'Italia. Agente sul tuo PC, intelligenza con i **modelli gratuiti Groq**.
+> Pensato per l'Italia. **Solo dati reali**: nessuna offerta simulata. Agente sul tuo PC,
+> intelligenza con i **modelli gratuiti Groq**.
 > Interfaccia web + **PWA installabile sul telefono** (vedi [`docs/DEPLOY.md`](docs/DEPLOY.md)).
 
 ---
@@ -48,7 +49,8 @@ fino alla stazione + bus) e **ti fa le domande** che sbloccano un piano migliore
 Senza chiave l'app **funziona lo stesso**: il piano resta (calcolato dal motore
 deterministico) ma senza spiegazioni, domande e interpretazione del linguaggio naturale.
 
-> Le fonti **demo** (simulate) non entrano mai nel piano: serve almeno una fonte reale.
+> L'app usa **solo dati reali**: ogni prezzo e orario arriva da una fonte esterna al momento
+> del controllo. Se nessuna fonte risponde, la ricerca resta vuota (niente dati inventati).
 
 ### Le domande, e come rispondere
 
@@ -87,13 +89,20 @@ comunque nella dashboard.
 
 ## Le fonti, e cosa aspettarsi davvero
 
-| Fonte | Tipo | Stato | Note |
+Tutte le fonti restituiscono **dati reali** al momento del controllo: nessuna offerta è simulata.
+
+| Fonte | Copre | Stato | Note |
 |---|---|---|---|
-| **Demo** | dati simulati | ✅ funziona subito | Serve a provare UI, punteggi e avvisi. Disattivala per la ricerca reale. |
-| **BlaBlaCar** | API ufficiale | ⚙️ richiede chiave | Chiave gratuita su [dev.blablacar.com](https://dev.blablacar.com). Senza chiave resta il link di ricerca. |
-| **FlixBus / autobus** | endpoint pubblico | ⚠️ best effort | Non documentato: può cambiare o bloccare. In caso di errore vedi il link diretto. |
-| **Carsharing** | stima costo | ✅ | Tariffe indicative per Enjoy, Free2Move, Ubeeqo, E-Vai. La disponibilità va verificata in app. |
-| **Mezzi pubblici vicini** | OpenStreetMap Overpass | ⚠️ best effort | Trova fermate/stazioni vicine, non orari. Overpass a volte è lento/indisponibile. |
+| **Omio** | treni + bus + voli di decine di compagnie | ⚠️ best effort | Aggregatore (Trenitalia, Italo, FlixBus, Itabus, Marino, compagnie aeree…). Endpoint dell'app, non documentato. |
+| **Trenitalia** | regionali, Frecciarossa, Intercity, notturni | ⚠️ best effort | Prezzi ufficiali Trenitalia. Endpoint interno, non documentato. |
+| **FlixBus** | autobus | ⚠️ best effort | Endpoint pubblico non ufficiale: può cambiare o bloccare. |
+| **Itabus** | autobus | ⚠️ best effort | Operatore low-cost italiano. Endpoint pubblico non ufficiale. |
+| **BlaBlaCar** | passaggi in auto | ⚙️ richiede chiave | Chiave gratuita su [dev.blablacar.com](https://dev.blablacar.com). Senza chiave resta il link di ricerca. |
+| **Carsharing** | auto condivisa | ✅ | **Stima** di costo (non un preventivo) su tariffe Enjoy, Free2Move, Ubeeqo, E-Vai. |
+| **Mezzi pubblici vicini** | fermate/stazioni | ⚠️ best effort | OpenStreetMap Overpass: fermate vicine, non orari. A volte lento/indisponibile. |
+
+> Trenitalia/Omio/FlixBus/Itabus sono **endpoint non ufficiali** usati dai rispettivi siti/app: possono
+> cambiare senza preavviso. Ogni fonte che cade è segnalata nelle note del giro e le altre restano attive.
 
 Ogni ricerca include sempre la scheda **Link utili** con ricerche precompilate su
 BlaBlaCar, FlixBus, Omio, Trainline, Trenitalia, Italo, Google Maps e app di carsharing:
@@ -154,9 +163,11 @@ app/
     intelligence.py    orchestrazione: NLU, piano, spiegazioni, domande
   adapters/
     base.py            contratto comune delle fonti
-    demo.py            dati simulati (mai nei piani)
-    blablacar.py       API ufficiale v3
+    blablacar.py       API ufficiale v3 (passaggi in auto)
     flixbus.py         autobus
+    itabus.py          autobus low-cost
+    trenitalia.py      treni (regionali, Frecce, Intercity)
+    omio.py            aggregatore treni + bus + voli
     carsharing.py      stime noleggio one-way
     transit.py         fermate vicine (Overpass)
   services/
@@ -230,8 +241,9 @@ python scripts/make_icons.py
 - [x] PWA installabile sul telefono (manifest + service worker + icone)
 - [x] Intelligenza Groq: linguaggio naturale, piano più economico, domande all'utente
 - [x] Ricerche multi-tratta (auto/carsharing + bus) con confronto per costo effettivo
+- [x] Trenitalia con prezzi reali (+ Italo via aggregatore Omio)
+- [x] Più fonti reali: Omio (treni/bus/voli), Itabus, FlixBus, BlaBlaCar
 - [ ] Adapter GTFS/GTFS-RT per orari reali di treni e bus locali
-- [ ] Integrazione Trenitalia/Italo con prezzi
 - [ ] Mappa delle offerte e delle zone carsharing
 - [ ] Web Push (oltre a Telegram) per la PWA
 - [ ] Scraping opzionale (Playwright) attivabile per singola fonte

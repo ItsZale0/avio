@@ -16,7 +16,7 @@ from ..geo import haversine_km
 # Modalita' che possono fare da "prima tratta" (per raggiungere una stazione).
 ACCESS_MODES = {"carsharing", "rideshare", "transit", "bus"}
 # Modalita' che possono fare da "tratta principale".
-MAIN_MODES = {"bus", "train", "rideshare"}
+MAIN_MODES = {"bus", "train", "rideshare", "flight"}
 
 MAX_COMBOS = 40
 MAX_SINGLES = 60
@@ -43,10 +43,7 @@ class Candidate:
     def label(self) -> str:
         names = []
         for leg in self.legs:
-            name = leg.operator or leg.source
-            if leg.source == "demo":
-                name = f"{name} (demo)"
-            names.append(name)
+            names.append(leg.operator or leg.source)
         return " + ".join(names)
 
     def as_dict(self, *, ranked: dict[str, dict] | None = None) -> dict:
@@ -130,8 +127,7 @@ def build_candidates(
     max_wait_min: int = 360,
 ) -> list[Candidate]:
     """Restituisce le combinazioni valide ordinate per costo totale."""
-    # Le offerte "demo" sono simulate: mai in un piano, servono solo alla vetrina.
-    priced = [o for o in offers if o.price is not None and o.source != "demo"]
+    priced = [o for o in offers if o.price is not None]
     if not priced:
         return []
 

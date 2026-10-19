@@ -170,7 +170,7 @@ async def _trip_from_text(text: str) -> str | None:
             max_price=data.get("max_price"),
             passengers=int(data.get("passengers") or 1),
             radius_km=float(data.get("radius_km") or 5),
-            sources=["demo", "flixbus", "blablacar", "carsharing", "transit"],
+            sources=["blablacar", "flixbus", "itabus", "trenitalia", "omio", "carsharing", "transit"],
             notify=["web", "telegram"],
         )
     except Exception as exc:

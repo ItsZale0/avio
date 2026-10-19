@@ -97,7 +97,6 @@ class Adapter:
     description: str = ""
     modes: tuple[str, ...] = ()
     requires: str | None = None
-    is_demo: bool = False
 
     async def search(self, ctx: SearchContext) -> AdapterResult:  # pragma: no cover
         raise NotImplementedError
@@ -109,5 +108,4 @@ class Adapter:
             "description": self.description,
             "modes": list(self.modes),
             "requires": self.requires,
-            "is_demo": self.is_demo,
         }

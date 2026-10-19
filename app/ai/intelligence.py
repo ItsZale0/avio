@@ -158,8 +158,7 @@ def _relax_questions(
     late = [
         o
         for o in offers
-        if o.source != "demo"
-        and o.arrive_at
+        if o.arrive_at
         and o.arrive_at > latest
         and _reaches_destination(o, ctx)
         and (o.price is None or ctx.max_price is None or o.price <= ctx.max_price)
@@ -167,8 +166,7 @@ def _relax_questions(
     over_budget = [
         o
         for o in offers
-        if o.source != "demo"
-        and ctx.max_price is not None
+        if ctx.max_price is not None
         and o.price is not None
         and o.price > ctx.max_price
     ]
@@ -239,13 +237,8 @@ async def analyze(
         # Usa le offerte grezze: una corsa scartata perche' arriva tardi
         # e' proprio il motivo per cui conviene chiedere all'utente.
         diagnostics = raw_offers if raw_offers is not None else offers
-        real = [o for o in diagnostics if o.source != "demo"]
-        if not real:
-            result.summary = (
-                "Solo dati simulati (fonte demo): aggiungi FlixBus o BlaBlaCar per un piano affidabile."
-                if diagnostics
-                else "Ancora nessuna offerta dalle fonti attive."
-            )
+        if not diagnostics:
+            result.summary = "Ancora nessuna offerta dalle fonti attive."
             return result
         result.questions = _relax_questions(diagnostics, ctx, prefs)
         result.summary = "Nessuna combinazione rispetta i vincoli attuali."

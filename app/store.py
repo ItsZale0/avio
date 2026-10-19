@@ -8,7 +8,7 @@ from urllib.parse import quote
 
 from . import db
 from .adapters.carsharing import load_providers
-from .schemas import WatchIn, WatchUpdate
+from .schemas import DEFAULT_SOURCES, WatchIn, WatchUpdate
 from .timeutil import from_iso, iso, now_utc
 
 WATCH_FIELDS = [
@@ -30,6 +30,10 @@ WATCH_FIELDS = [
     "active",
     "prefs",
 ]
+
+# Vecchie fonte di default (prima dell'arrivo delle fonti reali aggiuntive).
+# Le ricerche che usavano solo queste vengono aggiornate ai default attuali.
+LEGACY_SOURCES = {"demo", "blablacar", "flixbus", "carsharing", "transit"}
 
 SELECT_WATCH = """
 SELECT w.*,
@@ -59,8 +63,18 @@ def _serialize_watch(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def watch_to_dict(row) -> dict[str, Any]:
+    from .adapters import ADAPTERS
+
     data = db.row_to_dict(row) or {}
-    data["sources"] = db.load_json(data.get("sources"), ["demo"])
+    raw_sources = db.load_json(data.get("sources"), list(DEFAULT_SOURCES))
+    if set(raw_sources) <= LEGACY_SOURCES:
+        # Ricerca creata con le vecchie fonti (anche i dati simulati "demo"):
+        # la portiamo alle fonti reali complete, cosi' copre anche le nuove.
+        data["sources"] = list(DEFAULT_SOURCES)
+    else:
+        # Fonti rimosse o sconosciute vengono scartate; se non ne resta nessuna
+        # torniamo ai default.
+        data["sources"] = [s for s in raw_sources if s in ADAPTERS] or list(DEFAULT_SOURCES)
     data["notify"] = db.load_json(data.get("notify"), ["web"])
     data["prefs"] = db.load_json(data.get("prefs"), {})
     data["active"] = bool(data.get("active"))

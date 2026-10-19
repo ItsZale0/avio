@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-DEFAULT_SOURCES = ["demo", "blablacar", "flixbus", "carsharing", "transit"]
+DEFAULT_SOURCES = ["blablacar", "flixbus", "itabus", "trenitalia", "omio", "carsharing", "transit"]
 DEFAULT_NOTIFY = ["web", "telegram"]
 
 
@@ -34,7 +34,7 @@ class WatchIn(BaseModel):
     @classmethod
     def _clean_sources(cls, value: list[str]) -> list[str]:
         cleaned = [v.strip() for v in value if v and v.strip()]
-        return list(dict.fromkeys(cleaned)) or ["demo"]
+        return list(dict.fromkeys(cleaned)) or list(DEFAULT_SOURCES)
 
     @field_validator("notify")
     @classmethod

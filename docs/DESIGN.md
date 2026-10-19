@@ -9,7 +9,7 @@ Documento di architettura della v0.1 e traccia per le iterazioni successive.
 | Requisito utente | Come è risolto |
 |---|---|
 | Inserire luogo, data e **ora di arrivo massimo** | Form con partenza, arrivo, `depart_after`, `arrive_by`, budget, passeggeri, raggio |
-| Cercare su **più fonti possibili** | Adapter indipendenti (BlaBlaCar, FlixBus, carsharing, mezzi pubblici, demo) + link precompilati |
+| Cercare su **più fonti possibili** | Adapter indipendenti (BlaBlaCar, Omio, Trenitalia, FlixBus, Itabus, carsharing, mezzi pubblici) + link precompilati |
 | Agente che cerca **ogni ora** e avvisa | Scheduler interno, intervallo configurabile (15 min–6 h), digest solo sulle novità |
 | Sapere qual è il **modo più economico** | Badge *Più economico* + ordinamento per prezzo e punteggio |
 | **Carsharing vicino** | Stima costo one-way per provider/città + fermate/stazioni entro pochi minuti a piedi |
@@ -107,7 +107,7 @@ Tutti gli orari sono salvati in **UTC ISO 8601**; l'interfaccia li mostra nel fu
 6. calcola score + badge + costo effettivo
 7. upsert offerte; rileva nuove e ribassi (>= max(0,50 €, 4%))
 8. disattiva offerte già passate
-9. pianificatore: costruisce le combinazioni candidate (1-2 tratte, no demo),
+9. pianificatore: costruisce le combinazioni candidate (1-2 tratte),
    l'AI sceglie la più economica e la spiega (oppure fallback deterministico)
 10. salva il piano corrente + alternative; aggiorna ai_summary/ai_best_price
 11. domande: al massimo 2 per giro, dedupe per `key`, inviate anche su Telegram
@@ -154,7 +154,8 @@ store.save_plans() + questions.create_many()
 - **Degradazione**: senza chiave (o AI disattivata) il piano esiste comunque —
   è il candidato più economico — con spiegazione da template. L'app non si blocca.
 - **Token accounting** in `ai_log` (task, modello, token, latenza, esito).
-- Le offerte **demo non entrano mai nei piani**: al primo avvio serve una fonte reale.
+- L'app usa **solo offerte reali**: nessun dato simulato. Se nessuna fonte risponde,
+  la ricerca resta vuota e l'agente lo segnala.
 
 ### Domande all'utente
 
@@ -165,7 +166,6 @@ e chiede, mirato:
 |---|---|---|
 | Arriverebbe dopo il limite | `flexible_days` | no / +1 giorno / +2 giorni |
 | Tutto sopra il budget | `budget_flex` | resto sul budget / alzo a X € |
-| Fonte solo simulata | — | nessuna domanda: lo dice il riepilogo |
 
 Ogni opzione porta con sé la patch di preferenze (`{"flexible_days": 1}`). La risposta
 aggiorna `watches.prefs` (o `max_price`) e fa ripartire una ricerca subito. Le domande
@@ -208,9 +208,11 @@ Non serve toccare il motore: filtri, scoring, deduplica e avvisi sono automatici
 
 | Adapter | Meccanismo | Affidabilità | Costo/limiti |
 |---|---|---|---|
-| `demo` | generazione locale deterministica | alta | solo dimostrativo |
+| `omio` | endpoint app (GoEuro) `v5/searches` + `v5/results` | media | aggregatore multi-compagnia (treni/bus/voli); non documentato |
+| `trenitalia` | endpoint interno `app.lefrecce.it` BFF | media | prezzi ufficiali; non documentato |
 | `blablacar` | API ufficiale v3, chiave gratuita | alta con chiave | quota API; senza chiave → hint + link |
 | `flixbus` | endpoint pubblico del sito | media | non documentato, può cambiare |
+| `itabus` | endpoint pubblico del sito + codici stazione | media | non documentato; rete solo Italia/Europa |
 | `carsharing` | tabella tariffe + città coperte | alta (stima) | disponibilità veicolo da verificare |
 | `transit` | Overpass (OSM) con 3 mirror | media | nessun orario, solo fermate vicine |
 
