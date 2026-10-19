@@ -1002,7 +1002,6 @@ async function openSettings() {
     $("#sNotifyEnabled").checked = (s.notify_enabled || "1") === "1";
     $("#sQuietFrom").value = s.quiet_from || "";
     $("#sQuietTo").value = s.quiet_to || "";
-    $("#sBlaKey").value = s.blablacar_api_key || "";
     $("#sGroqKey").value = s.groq_api_key || "";
     $("#sAiSmart").value = s.ai_model_smart || "";
     $("#sAiFast").value = s.ai_model_fast || "";
@@ -1030,7 +1029,6 @@ function settingsPayload() {
     smtp_from: $("#sSmtpFrom").value.trim(),
     smtp_to: $("#sSmtpTo").value.trim(),
     smtp_tls: $("#sSmtpTls").checked ? "1" : "0",
-    blablacar_api_key: $("#sBlaKey").value.trim(),
     quiet_from: $("#sQuietFrom").value,
     quiet_to: $("#sQuietTo").value,
     notify_enabled: $("#sNotifyEnabled").checked ? "1" : "0",

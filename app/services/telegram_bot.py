@@ -11,7 +11,7 @@ import logging
 
 from .. import db, geo, notify, store
 from ..ai import intelligence
-from ..schemas import WatchIn
+from ..schemas import DEFAULT_SOURCES, WatchIn
 from ..timeutil import now_utc
 from . import questions as questions_service
 from . import settings as app_settings
@@ -170,7 +170,7 @@ async def _trip_from_text(text: str) -> str | None:
             max_price=data.get("max_price"),
             passengers=int(data.get("passengers") or 1),
             radius_km=float(data.get("radius_km") or 5),
-            sources=["blablacar", "flixbus", "itabus", "trenitalia", "omio", "carsharing", "transit"],
+            sources=list(DEFAULT_SOURCES),
             notify=["web", "telegram"],
         )
     except Exception as exc:

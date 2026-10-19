@@ -139,7 +139,6 @@ class SettingsIn(BaseModel):
     smtp_from: str | None = None
     smtp_to: str | None = None
     smtp_tls: str | None = None
-    blablacar_api_key: str | None = None
     quiet_from: str | None = None
     quiet_to: str | None = None
     notify_enabled: str | None = None

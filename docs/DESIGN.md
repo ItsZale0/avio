@@ -252,7 +252,7 @@ Non serve toccare il motore: filtri, scoring, deduplica e avvisi sono automatici
 |---|---|---|---|
 | `omio` | endpoint app (GoEuro) `v5/searches` + `v5/results` | media | aggregatore multi-compagnia (treni/bus/voli); non documentato |
 | `trenitalia` | endpoint interno `app.lefrecce.it` BFF | media | prezzi ufficiali; non documentato |
-| `blablacar` | API ufficiale v3, chiave gratuita | alta con chiave | quota API; senza chiave → hint + link |
+| `blablacar` | solo link di ricerca (API pubblica dismessa) | — | nessuna chiamata: hint + link |
 | `flixbus` | endpoint pubblico del sito | media | non documentato, può cambiare |
 | `itabus` | endpoint pubblico del sito + codici stazione | media | non documentato; rete solo Italia/Europa |
 | `carsharing` | tabella tariffe + città coperte | alta (stima) | disponibilità veicolo da verificare |

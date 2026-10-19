@@ -8,7 +8,7 @@ from datetime import datetime, time
 from .. import db
 from ..timeutil import ROME
 
-SECRET_KEYS = {"telegram_token", "smtp_password", "blablacar_api_key", "groq_api_key"}
+SECRET_KEYS = {"telegram_token", "smtp_password", "groq_api_key"}
 MASK = "••••••••"
 
 DEFAULTS: dict[str, str] = {
@@ -21,7 +21,6 @@ DEFAULTS: dict[str, str] = {
     "smtp_from": "",
     "smtp_to": "",
     "smtp_tls": "1",
-    "blablacar_api_key": "",
     "quiet_from": "",
     "quiet_to": "",
     "notify_enabled": "1",
@@ -46,7 +45,6 @@ def _env_defaults() -> dict[str, str]:
         "smtp_from": "SMTP_FROM",
         "smtp_to": "SMTP_TO",
         "smtp_tls": "SMTP_TLS",
-        "blablacar_api_key": "BLABLACAR_API_KEY",
         "quiet_from": "QUIET_FROM",
         "quiet_to": "QUIET_TO",
         "groq_api_key": "GROQ_API_KEY",

@@ -97,7 +97,7 @@ Tutte le fonti restituiscono **dati reali** al momento del controllo: nessuna of
 | **Trenitalia** | regionali, Frecciarossa, Intercity, notturni | ⚠️ best effort | Prezzi ufficiali Trenitalia. Endpoint interno, non documentato. |
 | **FlixBus** | autobus | ⚠️ best effort | Endpoint pubblico non ufficiale: può cambiare o bloccare. |
 | **Itabus** | autobus | ⚠️ best effort | Operatore low-cost italiano. Endpoint pubblico non ufficiale. |
-| **BlaBlaCar** | passaggi in auto | ⚙️ richiede chiave | Chiave gratuita su [dev.blablacar.com](https://dev.blablacar.com). Senza chiave resta il link di ricerca. |
+| **BlaBlaCar** | passaggi in auto | 🔗 solo link | L'API pubblica è stata **dismessa**: niente dati automatici, la ricerca si apre sul sito ufficiale (scheda *Link utili*). |
 | **Carsharing** | auto condivisa | ✅ | **Stima** di costo (non un preventivo) su tariffe Enjoy, Free2Move, Ubeeqo, E-Vai. |
 | **Mezzi pubblici vicini** | fermate/stazioni | ⚠️ best effort | OpenStreetMap Overpass: fermate vicine, non orari. A volte lento/indisponibile. |
 | **Orari GTFS** | treni e bus locali (Trentino, Lombardia, tram di Padova) | ✅ | Orari **ufficiali** da feed GTFS aperti, con coincidenze dirette e con **un cambio**. Il GTFS non contiene i prezzi: le card mostrano "solo orario". |
@@ -124,11 +124,12 @@ dalle pagine ufficiali** dei vettori e mostra:
 ti porta alla pagina ufficiale che lo contiene. Le pagine vengono lette al momento e
 messe in cache per 6 ore (pulsante **Aggiorna** per forzare).
 
-### BlaBlaCar: come ottenere la chiave
+### BlaBlaCar
 
-1. Registrati su <https://dev.blablacar.com>.
-2. Crea un'applicazione e copia la chiave API.
-3. Incollala in **Impostazioni → BlaBlaCar API**.
+L'API pubblica di BlaBlaCar è stata **dismessa**: l'app non può più leggere i
+passaggi in modo automatico. La fonte resta attiva come **link di ricerca**: la
+scheda *Link utili* apre il sito ufficiale con partenza, destinazione e data già
+compilate.
 
 ---
 
@@ -183,7 +184,7 @@ app/
     intelligence.py    orchestrazione: NLU, piano, spiegazioni, domande
   adapters/
     base.py            contratto comune delle fonti
-    blablacar.py       API ufficiale v3 (passaggi in auto)
+    blablacar.py       link di ricerca (API pubblica dismessa)
     flixbus.py         autobus
     itabus.py          autobus low-cost
     trenitalia.py      treni (regionali, Frecce, Intercity)
