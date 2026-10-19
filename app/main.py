@@ -78,6 +78,10 @@ async def auth_middleware(request: Request, call_next):
     Le rotte protette restituiscono 401 JSON: il frontend mostra il login.
     """
     path = request.url.path
+    # Le richieste preflight CORS (OPTIONS) non hanno cookie: vanno lasciate
+    # passare, altrimenti il browser blocca la chiamata cross-origin.
+    if request.method == "OPTIONS":
+        return await call_next(request)
     if path.startswith("/api/") and path not in deps.PUBLIC_PATHS:
         user = deps.current_user(request)
         if not user:

@@ -60,13 +60,18 @@ def require_admin(request: Request) -> dict[str, Any]:
 
 
 def set_session_cookie(response, token: str, *, secure: bool = False) -> None:
-    """Imposta il cookie di sessione (HttpOnly, SameSite=Lax)."""
+    """Imposta il cookie di sessione (HttpOnly).
+
+    `secure=True` (HTTPS) fa usare `SameSite=None`: serve quando la pagina
+    sta su un altro dominio (per esempio GitHub Pages) e chiama l'API via
+    tunnel — con `Lax` il browser non manderebbe il cookie.
+    """
     response.set_cookie(
         auth.COOKIE_NAME,
         token,
         max_age=auth.SESSION_DAYS * 24 * 3600,
         httponly=True,
-        samesite="lax",
+        samesite="none" if secure else "lax",
         secure=secure,
         path="/",
     )
