@@ -354,5 +354,43 @@ class TelegramLinkTest(AuthTestCase):
         self.assertIsNone(auth.user_for_telegram_chat(""))
 
 
+class ProxyCookieTest(unittest.TestCase):
+    """Il cookie di sessione deve avere Secure quando c'e' un reverse proxy.
+
+    Dietro Nginx o un tunnel Cloudflare la connessione interna e' http anche
+    se l'utente e' su https: senza `Secure` il browser rifiuta il cookie e
+    il login dal frontend su un altro dominio fallisce.
+    """
+
+    class _FakeRequest:
+        def __init__(self, scheme: str, headers: dict[str, str] | None = None):
+            self.url = type("U", (), {"scheme": scheme})()
+            # Le intestazioni HTTP non distinguono maiuscole/minuscole,
+            # come in Starlette.
+            self.headers = {key.lower(): value for key, value in (headers or {}).items()}
+
+    def test_http_request_is_not_secure(self):
+        from app import deps
+
+        self.assertFalse(deps.is_secure_request(self._FakeRequest("http")))
+
+    def test_https_request_is_secure(self):
+        from app import deps
+
+        self.assertTrue(deps.is_secure_request(self._FakeRequest("https")))
+
+    def test_forwarded_proto_https_is_secure(self):
+        from app import deps
+
+        request = self._FakeRequest("http", {"X-Forwarded-Proto": "https"})
+        self.assertTrue(deps.is_secure_request(request))
+
+    def test_forwarded_proto_http_is_not_secure(self):
+        from app import deps
+
+        request = self._FakeRequest("http", {"X-Forwarded-Proto": "http"})
+        self.assertFalse(deps.is_secure_request(request))
+
+
 if __name__ == "__main__":
     unittest.main()

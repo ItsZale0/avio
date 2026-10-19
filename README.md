@@ -246,19 +246,26 @@ app/
     telegram_bot.py    risposte da chat, nuovi viaggi scritti in chat
     promos.py          offerte + codici sconto dalle pagine ufficiali
     push.py            notifiche push (VAPID) per la PWA
-    settings.py        impostazioni a runtime
+    settings.py        impostazioni a runtime (globali e per-utente)
+  auth.py             account, bcrypt, sessioni, approvazione
+  deps.py             dipendenze FastAPI: sessione corrente, ruolo admin
 static/
   index.html, styles.css, app.js
   manifest.webmanifest, sw.js, icons/    PWA (pubblicata su GitHub Pages)
 .github/workflows/pages.yml  deploy automatico del frontend su GitHub Pages
+Dockerfile            immagine per il deploy su un server/container
 scripts/
   make_icons.py        genera le icone PWA
   build_pages.py       bundle per Cloudflare Pages
+  export_deploy.py     esporta il database per il server
+  install_oracle.sh    installazione completa su VM Ubuntu (Oracle Cloud)
 data/                  database SQLite (generato)
 docs/DESIGN.md         architettura e roadmap
 docs/DEPLOY.md         telefono, tunnel, Pages, GitHub
+docs/ORACLE.md         server sempre acceso su Oracle Cloud
 tests/test_core.py     test di scoring/geo
 tests/test_ai.py       test planner, fallback senza AI, finestra di flessibilità
+tests/test_auth.py     test di accesso, sessioni e separazione dei dati
 ```
 
 ---
@@ -271,6 +278,22 @@ Guida completa in **[`docs/DEPLOY.md`](docs/DEPLOY.md)**. In breve:
 - un **Cloudflare Tunnel** gratuito lo rende raggiungibile in HTTPS;
 - dal telefono apri l'URL → **Aggiungi a schermata Home** → è una PWA;
 - (opzionale) l'interfaccia su **Cloudflare Pages**, l'API resta dietro il tunnel.
+
+### Opzione: server sempre acceso, anche col PC spento
+
+Se vuoi che l'agente continui a girare quando il PC e' spento, c'e' il
+deploy su **Oracle Cloud**: piano Always Free con una VM Linux gratuita
+24/7, IP pubblico e volume persistente per il database.
+
+- Guida: **[`docs/ORACLE.md`](docs/ORACLE.md)**
+- `scripts/install_oracle.sh` installa e configura tutto in un colpo;
+- `Dockerfile` per chi preferisce un container;
+- l'interfaccia resta su GitHub Pages, l'API dietro l'IP o il dominio.
+
+```powershell
+# esporta account, ricerche e impostazioni per il server
+python scripts\export_deploy.py
+```
 
 ---
 

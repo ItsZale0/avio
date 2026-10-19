@@ -191,7 +191,7 @@ async def register(payload: RegisterIn, request: Request, response: Response):
 
     token, _ = auth.create_session(int(user["id"]), request.headers.get("user-agent"))
     auth.touch_login(int(user["id"]))
-    deps.set_session_cookie(response, token, secure=request.url.scheme == "https")
+    deps.set_session_cookie(response, token, secure=deps.is_secure_request(request))
     return {"ok": True, "status": user["status"], "user": auth.public_user(user)}
 
 
@@ -209,7 +209,7 @@ async def login(payload: LoginIn, request: Request, response: Response):
 
     token, _ = auth.create_session(int(user["id"]), request.headers.get("user-agent"))
     auth.touch_login(int(user["id"]))
-    deps.set_session_cookie(response, token, secure=request.url.scheme == "https")
+    deps.set_session_cookie(response, token, secure=deps.is_secure_request(request))
     return {"ok": True, "user": auth.public_user(user)}
 
 
@@ -332,9 +332,9 @@ async def link_telegram(request: Request):
         "ok": True,
         "code": token,
         "message": (
-            "Codice generato. Inoltralo al bot (/link CODICE) e poi premi «Collega»."
+            "Codice generato. Inoltralo al bot (/link CODICE) e poi premi Â«CollegaÂ»."
             if not sent
-            else "Codice generato e inviato in chat: torna qui e premi «Collega»."
+            else "Codice generato e inviato in chat: torna qui e premi Â«CollegaÂ»."
         ),
     }
 
@@ -545,7 +545,7 @@ async def promos(refresh: bool = False):
 
 @app.get("/api/carsharing/zones")
 async def carsharing_zones():
-    """Città coperte dal carsharing, con coordinate, per la mappa."""
+    """CittÃ  coperte dal carsharing, con coordinate, per la mappa."""
     from .adapters.carsharing import load_providers
 
     zones = []
@@ -650,7 +650,7 @@ async def put_settings(payload: SettingsIn, request: Request):
 async def test_telegram(request: Request):
     user = deps.require_user(request)
     ok, error = await notify.send_telegram(
-        f"✅ {APP_NAME}: notifiche Telegram configurate correttamente.",
+        f"âœ… {APP_NAME}: notifiche Telegram configurate correttamente.",
         user_id=int(user["id"]),
     )
     return {"ok": ok, "error": error}
@@ -660,7 +660,7 @@ async def test_telegram(request: Request):
 async def test_email(request: Request):
     user = deps.require_user(request)
     ok, error = await notify.send_email(
-        f"{APP_NAME} - test", "✅ Le notifiche email sono configurate correttamente.",
+        f"{APP_NAME} - test", "âœ… Le notifiche email sono configurate correttamente.",
         user_id=int(user["id"]),
     )
     return {"ok": ok, "error": error}
@@ -709,7 +709,7 @@ async def push_test(request: Request):
     user = deps.require_user(request)
     outcomes = await push_service.send(
         f"{APP_NAME} - prova",
-        "✅ Se vedi questa notifica, le push funzionano. Buon viaggio!",
+        "âœ… Se vedi questa notifica, le push funzionano. Buon viaggio!",
         "/",
         user_id=int(user["id"]),
     )

@@ -38,6 +38,19 @@ def _token_from_request(request: Request) -> str | None:
     return None
 
 
+def is_secure_request(request: Request) -> bool:
+    """True se la connessione con il browser e' cifrata.
+
+    Dietro un reverse proxy (Cloudflare Tunnel, Nginx su Oracle) uvicorn vede
+    `http` anche se l'utente e' su HTTPS: in quel caso il cookie di sessione
+    verrebbe creato senza il flag `Secure` e il browser lo rifiuterebbe.
+    Per questo si guarda anche l'header `X-Forwarded-Proto`.
+    """
+    if request.url.scheme == "https":
+        return True
+    forwarded = (request.headers.get("x-forwarded-proto") or "").strip().lower()
+    return forwarded == "https"
+
 def current_user(request: Request) -> dict[str, Any] | None:
     """Utente della sessione corrente, o None se non c'e'."""
     return auth.resolve_session(_token_from_request(request))
