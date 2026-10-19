@@ -58,8 +58,16 @@ python scripts\install_autostart.py            # crea la task
 python scripts\install_autostart.py --remove   # la toglie
 ```
 
-Alternativa rapida: crea un collegamento a `start.bat` dentro
-`shell:startup` (Win+R → `shell:startup`).
+**Alternativa senza privilegi di amministratore** (consigliata, funziona subito):
+copia `avvia-agente.bat` nella cartella di avvio dell'utente.
+
+```powershell
+$startup = [Environment]::GetFolderPath("Startup")
+Copy-Item "avvia-agente.bat" $startup
+```
+
+Oppure crea un collegamento a `start.bat` dentro `shell:startup` (Win+R →
+`shell:startup`).
 
 ## 2. Tunnel Cloudflare (URL HTTPS stabile, gratis)
 
