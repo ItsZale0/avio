@@ -853,6 +853,17 @@ async def skip_question(question_id: int, request: Request):
 # --------------------------------------------------------------------------- #
 # Frontend statico (dashboard + PWA)
 # --------------------------------------------------------------------------- #
+def _build_stamp() -> str:
+    """Versione degli asset: l'hash del commit, se noto, altrimenti la data.
+
+    Serve per il cache-busting: GitHub Pages tiene in cache i file per 10
+    minuti, quindi un URL senza versione puo' servire una versione vecchia.
+    """
+    from .timeutil import now_utc
+
+    return os.getenv("CARPOOL_BUILD_STAMP") or now_utc().strftime("%Y%m%d%H%M%S")
+
+
 def _web_file(name: str, media_type: str | None = None, cache: str = "no-store"):
     path = WEB_DIR / name
     if not path.exists():
@@ -862,7 +873,16 @@ def _web_file(name: str, media_type: str | None = None, cache: str = "no-store")
 
 @app.get("/")
 async def index():
-    return _web_file("index.html")
+    """La dashboard, con il placeholder __BUILD__ sostituito dalla versione."""
+    path = WEB_DIR / "index.html"
+    if not path.exists():
+        return JSONResponse({"detail": "index.html non trovato"}, status_code=404)
+    html = path.read_text(encoding="utf-8").replace("__BUILD__", _build_stamp())
+    return Response(
+        html,
+        media_type="text/html",
+        headers={"Cache-Control": "no-store, must-revalidate"},
+    )
 
 
 @app.get("/config.json")

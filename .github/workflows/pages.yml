@@ -38,6 +38,14 @@ jobs:
           fi
           # .nojekyll: evita che Jekyll tocchi i file con _ iniziale
           touch _site/.nojekyll
+          # GitHub Pages mette in cache i file per 10 minuti e non supporta
+          # header custom. L'unico modo per non servire una versione vecchia
+          # di app.js/styles.css e' il cache-busting: il placeholder
+          # __BUILD__ diventa l'hash del commit, quindi ogni deploy cambia
+          # gli URL degli asset.
+          BUILD="${{ github.sha }}"
+          sed -i "s/__BUILD__/$BUILD/g" _site/index.html
+          echo "Versione asset: $BUILD"
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
