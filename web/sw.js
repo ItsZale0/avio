@@ -1,7 +1,7 @@
 /* Carpool Hunter - service worker minimale.
    Strategia: rete per prima (il codice cambia spesso), cache come rete di
    sicurezza quando sei offline. I dati (/api) non vengono mai messi in cache. */
-const CACHE = "carpool-v3";
+const CACHE = "carpool-v4";
 const SHELL = [
   "/",
   "/static/styles.css",
@@ -48,5 +48,39 @@ self.addEventListener("fetch", (event) => {
         return response;
       })
       .catch(() => caches.match(request).then((cached) => cached || caches.match("/")))
+  );
+});
+
+/* Notifiche push: l'agente manda titolo, testo e URL da aprire. */
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (_) {
+    data = { title: "Carpool Hunter", body: event.data ? event.data.text() : "Nuova offerta" };
+  }
+  const title = data.title || "Carpool Hunter";
+  const body = (data.body || "Ci sono novita' per una tua ricerca.").slice(0, 400);
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      icon: "/static/icons/icon-192.png",
+      badge: "/static/icons/icon-192.png",
+      data: { url: data.url || "/" },
+      tag: data.tag || "carpool",
+    })
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = (event.notification.data && event.notification.data.url) || "/";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      for (const client of list) {
+        if (client.url.includes(self.location.origin)) return client.focus();
+      }
+      return self.clients.openWindow(target);
+    })
   );
 });

@@ -147,6 +147,18 @@ CREATE TABLE IF NOT EXISTS plans (
 
 CREATE INDEX IF NOT EXISTS idx_plans_watch ON plans(watch_id, is_current);
 
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    endpoint   TEXT NOT NULL UNIQUE,
+    p256dh     TEXT NOT NULL,
+    auth       TEXT NOT NULL,
+    label      TEXT,
+    user_agent TEXT,
+    created_at TEXT NOT NULL,
+    last_ok_at TEXT,
+    fail_count INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS ai_log (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     watch_id   INTEGER,

@@ -61,8 +61,11 @@ l'URL resta segreto anche se qualcuno lo indovina.
 2. Android: menu ⋮ → **Installa app** / *Aggiungi a schermata Home*.
    iOS: Condividi → **Aggiungi a Home**.
 3. Compariranno icona e nome: si apre a schermo intero, come un'app.
-4. Se vuoi la notifica push reale, tieni **Telegram** tra i canali: e' la via
-   piu' affidabile (le push web richiedono HTTPS — che il tunnel ti da).
+4. Se vuoi la notifica push reale, attivala in **Impostazioni → Notifiche push**
+   (*Attiva su questo dispositivo*): funziona solo su HTTPS — che il tunnel ti dà —
+   o su `localhost`. Su iPhone/iPad servono iOS 16.4 o successivo e l'app aggiunta
+   alla schermata Home. In alternativa tieni **Telegram** tra i canali. Richiede
+   `pip install pywebpush` sul PC.
 
 ## 4. (Opzionale) Interfaccia su Cloudflare Pages
 

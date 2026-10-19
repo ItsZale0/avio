@@ -8,7 +8,7 @@ import os
 from contextlib import asynccontextmanager
 from datetime import timedelta
 
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -23,6 +23,8 @@ from .schemas import (
     AnswerIn,
     OfferOut,
     ParseRequest,
+    PushSubscribeIn,
+    PushUnsubscribeIn,
     RunOut,
     SettingsIn,
     WatchIn,
@@ -30,6 +32,7 @@ from .schemas import (
     WatchUpdate,
 )
 from .services import promos as promos_service
+from .services import push as push_service
 from .services import questions as questions_service
 from .services import scheduler
 from .services import search
@@ -354,6 +357,49 @@ async def test_email():
         f"{APP_NAME} - test", "✅ Le notifiche email sono configurate correttamente."
     )
     return {"ok": ok, "error": error}
+
+
+# --------------------------------------------------------------------------- #
+# Notifiche push per la PWA (Web Push + VAPID)
+# --------------------------------------------------------------------------- #
+@app.get("/api/push/status")
+async def push_status():
+    return {
+        "available": push_service.available(),
+        "public_key": push_service.public_key(),
+        "subscriptions": push_service.count(),
+    }
+
+
+@app.post("/api/push/subscribe")
+async def push_subscribe(payload: PushSubscribeIn, request: Request):
+    if not push_service.available():
+        raise HTTPException(503, "Notifiche push non disponibili: manca la libreria pywebpush")
+    try:
+        total = push_service.subscribe(
+            {"endpoint": payload.endpoint, "keys": payload.keys.model_dump(), "label": payload.label},
+            user_agent=request.headers.get("user-agent"),
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "subscriptions": total}
+
+
+@app.post("/api/push/unsubscribe")
+async def push_unsubscribe(payload: PushUnsubscribeIn):
+    return {"ok": True, "subscriptions": push_service.unsubscribe(payload.endpoint)}
+
+
+@app.post("/api/push/test")
+async def push_test():
+    outcomes = await push_service.send(
+        f"{APP_NAME} - prova",
+        "✅ Se vedi questa notifica, le push funzionano. Buon viaggio!",
+        "/",
+    )
+    ok = any(item["ok"] for item in outcomes)
+    error = "" if ok else "; ".join(item["error"] for item in outcomes if item.get("error"))
+    return {"ok": ok, "error": error, "devices": push_service.count()}
 
 
 # --------------------------------------------------------------------------- #

@@ -230,6 +230,9 @@ function bindEvents() {
   $("#btnTestAi").addEventListener("click", testAi);
   $("#btnAiModels").addEventListener("click", listAiModels);
   $("#btnGtfsUpdate").addEventListener("click", updateGtfs);
+  $("#btnPushEnable").addEventListener("click", enablePush);
+  $("#btnPushDisable").addEventListener("click", disablePush);
+  $("#btnPushTest").addEventListener("click", testPush);
 
   $("#questionsCard").addEventListener("click", (event) => {
     const button = event.target.closest("[data-answer]");
@@ -1154,6 +1157,7 @@ async function openSettings() {
     $("#telegramTestResult").textContent = "";
     $("#emailTestResult").textContent = "";
     loadGtfsStatus();
+    renderPushStatus();
     openModal("settingsModal");
   } catch (error) {
     toast(error.message, "error");
@@ -1250,6 +1254,111 @@ async function updateGtfs() {
       }
     } catch (_) { /* ignora errori di polling */ }
   }, 3000);
+}
+
+function urlBase64ToUint8Array(base64) {
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  const raw = atob((base64 + padding).replace(/-/g, "+").replace(/_/g, "/"));
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i += 1) bytes[i] = raw.charCodeAt(i);
+  return bytes;
+}
+
+async function renderPushStatus() {
+  const hint = $("#pushStatus");
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    hint.textContent = "Questo browser non supporta le notifiche push.";
+    hint.className = "field-hint err";
+    return;
+  }
+  try {
+    const data = await api("/api/push/status");
+    if (!data.available) {
+      hint.textContent = "Server: libreria push non installata (pip install pywebpush).";
+      hint.className = "field-hint err";
+      return;
+    }
+    const registration = await navigator.serviceWorker.getRegistration();
+    const subscription = registration ? await registration.pushManager.getSubscription() : null;
+    hint.textContent = subscription
+      ? `Attive su questo dispositivo · ${data.subscriptions} dispositivi collegati`
+      : `Non attive su questo dispositivo · ${data.subscriptions} dispositivi collegati`;
+    hint.className = "field-hint" + (subscription ? " ok" : "");
+  } catch (error) {
+    hint.textContent = "✗ " + error.message;
+    hint.className = "field-hint err";
+  }
+}
+
+async function enablePush() {
+  const hint = $("#pushStatus");
+  try {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      throw new Error("push non supportate da questo browser");
+    }
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") throw new Error("permesso notifiche negato");
+    const data = await api("/api/push/status");
+    if (!data.available) throw new Error("server: libreria push non installata");
+    const registration = await navigator.serviceWorker.ready;
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(data.public_key),
+      });
+    }
+    const json = subscription.toJSON();
+    await api("/api/push/subscribe", {
+      method: "POST",
+      body: JSON.stringify({
+        endpoint: subscription.endpoint,
+        keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
+        label: navigator.platform || "dispositivo",
+      }),
+    });
+    toast("Notifiche push attivate");
+    await renderPushStatus();
+  } catch (error) {
+    hint.textContent = "✗ " + error.message;
+    hint.className = "field-hint err";
+  }
+}
+
+async function disablePush() {
+  const hint = $("#pushStatus");
+  try {
+    const registration = await navigator.serviceWorker.getRegistration();
+    const subscription = registration ? await registration.pushManager.getSubscription() : null;
+    if (subscription) {
+      await api("/api/push/unsubscribe", {
+        method: "POST",
+        body: JSON.stringify({ endpoint: subscription.endpoint }),
+      });
+      await subscription.unsubscribe();
+    }
+    toast("Notifiche push disattivate");
+    await renderPushStatus();
+  } catch (error) {
+    hint.textContent = "✗ " + error.message;
+    hint.className = "field-hint err";
+  }
+}
+
+async function testPush() {
+  const hint = $("#pushStatus");
+  hint.textContent = "invio…";
+  hint.className = "field-hint";
+  try {
+    const data = await api("/api/push/test", { method: "POST" });
+    if (!data.ok) throw new Error(data.error || "nessun dispositivo raggiunto");
+    toast("Notifica di prova inviata");
+  } catch (error) {
+    hint.textContent = "✗ " + error.message;
+    hint.className = "field-hint err";
+    return;
+  }
+  await renderPushStatus();
 }
 
 async function testTelegram() {

@@ -331,5 +331,67 @@ class GtfsScoringTest(unittest.TestCase):
         self.assertIn("orario", ranked[schedule.fingerprint]["badges"])
 
 
+class PushTest(unittest.TestCase):
+    """Notifiche push: iscrizioni dei dispositivi e canale 'push' negli avvisi."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+
+        from app import db
+
+        self._tmp = tempfile.TemporaryDirectory()
+        self._old_path = db.DB_PATH
+        db.DB_PATH = Path(self._tmp.name) / "push.db"
+        db.init_db()
+
+    def tearDown(self):
+        from app import db
+
+        db.DB_PATH = self._old_path
+        self._tmp.cleanup()
+
+    def _subscription(self, endpoint="https://push.example/1", p256dh="x" * 20):
+        return {"endpoint": endpoint, "keys": {"p256dh": p256dh, "auth": "y" * 12}, "label": "telefono"}
+
+    def test_subscribe_resubscribe_and_unsubscribe(self):
+        from app.services import push
+
+        self.assertEqual(push.count(), 0)
+        self.assertEqual(push.subscribe(self._subscription()), 1)
+        # stesso endpoint: aggiorna, non duplica
+        push.subscribe(self._subscription(p256dh="z" * 20))
+        self.assertEqual(push.count(), 1)
+        self.assertEqual(push.subscriptions()[0]["p256dh"], "z" * 20)
+        self.assertEqual(push.unsubscribe("https://push.example/1"), 0)
+        self.assertEqual(push.count(), 0)
+
+    def test_subscribe_needs_keys(self):
+        from app.services import push
+
+        with self.assertRaises(ValueError):
+            push.subscribe({"endpoint": "https://push.example/2", "keys": {}})
+
+    def test_public_key_is_base64url(self):
+        from app.services import push
+
+        if not push.available():
+            self.skipTest("pywebpush non installato")
+        key = push.public_key()
+        self.assertTrue(key)
+        self.assertNotIn("=", key)
+        self.assertTrue(all(char.isalnum() or char in "-_" for char in key))
+
+    def test_send_without_devices_does_not_raise(self):
+        import asyncio
+
+        from app import notify
+
+        results = asyncio.run(notify.send_push("testo", "oggetto", ["push"]))
+        self.assertEqual(len(results), 1)
+        self.assertFalse(results[0]["ok"])
+        self.assertIn("nessun dispositivo", results[0]["error"].lower())
+
+
 if __name__ == "__main__":
     unittest.main()

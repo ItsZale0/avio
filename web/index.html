@@ -180,6 +180,7 @@
             <label class="chip"><input type="checkbox" name="notify" value="web" checked /> Dashboard</label>
             <label class="chip"><input type="checkbox" name="notify" value="telegram" /> Telegram</label>
             <label class="chip"><input type="checkbox" name="notify" value="email" /> Email</label>
+            <label class="chip"><input type="checkbox" name="notify" value="push" /> Push (telefono)</label>
             <label class="chip"><input type="checkbox" name="notify" value="desktop" /> Notifica desktop</label>
           </div>
         </div>
@@ -249,8 +250,17 @@
           <div class="field"><label for="sQuietTo">Silenzio fino alle</label><input id="sQuietTo" name="quiet_to" type="time" /></div>
         </div>
         <div class="field">
-          <label class="chip"><input type="checkbox" id="sNotifyEnabled" checked /> Notifiche push attive</label>
+          <label class="chip"><input type="checkbox" id="sNotifyEnabled" checked /> Avvisi attivi (tutti i canali)</label>
         </div>
+
+        <div class="section-title">Notifiche push (telefono)</div>
+        <small class="field-hint" id="pushStatus">—</small>
+        <div class="field inline-field">
+          <button type="button" class="btn ghost" id="btnPushEnable">Attiva su questo dispositivo</button>
+          <button type="button" class="btn ghost" id="btnPushDisable">Disattiva su questo dispositivo</button>
+          <button type="button" class="btn ghost" id="btnPushTest">Invia prova</button>
+        </div>
+        <small class="field-hint">Le push arrivano solo ai dispositivi che le attivano qui (telefono o PC). Su iPhone/iPad richiedono l'app aggiunta alla schermata Home e iOS 16.4 o successivo.</small>
 
         <div class="section-title">Intelligenza (Groq)</div>
         <div class="field">

@@ -8,7 +8,7 @@ from datetime import datetime, time
 from .. import db
 from ..timeutil import ROME
 
-SECRET_KEYS = {"telegram_token", "smtp_password", "groq_api_key"}
+SECRET_KEYS = {"telegram_token", "smtp_password", "groq_api_key", "vapid_private_key"}
 MASK = "••••••••"
 
 DEFAULTS: dict[str, str] = {
@@ -30,6 +30,8 @@ DEFAULTS: dict[str, str] = {
     "sources_migrated_gtfs": "",
     "ai_model_smart": "llama-3.3-70b-versatile",
     "ai_model_fast": "llama-3.1-8b-instant",
+    "vapid_private_key": "",
+    "vapid_public_key": "",
     "telegram_offset": "0",
 }
 

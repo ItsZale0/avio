@@ -132,6 +132,16 @@ async def send_push(text: str, subject: str, channels: list[str]) -> list[dict]:
             ok, error = await send_telegram(text)
         elif channel == "email":
             ok, error = await send_email(subject, text)
+        elif channel == "push":
+            from .services import push as push_service
+
+            outcomes = await push_service.send(subject, text)
+            ok = any(item["ok"] for item in outcomes)
+            error = ""
+            if not ok:
+                error = "; ".join(
+                    item["error"] for item in outcomes if item.get("error")
+                )[:200] or "nessun dispositivo raggiunto"
         else:
             continue
         results.append({"channel": channel, "ok": ok, "error": error})

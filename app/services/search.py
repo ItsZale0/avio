@@ -217,7 +217,8 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
                 if item["ok"]:
                     alerts_sent += 1
                 elif item.get("error") and not any(
-                    word in item["error"] for word in ("silenzio", "disattivate")
+                    word in item["error"]
+                    for word in ("silenzio", "disattivate", "nessun dispositivo", "non installato")
                 ):
                     errors.append(f"notify/{item['channel']}: {item['error']}")
 

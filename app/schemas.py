@@ -149,6 +149,21 @@ class SettingsIn(BaseModel):
     gtfs_enabled: str | None = None
 
 
+class PushKeys(BaseModel):
+    p256dh: str = Field(..., min_length=8)
+    auth: str = Field(..., min_length=8)
+
+
+class PushSubscribeIn(BaseModel):
+    endpoint: str = Field(..., min_length=8, max_length=1000)
+    keys: PushKeys
+    label: str | None = Field(None, max_length=80)
+
+
+class PushUnsubscribeIn(BaseModel):
+    endpoint: str = Field(..., min_length=8, max_length=1000)
+
+
 class ParseRequest(BaseModel):
     text: str = Field(..., min_length=3, max_length=800)
 

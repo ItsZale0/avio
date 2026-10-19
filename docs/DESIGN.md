@@ -73,7 +73,8 @@ Documento di architettura della v0.1 e traccia per le iterazioni successive.
 | `offers` | offerte trovate, una riga per (ricerca, fingerprint) | `source`, `mode`, `operator`, `depart_at`, `arrive_at`, `price`, `price_is_estimate`, `pickup/dropoff`, `score`, `badges` JSON, `details` JSON, `first_seen`, `last_seen`, `prev_price` |
 | `runs` | cronologia esecuzioni | `status` (ok/partial/error), `offers_found`, `alerts_sent`, `errors` JSON, `notes` JSON |
 | `alerts` | feed avvisi | `kind`, `title`, `message`, `read` |
-| `settings` | configurazione runtime | token/SMTP/quiet hours, chiave Groq, modelli |
+| `settings` | configurazione runtime | token/SMTP/quiet hours, chiave Groq, modelli, feed GTFS, chiavi VAPID |
+| `push_subscriptions` | dispositivi iscritti alle notifiche push | `endpoint` (unico), `p256dh`, `auth`, `label`, `fail_count`, `last_ok_at` |
 | `geocache` | cache geocoding | `query`, `lat`, `lon`, `display_name` |
 | `questions` | domande dell'agente all'utente | `watch_id`, `key` (slug, dedupe), `text`, `options` JSON (con `prefs`), `status` (pending/answered/skipped), `answer`, `answer_source` |
 | `plans` | piani calcolati, uno "corrente" per ricerca | `kind` (cheapest/alternative), `title`, `total_price`, `total_duration_min`, `steps` JSON, `explanation`, `watchouts` JSON, `confidence`, `fingerprint`, `is_current` |
@@ -308,7 +309,12 @@ affidabilità  = rating/5 * 100, default 68
   più il **piano più economico** (titolo, prezzo, passi, avvertenze).
 - Nessun avviso se non ci sono novità: nuove offerte, ribassi **o piano migliorato**
   (nuovo costo effettivo inferiore di almeno max(1 €, 4%)).
-- Canali: dashboard (sempre), Telegram, email, notifica desktop.
+- Canali: dashboard (sempre), Telegram, email, **push** (browser/PWA), notifica desktop.
+- **Push (Web Push + VAPID)**: le chiavi si generano al primo uso e restano nel DB locale
+  (`vapid_private_key` è un segreto mascherato); ogni dispositivo registra il proprio
+  `endpoint` in `push_subscriptions`. Il canale `push` di una ricerca manda titolo, testo
+  e link al service worker, che mostra la notifica e apre la dashboard al tocco.
+  Gli endpoint scaduti (404/410) vengono rimossi da soli; `pywebpush` è opzionale.
 - `notify_enabled` globale + fascia di silenzio configurabile.
 - Deduplica tramite fingerprint e `prev_price`; un'offerta già vista non riavvisa
   allo stesso prezzo.
@@ -359,6 +365,10 @@ affidabilità  = rating/5 * 100, default 68
 | GET | `/api/carsharing/zones` | città coperte dal carsharing con coordinate (mappa) |
 | GET | `/api/gtfs` | stato e feed degli orari GTFS |
 | POST | `/api/gtfs/update` | riscarica e reimporta i feed (in background) |
+| GET | `/api/push/status` | libreria push presente, chiave pubblica VAPID, dispositivi |
+| POST | `/api/push/subscribe` | registra l'iscrizione del browser |
+| POST | `/api/push/unsubscribe` | rimuove l'iscrizione |
+| POST | `/api/push/test` | notifica di prova ai dispositivi iscritti |
 | GET | `/api/geocode?q=` | verifica località |
 | GET | `/config.json` | `apiBase` per il frontend (Pages/tunnel) |
 | GET | `/sw.js`, `/manifest.webmanifest` | PWA (dalla radice, per lo scope) |
@@ -385,6 +395,8 @@ CORS: abilitato solo per le origini in `CARPOOL_CORS_ORIGINS`.
   link ufficiali ai codici sconto/voucher (cache 6 h, pulsante *Aggiorna*).
 - Modali per ricerca e impostazioni (sezione Groq con *Prova AI* / *Elenca modelli*);
   drawer avvisi.
+- Impostazioni → **Notifiche push**: stato dei dispositivi, *Attiva* / *Disattiva su questo
+  dispositivo* (iscrizione `pushManager`) e *Invia prova*.
 - Polling ogni 30 s; refresh immediato dopo creazione o "Cerca ora".
 - Toast + notifica desktop per le novità; badge non letti.
 - PWA: `manifest.webmanifest`, `sw.js` (shell in cache, mai le `/api`), icone
@@ -416,7 +428,8 @@ python -m unittest discover -s tests -v
 
 - `tests/test_core.py`: distanze, geocoding offline, filtri temporali/budget/raggio,
   scoring e badge, costo effettivo, generazione link, import GTFS e coincidenze
-  (tratta diretta, Pareto, cambio a piedi tra fermate a pochi metri).
+  (tratta diretta, Pareto, cambio a piedi tra fermate a pochi metri), iscrizioni push
+  (dedupe per endpoint, chiavi richieste, chiave pubblica VAPID, invio senza dispositivi).
 - `tests/test_ai.py`: planner (più economico, combo a 2 tratte, rifiuto per cambio
   lontano o orari incompatibili), fallback senza chiave Groq, domanda quando l'arrivo
   è oltre il limite, finestra di flessibilità (`flexible_days`).
@@ -433,7 +446,8 @@ python -m unittest discover -s tests -v
 2. **BlaBlaCar**: ✔ **fatto** — API pubblica dismessa, fonte solo link di ricerca.
 3. ~~**Mappa**~~ ✔ **fatto**: Leaflet + OpenStreetMap, offerte con punti di ritrovo/arrivo
    e linea, popup con operatore/orari/prezzo, zone carsharing da `/api/carsharing/zones`.
-4. **Web Push** per la PWA, oltre a Telegram (richiede VAPID + pywebpush).
+4. ~~**Web Push**~~ ✔ **fatto**: VAPID + `pywebpush`, iscrizioni in `push_subscriptions`,
+   canale `push` per ricerca e service worker con `push`/`notificationclick`.
 5. **Scraping opzionale** con Playwright, attivabile per fonte e con rate limit,
    rispettando robots.txt e ToS.
 6. **Memoria delle preferenze**: usare `prefs` anche per imparare dai clic/risposte

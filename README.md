@@ -80,6 +80,17 @@ non a ogni controllo.
 Compila server SMTP, porta, utente, password/app-password, mittente e destinatario.
 Per Gmail serve una *app password* (verifica in due passaggi attiva).
 
+### Notifiche push (telefono)
+
+1. Installa la PWA (vedi *Sul telefono*) oppure usa la dashboard su `http://127.0.0.1:8787`.
+2. Impostazioni → **Notifiche push** → *Attiva su questo dispositivo* e concedi il permesso.
+3. *Invia prova* per verificare; poi spunta **Push (telefono)** tra i canali di una ricerca.
+
+Le push si possono attivare su più dispositivi (telefono e PC insieme) e arrivano solo
+quando ci sono novità. Servono HTTPS o `localhost`; su iPhone/iPad servono iOS 16.4+ e
+l'app aggiunta alla schermata Home. Se la libreria non è installata:
+`pip install pywebpush`.
+
 ### Silenzio
 
 Imposta “silenzio dalle / fino alle” per non ricevere push di notte. Gli avvisi restano
@@ -218,6 +229,7 @@ app/
     questions.py       ciclo di vita delle domande + invio Telegram
     telegram_bot.py    risposte da chat, nuovi viaggi scritti in chat
     promos.py          offerte + codici sconto dalle pagine ufficiali
+    push.py            notifiche push (VAPID) per la PWA
     settings.py        impostazioni a runtime
 web/
   index.html, styles.css, app.js
@@ -296,6 +308,6 @@ python scripts/make_icons.py
 - [x] Pannello offerte & codici sconto dalle pagine ufficiali dei vettori
 - [x] Orari GTFS reali (treni/bus) con motore di coincidenze dirette + 1 cambio
 - [x] Mappa (Leaflet/OpenStreetMap) con offerte, punti di ritrovo e zone carsharing
-- [ ] Web Push (oltre a Telegram) per la PWA
+- [x] Web Push per la PWA (VAPID + pywebpush), oltre a Telegram ed email
 - [ ] Scraping opzionale (Playwright) attivabile per singola fonte
 - [ ] Export calendario (.ics) e condivisione di una ricerca

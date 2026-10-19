@@ -2,3 +2,4 @@ fastapi>=0.115
 uvicorn[standard]>=0.30
 httpx>=0.27
 apscheduler>=3.10
+pywebpush>=2.0  # notifiche push per la PWA (opzionale)
