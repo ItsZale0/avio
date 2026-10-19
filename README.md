@@ -20,10 +20,25 @@ Al primo avvio crea `.venv`, installa le dipendenze e apre il server su:
 
 Poi:
 
-1. **+ Nuova ricerca** → inserisci partenza, arrivo, “entro quando”, budget, raggio.
+1. **Crea il tuo account**: al primo avvio compare il form di registrazione.
+   Il primo account è **amministratore**; gli altri restano in attesa di
+   approvazione e l'admin li abilita da *Impostazioni → Utenti*.
+2. **+ Nuova ricerca** → inserisci partenza, arrivo, “entro quando”, budget, raggio.
    (Oppure scrivi il viaggio in una frase e premi **✨ Compila con l'AI**.)
-2. Scegli le fonti e i canali di avviso.
-3. L'agente fa subito il primo giro e poi ricontrolla ogni ora (configurabile).
+3. Scegli le fonti e i canali di avviso.
+4. L'agente fa subito il primo giro e poi ricontrolla ogni ora (configurabile).
+
+Ogni utente vede **solo le proprie** ricerche, offerte, avvisi e notifiche
+(Telegram e push). Le impostazioni personali (Telegram, SMTP, fascia di
+silenzio) sono per utente; quelle comuni (chiave Groq, orari GTFS) restano
+dell'amministratore.
+
+Da riga di comando:
+
+```powershell
+python -m app.cli users              # elenco account e stato
+python -m app.cli user-add mario     # crea un account attivo
+```
 
 Avvio manuale senza script:
 
@@ -289,8 +304,10 @@ python scripts/make_icons.py
 - I prezzi possono cambiare tra un controllo e l'altro: **verifica sempre nell'app/sito**
   prima di prenotare.
 - Il carsharing è una **stima** basata su tariffe indicative, non una prenotazione.
-- L'app non ha autenticazione: tienila su `127.0.0.1` o dietro un tunnel con URL segreto
-  (meglio con **Cloudflare Access**). Se la esponi in rete, metti login e HTTPS.
+- L'app ha **accesso con nome utente e password** (bcrypt + sessione in cookie `HttpOnly`).
+  Ogni utente vede solo le proprie ricerche, offerte, avvisi e notifiche. Resta
+  comunque consigliato metterla dietro un tunnel con URL segreto (meglio con
+  **Cloudflare Access**): l'accesso protegge i dati, non il canale.
 - Orari e disponibilità dei mezzi pubblici non sono inclusi: i link puntano a Google Maps.
 - **Orari GTFS**: treni e bus locali sono coperti dove esiste un feed aperto (Trentino,
   Lombardia, tram di Padova). Il GTFS **non contiene i prezzi**: le card mostrano
@@ -312,5 +329,6 @@ python scripts/make_icons.py
 - [x] Orari GTFS reali (treni/bus) con motore di coincidenze dirette + 1 cambio
 - [x] Mappa (Leaflet/OpenStreetMap) con offerte, punti di ritrovo e zone carsharing
 - [x] Web Push per la PWA (VAPID + pywebpush), oltre a Telegram ed email
+- [x] Multi-utente: accesso con password, ricerche e notifiche separate per account
 - [ ] Scraping opzionale (Playwright) attivabile per singola fonte
 - [ ] Export calendario (.ics) e condivisione di una ricerca

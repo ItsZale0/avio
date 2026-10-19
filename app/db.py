@@ -12,8 +12,67 @@ from .config import DATA_DIR
 DB_PATH = DATA_DIR / "carpool.db"
 
 SCHEMA = """
+-- --------------------------------------------------------------------------
+-- Utenti, sessioni e impostazioni per utente
+-- --------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS users (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    username        TEXT NOT NULL UNIQUE,
+    display_name    TEXT,
+    password_hash   TEXT NOT NULL,
+    is_admin        INTEGER NOT NULL DEFAULT 0,
+    status          TEXT NOT NULL DEFAULT 'pending',
+    telegram_chat_id TEXT,
+    created_at      TEXT NOT NULL,
+    approved_at     TEXT,
+    last_login_at   TEXT
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    token_hash  TEXT NOT NULL UNIQUE,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at  TEXT NOT NULL,
+    expires_at  TEXT NOT NULL,
+    last_seen_at TEXT,
+    user_agent  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
+
+CREATE TABLE IF NOT EXISTS password_resets (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    token_hash TEXT NOT NULL UNIQUE,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+
+-- Impostazioni personali (Telegram, SMTP, fascia di silenzio, canali).
+-- Quelle infrastrutturali (Groq, VAPID, GTFS) restano nella tabella `settings`.
+CREATE TABLE IF NOT EXISTS user_settings (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    key     TEXT NOT NULL,
+    value   TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (user_id, key)
+);
+
+-- Collegamento fra la chat Telegram e l'utente: l'utente chiede un codice
+-- dal web, il bot lo rimanda in chat, il codice torna al web e la chat
+-- viene associata all'account.
+CREATE TABLE IF NOT EXISTS telegram_links (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    code       TEXT NOT NULL UNIQUE,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    chat_id    TEXT,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS watches (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id       INTEGER REFERENCES users(id) ON DELETE CASCADE,
     name          TEXT,
     from_place    TEXT NOT NULL,
     from_lat      REAL,
@@ -34,6 +93,8 @@ CREATE TABLE IF NOT EXISTS watches (
     last_run_at   TEXT,
     next_run_at   TEXT
 );
+
+
 
 CREATE TABLE IF NOT EXISTS offers (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -149,6 +210,7 @@ CREATE INDEX IF NOT EXISTS idx_plans_watch ON plans(watch_id, is_current);
 
 CREATE TABLE IF NOT EXISTS push_subscriptions (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER REFERENCES users(id) ON DELETE CASCADE,
     endpoint   TEXT NOT NULL UNIQUE,
     p256dh     TEXT NOT NULL,
     auth       TEXT NOT NULL,
@@ -158,6 +220,8 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
     last_ok_at TEXT,
     fail_count INTEGER NOT NULL DEFAULT 0
 );
+
+
 
 CREATE TABLE IF NOT EXISTS ai_log (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -185,7 +249,17 @@ MIGRATIONS = [
     ("watches", "ai_best_price", "REAL"),
     ("watches", "ai_updated_at", "TEXT"),
     ("questions", "sent_at", "TEXT"),
+    ("watches", "user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"),
+    ("push_subscriptions", "user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"),
 ]
+
+# Indici sulle colonne introdotte dalle migrazioni: si creano dopo, quando
+# le colonne esistono gia' (su un database vecchio `watches` esiste senza
+# `user_id` e l'indice fallirebbe).
+POST_MIGRATION_INDEXES = """
+CREATE INDEX IF NOT EXISTS idx_watches_user ON watches(user_id);
+CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions(user_id);
+"""
 
 
 def connect() -> sqlite3.Connection:
@@ -215,6 +289,65 @@ def init_db() -> None:
         conn.executescript(SCHEMA)
         for table, column, definition in MIGRATIONS:
             _ensure_column(conn, table, column, definition)
+        # Indici sulle colonne appena aggiunte: vengono dopo le migrazioni.
+        conn.executescript(POST_MIGRATION_INDEXES)
+    _assign_legacy_watches()
+    _assign_legacy_settings()
+
+
+def _assign_legacy_settings() -> None:
+    """Le impostazioni personali di una sola istanza passano al primo account.
+
+    Prima del login multi-utente Telegram, SMTP e fascia di silenzio erano
+    globali. Ora sono per-utente: le spostiamo sul primo admin, cosi' non
+    si perde la configurazione gia' fatta.
+    """
+    from .services.settings import PER_USER_KEYS  # import ritardato: evita cicli
+
+    with db() as conn:
+        owner = conn.execute(
+            "SELECT id FROM users ORDER BY is_admin DESC, id ASC LIMIT 1"
+        ).fetchone()
+        if not owner:
+            return
+        for key in PER_USER_KEYS:
+            row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+            if not row or not row["value"]:
+                continue
+            already = conn.execute(
+                "SELECT value FROM user_settings WHERE user_id = ? AND key = ?",
+                (owner["id"], key),
+            ).fetchone()
+            if already and already["value"]:
+                continue
+            conn.execute(
+                "INSERT INTO user_settings(user_id, key, value) VALUES (?,?,?) "
+                "ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value",
+                (owner["id"], key, row["value"]),
+            )
+
+
+def _assign_legacy_watches() -> None:
+    """Le ricerche create prima del login multi-utente vanno al primo account.
+
+    Il primo utente registrato diventa anche proprietario delle ricerche
+    gia' presenti, cosi' non si perde nulla con la migrazione.
+    """
+    with db() as conn:
+        orphan = conn.execute("SELECT COUNT(*) AS n FROM watches WHERE user_id IS NULL").fetchone()
+        if not orphan or int(orphan["n"]) == 0:
+            return
+        owner = conn.execute(
+            "SELECT id FROM users ORDER BY is_admin DESC, id ASC LIMIT 1"
+        ).fetchone()
+        if not owner:
+            # Nessun account ancora: le ricerche restano orfane e vengono
+            # assegnate al primo utente che si registra.
+            return
+        conn.execute("UPDATE watches SET user_id = ? WHERE user_id IS NULL", (owner["id"],))
+        conn.execute(
+            "UPDATE push_subscriptions SET user_id = ? WHERE user_id IS NULL", (owner["id"],)
+        )
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:

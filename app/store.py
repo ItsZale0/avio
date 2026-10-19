@@ -44,6 +44,20 @@ FROM watches w
 """
 
 
+def _owner_clause(user_id: int | None, column: str = "w.user_id") -> tuple[str, list[Any]]:
+    """Restringe una query al proprietario. Senza utente (uso interno) non filtra."""
+    if user_id is None:
+        return "", []
+    return f" AND {column} = ?", [user_id]
+
+
+def _owner_clause_plain(user_id: int | None, column: str = "user_id") -> tuple[str, list[Any]]:
+    """Come `_owner_clause`, ma senza alias: per UPDATE e DELETE."""
+    if user_id is None:
+        return "", []
+    return f" AND {column} = ?", [user_id]
+
+
 def _serialize_watch(data: dict[str, Any]) -> dict[str, Any]:
     out = dict(data)
     for key in ("depart_after", "arrive_by"):
@@ -110,7 +124,9 @@ def migrate_sources() -> int:
     return changed
 
 
-def create_watch(payload: WatchIn, resolved: dict | None = None) -> dict[str, Any]:
+def create_watch(
+    payload: WatchIn, resolved: dict | None = None, *, user_id: int | None = None
+) -> dict[str, Any]:
     data = payload.model_dump()
     if resolved:
         data.update(resolved)
@@ -121,6 +137,8 @@ def create_watch(payload: WatchIn, resolved: dict | None = None) -> dict[str, An
     for field in WATCH_FIELDS:
         columns.append(field)
         values.append(serialized.get(field))
+    columns.append("user_id")
+    values.append(user_id)
 
     placeholders = ",".join(["?"] * len(columns))
     with db.db() as conn:
@@ -131,22 +149,31 @@ def create_watch(payload: WatchIn, resolved: dict | None = None) -> dict[str, An
     return get_watch(watch_id)  # type: ignore[return-value]
 
 
-def get_watch(watch_id: int) -> dict[str, Any] | None:
+def get_watch(watch_id: int, *, user_id: int | None = None) -> dict[str, Any] | None:
+    clause, params = _owner_clause(user_id)
     with db.db() as conn:
-        row = conn.execute(SELECT_WATCH + " WHERE w.id = ?", (watch_id,)).fetchone()
+        row = conn.execute(
+            SELECT_WATCH + " WHERE w.id = ?" + clause, [watch_id, *params]
+        ).fetchone()
     return watch_to_dict(row) if row else None
 
 
-def list_watches() -> list[dict[str, Any]]:
+def list_watches(user_id: int | None = None) -> list[dict[str, Any]]:
+    clause, params = _owner_clause(user_id)
     with db.db() as conn:
-        rows = conn.execute(SELECT_WATCH + " ORDER BY w.active DESC, w.created_at DESC").fetchall()
+        rows = conn.execute(
+            SELECT_WATCH + " WHERE 1=1" + clause + " ORDER BY w.active DESC, w.created_at DESC",
+            params,
+        ).fetchall()
     return [watch_to_dict(row) for row in rows]
 
 
-def update_watch(watch_id: int, payload: WatchUpdate) -> dict[str, Any] | None:
+def update_watch(
+    watch_id: int, payload: WatchUpdate, *, user_id: int | None = None
+) -> dict[str, Any] | None:
     changes = payload.model_dump(exclude_unset=True)
     if not changes:
-        return get_watch(watch_id)
+        return get_watch(watch_id, user_id=user_id)
 
     if changes.get("sources") is not None:
         changes["sources"] = db.dump_json(changes["sources"])
@@ -169,27 +196,35 @@ def update_watch(watch_id: int, payload: WatchUpdate) -> dict[str, Any] | None:
 
     assignments = ", ".join(f"{key} = ?" for key in changes)
     values = list(changes.values()) + [watch_id]
+    clause, params = _owner_clause_plain(user_id)
     with db.db() as conn:
-        conn.execute(f"UPDATE watches SET {assignments} WHERE id = ?", values)
-    return get_watch(watch_id)
+        conn.execute(f"UPDATE watches SET {assignments} WHERE id = ?" + clause, values + params)
+    return get_watch(watch_id, user_id=user_id)
 
 
-def delete_watch(watch_id: int) -> bool:
+def delete_watch(watch_id: int, *, user_id: int | None = None) -> bool:
+    clause, params = _owner_clause_plain(user_id)
     with db.db() as conn:
-        cursor = conn.execute("DELETE FROM watches WHERE id = ?", (watch_id,))
+        cursor = conn.execute(
+            f"DELETE FROM watches WHERE id = ?" + clause, [watch_id, *params]
+        )
         return cursor.rowcount > 0
 
 
-def set_watch_active(watch_id: int, active: bool) -> dict[str, Any] | None:
+def set_watch_active(
+    watch_id: int, active: bool, *, user_id: int | None = None
+) -> dict[str, Any] | None:
+    clause, params = _owner_clause_plain(user_id)
     with db.db() as conn:
         conn.execute(
-            "UPDATE watches SET active = ?, next_run_at = ? WHERE id = ?",
-            (1 if active else 0, now_utc().isoformat() if active else None, watch_id),
+            "UPDATE watches SET active = ?, next_run_at = ? WHERE id = ?" + clause,
+            (1 if active else 0, now_utc().isoformat() if active else None, watch_id, *params),
         )
-    return get_watch(watch_id)
+    return get_watch(watch_id, user_id=user_id)
 
 
 def due_watches(limit: int = 5) -> list[dict[str, Any]]:
+    """Ricerche da rilanciare. Le esegue lo scheduler: qui non serve filtrare per utente."""
     now = now_utc().isoformat()
     with db.db() as conn:
         rows = conn.execute(
@@ -313,13 +348,26 @@ def update_ai_fields(
         )
 
 
-def list_alerts(unread_only: bool = False, limit: int = 50) -> list[dict[str, Any]]:
-    query = "SELECT * FROM alerts"
+def list_alerts(
+    unread_only: bool = False, limit: int = 50, *, user_id: int | None = None
+) -> list[dict[str, Any]]:
+    """Avvisi dell'utente. Gli avvisi appartengono a una ricerca, quindi a un utente."""
+    where: list[str] = []
+    params: list[Any] = []
+    if user_id is not None:
+        where.append(
+            "watch_id IN (SELECT id FROM watches WHERE user_id = ?)"
+        )
+        params.append(user_id)
     if unread_only:
-        query += " WHERE read = 0"
+        where.append("read = 0")
+    query = "SELECT * FROM alerts"
+    if where:
+        query += " WHERE " + " AND ".join(where)
     query += " ORDER BY id DESC LIMIT ?"
+    params.append(limit)
     with db.db() as conn:
-        rows = conn.execute(query, (limit,)).fetchall()
+        rows = conn.execute(query, params).fetchall()
     alerts = []
     for row in rows:
         item = db.row_to_dict(row)
@@ -328,15 +376,24 @@ def list_alerts(unread_only: bool = False, limit: int = 50) -> list[dict[str, An
     return alerts
 
 
-def mark_alerts_read(alert_ids: list[int] | None = None) -> int:
+def mark_alerts_read(
+    alert_ids: list[int] | None = None, *, user_id: int | None = None
+) -> int:
+    where: list[str] = []
+    params: list[Any] = []
+    if user_id is not None:
+        where.append("watch_id IN (SELECT id FROM watches WHERE user_id = ?)")
+        params.append(user_id)
+    if alert_ids:
+        where.append("id IN (" + ",".join(["?"] * len(alert_ids)) + ")")
+        params.extend(alert_ids)
+    else:
+        where.append("read = 0")
+    query = "UPDATE alerts SET read = 1"
+    if where:
+        query += " WHERE " + " AND ".join(where)
     with db.db() as conn:
-        if alert_ids:
-            placeholders = ",".join(["?"] * len(alert_ids))
-            cursor = conn.execute(
-                f"UPDATE alerts SET read = 1 WHERE id IN ({placeholders})", alert_ids
-            )
-        else:
-            cursor = conn.execute("UPDATE alerts SET read = 1 WHERE read = 0")
+        cursor = conn.execute(query, params)
         return cursor.rowcount
 
 
@@ -439,18 +496,21 @@ def neighbor_watches(watch: dict[str, Any], days: int = 1) -> list[dict[str, Any
     arrive = from_iso(watch["arrive_by"])
     if not arrive:
         return []
+    owner, params = _owner_clause(watch.get("user_id"))
     with db.db() as conn:
         rows = conn.execute(
             SELECT_WATCH
             + " WHERE w.id != ? AND lower(w.from_place) = lower(?) AND lower(w.to_place) = lower(?)"
-            + " AND w.arrive_by BETWEEN ? AND ?",
-            (
+            + " AND w.arrive_by BETWEEN ? AND ?"
+            + owner,
+            [
                 watch["id"],
                 watch["from_place"],
                 watch["to_place"],
                 (arrive - timedelta(days=days)).isoformat(),
                 (arrive + timedelta(days=days)).isoformat(),
-            ),
+                *params,
+            ],
         ).fetchall()
     return [watch_to_dict(row) for row in rows]
 

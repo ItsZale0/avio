@@ -77,7 +77,9 @@ def public_key() -> str:
     return ensure_keys()[1]
 
 
-def subscribe(subscription: dict[str, Any], user_agent: str | None = None) -> int:
+def subscribe(
+    subscription: dict[str, Any], user_agent: str | None = None, *, user_id: int | None = None
+) -> int:
     endpoint = (subscription.get("endpoint") or "").strip()
     keys = subscription.get("keys") or {}
     p256dh = (keys.get("p256dh") or "").strip()
@@ -87,31 +89,46 @@ def subscribe(subscription: dict[str, Any], user_agent: str | None = None) -> in
     label = (subscription.get("label") or "").strip() or None
     with db.db() as conn:
         conn.execute(
-            "INSERT INTO push_subscriptions(endpoint, p256dh, auth, label, user_agent, created_at, last_ok_at, fail_count) "
-            "VALUES (?,?,?,?,?,?,NULL,0) "
+            "INSERT INTO push_subscriptions(user_id, endpoint, p256dh, auth, label, user_agent, created_at, last_ok_at, fail_count) "
+            "VALUES (?,?,?,?,?,?,?,NULL,0) "
             "ON CONFLICT(endpoint) DO UPDATE SET p256dh=excluded.p256dh, auth=excluded.auth, "
+            "user_id=COALESCE(excluded.user_id, push_subscriptions.user_id), "
             "label=COALESCE(excluded.label, push_subscriptions.label), user_agent=excluded.user_agent, fail_count=0",
-            (endpoint, p256dh, auth, label, user_agent, now_utc().isoformat()),
+            (user_id, endpoint, p256dh, auth, label, user_agent, now_utc().isoformat()),
         )
-    return count()
+    return count(user_id=user_id)
 
 
-def unsubscribe(endpoint: str) -> int:
+def unsubscribe(endpoint: str, *, user_id: int | None = None) -> int:
+    query = "DELETE FROM push_subscriptions WHERE endpoint = ?"
+    params: list[Any] = [endpoint]
+    if user_id is not None:
+        query += " AND user_id = ?"
+        params.append(user_id)
     with db.db() as conn:
-        conn.execute("DELETE FROM push_subscriptions WHERE endpoint = ?", (endpoint,))
-    return count()
+        conn.execute(query, params)
+    return count(user_id=user_id)
 
 
-def subscriptions() -> list[dict]:
+def subscriptions(user_id: int | None = None) -> list[dict]:
+    query = "SELECT * FROM push_subscriptions"
+    params: list[Any] = []
+    if user_id is not None:
+        query += " WHERE user_id = ?"
+        params.append(user_id)
+    query += " ORDER BY id"
     with db.db() as conn:
-        return db.rows_to_dicts(
-            conn.execute("SELECT * FROM push_subscriptions ORDER BY id").fetchall()
-        )
+        return db.rows_to_dicts(conn.execute(query, params).fetchall())
 
 
-def count() -> int:
+def count(user_id: int | None = None) -> int:
+    query = "SELECT COUNT(*) AS n FROM push_subscriptions"
+    params: list[Any] = []
+    if user_id is not None:
+        query += " WHERE user_id = ?"
+        params.append(user_id)
     with db.db() as conn:
-        row = conn.execute("SELECT COUNT(*) AS n FROM push_subscriptions").fetchone()
+        row = conn.execute(query, params).fetchone()
     return int(row["n"]) if row else 0
 
 
@@ -164,11 +181,16 @@ def _send_sync(row: dict, payload: dict, private_pem: str) -> tuple[bool, str, b
         return False, f"{type(exc).__name__}: {exc}"[:300], False
 
 
-async def send(title: str, body: str, url: str = "/") -> list[dict]:
-    """Manda una notifica a tutti i dispositivi iscritti. Restituisce l'esito per dispositivo."""
+async def send(
+    title: str, body: str, url: str = "/", *, user_id: int | None = None
+) -> list[dict]:
+    """Manda una notifica ai dispositivi iscritti. Restituisce l'esito per dispositivo.
+
+    Con `user_id` si avvisa solo quel proprietario; senza, tutti i dispositivi.
+    """
     if not PUSH_AVAILABLE:
         return [{"endpoint": "", "ok": False, "error": "pywebpush non installato (pip install pywebpush)"}]
-    rows = subscriptions()
+    rows = subscriptions(user_id=user_id)
     if not rows:
         return [{"endpoint": "", "ok": False, "error": "nessun dispositivo iscritto alle notifiche push"}]
 

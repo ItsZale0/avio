@@ -7,16 +7,19 @@ Uso:
     python -m app.cli run-due            # esegue solo le ricerche scadute
     python -m app.cli run-due --all      # forza tutte le ricerche attive
     python -m app.cli list               # elenca le ricerche
+    python -m app.cli users              # elenca gli account
+    python -m app.cli user-add NOME      # crea un account (amministratore se e' il primo)
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import getpass
 import json
 import sys
 
-from . import db, store
+from . import auth, db, store
 from .gtfs import status as gtfs_status
 from .gtfs import update as gtfs_update
 from .services import search
@@ -54,6 +57,13 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("list", help="elenca le ricerche salvate")
 
+    sub.add_parser("users", help="elenca gli account e il loro stato")
+
+    user_parser = sub.add_parser("user-add", help="crea un account")
+    user_parser.add_argument("username", help="nome utente")
+    user_parser.add_argument("--password", help="password (chiede l'interattivamente se omessa)")
+    user_parser.add_argument("--admin", action="store_true", help="ruolo amministratore")
+
     sub.add_parser("gtfs-list", help="mostra i feed GTFS e lo stato dell'import")
 
     gtfs_parser = sub.add_parser("gtfs-update", help="scarica e importa gli orari GTFS")
@@ -69,6 +79,33 @@ def main(argv: list[str] | None = None) -> int:
                 f"[{watch['id']}] {watch['from_place']} → {watch['to_place']} · {state}"
                 f" · ogni {watch['interval_min']} min · {watch['offers_count']} offerte"
             )
+        return 0
+
+    if args.command == "users":
+        db.init_db()
+        for user in auth.list_users():
+            flags = []
+            if user.get("is_admin"):
+                flags.append("admin")
+            flags.append(user.get("status") or "?")
+            print(f"[{user['id']}] {user['username']} · {', '.join(flags)}")
+        return 0
+
+    if args.command == "user-add":
+        db.init_db()
+        password = args.password or getpass.getpass("Password: ")
+        try:
+            user = auth.create_user(
+                args.username,
+                password,
+                is_admin=args.admin or auth.count_users() == 0,
+                status=auth.STATUS_ACTIVE,
+            )
+        except ValueError as exc:
+            print(f"Errore: {exc}", file=sys.stderr)
+            return 1
+        if user:
+            print(f"Creato: {user['username']} ({'admin' if user['is_admin'] else 'member'})")
         return 0
 
     if args.command == "gtfs-list":

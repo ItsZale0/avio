@@ -13,20 +13,26 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import __version__, db, geo, notify, store
+from . import __version__, auth, db, deps, geo, notify, store
 from . import gtfs as gtfs_service
 from .adapters import sources_meta
 from .ai import intelligence
 from .ai.groq import ai_enabled, client_from_settings, log_call
 from .config import APP_NAME, CORS_ORIGINS, HOST, PORT, WEB_DIR
 from .schemas import (
+    AdminPasswordResetIn,
+    AdminUserCreateIn,
     AnswerIn,
+    LoginIn,
     OfferOut,
     ParseRequest,
+    PasswordChangeIn,
     PushSubscribeIn,
     PushUnsubscribeIn,
+    RegisterIn,
     RunOut,
     SettingsIn,
+    UserStatusIn,
     WatchIn,
     WatchOut,
     WatchUpdate,
@@ -59,10 +65,30 @@ if CORS_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=CORS_ORIGINS,
-        allow_credentials=False,
+        allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """Blocca le API che richiedono l'accesso, salvo quelle pubbliche.
+
+    Le rotte protette restituiscono 401 JSON: il frontend mostra il login.
+    """
+    path = request.url.path
+    if path.startswith("/api/") and path not in deps.PUBLIC_PATHS:
+        user = deps.current_user(request)
+        if not user:
+            return JSONResponse(
+                {"detail": "Accesso richiesto", "code": "unauthorized"},
+                status_code=401,
+                headers={"WWW-Authenticate": "Session"},
+            )
+        # L'utente corrente e' disponibile ai handler senza ripeterlo.
+        request.state.user = user
+    return await call_next(request)
 
 
 # --------------------------------------------------------------------------- #
@@ -102,22 +128,259 @@ async def _resolve_places(payload: WatchIn) -> dict:
 
 
 # --------------------------------------------------------------------------- #
+# Autenticazione
+# --------------------------------------------------------------------------- #
+@app.get("/api/auth/status")
+async def auth_status(request: Request):
+    """Stato della sessione: serve al frontend per sapere se mostrare il login."""
+    user = deps.current_user(request)
+    return {
+        "authenticated": bool(user),
+        "user": auth.public_user(user) if user else None,
+        "needs_setup": auth.count_users() == 0,
+        "registration_open": auth.count_users(auth.STATUS_ACTIVE) > 0,
+    }
+
+
+@app.post("/api/auth/register")
+async def register(payload: RegisterIn, request: Request, response: Response):
+    """Crea un account.
+
+    Il primo utente e' l'amministratore ed e' attivo subito. Gli altri
+    restano in attesa di approvazione.
+    """
+    username = auth.normalize_username(payload.username)
+    try:
+        existing = auth.get_user_by_username(username)
+    except Exception:
+        existing = None
+    if existing:
+        raise HTTPException(status_code=409, detail="Nome utente gia' in uso")
+
+    first = auth.count_users() == 0
+    try:
+        user = auth.create_user(
+            payload.username,
+            payload.password,
+            display_name=payload.display_name,
+            is_admin=first,
+            status=auth.STATUS_ACTIVE if first else auth.STATUS_PENDING,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if not user:
+        raise HTTPException(status_code=500, detail="Registrazione non riuscita")
+
+    if first:
+        # Il primo account eredita le ricerche e le impostazioni gia' presenti
+        # nel database (la migrazione le assegna a lui).
+        db.init_db()
+
+    if user["status"] != auth.STATUS_ACTIVE:
+        return {
+            "ok": True,
+            "status": user["status"],
+            "user": auth.public_user(user),
+            "message": "Account creato. Un amministratore deve approvarlo prima di poter entrare.",
+        }
+
+    token, _ = auth.create_session(int(user["id"]), request.headers.get("user-agent"))
+    auth.touch_login(int(user["id"]))
+    deps.set_session_cookie(response, token, secure=request.url.scheme == "https")
+    return {"ok": True, "status": user["status"], "user": auth.public_user(user)}
+
+
+@app.post("/api/auth/login")
+async def login(payload: LoginIn, request: Request, response: Response):
+    """Accesso con nome utente e password."""
+    user = auth.get_user_by_username(payload.username)
+    if not user or not auth.verify_password(payload.password, user.get("password_hash")):
+        # Messaggio identico in ogni caso: non riveliamo se l'utente esiste.
+        raise HTTPException(status_code=401, detail="Nome utente o password non corretti")
+    if user["status"] == auth.STATUS_PENDING:
+        raise HTTPException(status_code=403, detail="Account in attesa di approvazione")
+    if user["status"] != auth.STATUS_ACTIVE:
+        raise HTTPException(status_code=403, detail="Account disabilitato")
+
+    token, _ = auth.create_session(int(user["id"]), request.headers.get("user-agent"))
+    auth.touch_login(int(user["id"]))
+    deps.set_session_cookie(response, token, secure=request.url.scheme == "https")
+    return {"ok": True, "user": auth.public_user(user)}
+
+
+@app.post("/api/auth/logout")
+async def logout(request: Request, response: Response):
+    """Chiude la sessione corrente."""
+    token = request.cookies.get(auth.COOKIE_NAME)
+    if token:
+        auth.revoke_session(token)
+    deps.clear_session_cookie(response)
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+async def me(request: Request):
+    user = deps.require_user(request)
+    return {"user": auth.public_user(user)}
+
+
+@app.post("/api/auth/password")
+async def change_password(payload: PasswordChangeIn, request: Request):
+    """Cambia la propria password e chiude le altre sessioni."""
+    user = deps.require_user(request)
+    if not auth.verify_password(payload.current_password, user.get("password_hash")):
+        raise HTTPException(status_code=400, detail="Password attuale non corretta")
+    try:
+        auth.set_password(int(user["id"]), payload.new_password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "message": "Password aggiornata. Esci e rientra per ricaricare la sessione."}
+
+
+@app.get("/api/auth/users")
+async def list_users(request: Request):
+    """Elenco degli account. Riservato agli amministratori."""
+    deps.require_admin(request)
+    return {
+        "users": [auth.public_user(u) for u in auth.list_users()],
+        "pending": auth.count_users(auth.STATUS_PENDING),
+    }
+
+
+@app.post("/api/auth/users")
+async def admin_create_user(payload: AdminUserCreateIn, request: Request):
+    """Crea un account attivo. Riservato agli amministratori."""
+    deps.require_admin(request)
+    try:
+        user = auth.create_user(
+            payload.username,
+            payload.password,
+            display_name=payload.display_name,
+            is_admin=payload.is_admin,
+            status=auth.STATUS_ACTIVE,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "user": auth.public_user(user) if user else None}
+
+
+@app.patch("/api/auth/users/{user_id}")
+async def admin_set_status(user_id: int, payload: UserStatusIn, request: Request):
+    """Approva o disabilita un account. Riservato agli amministratori."""
+    deps.require_admin(request)
+    if int(user_id) == int(deps.require_user(request)["id"]) and payload.status != auth.STATUS_ACTIVE:
+        raise HTTPException(status_code=400, detail="Non puoi disabilitare te stesso")
+    try:
+        user = auth.set_user_status(user_id, payload.status)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not user:
+        raise HTTPException(status_code=404, detail="Utente non trovato")
+    return {"ok": True, "user": auth.public_user(user)}
+
+
+@app.post("/api/auth/users/{user_id}/password")
+async def admin_reset_password(
+    user_id: int, payload: AdminPasswordResetIn, request: Request
+):
+    """Imposta una nuova password per un utente. Riservato agli amministratori."""
+    deps.require_admin(request)
+    try:
+        ok = auth.set_password(user_id, payload.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not ok:
+        raise HTTPException(status_code=404, detail="Utente non trovato")
+    return {"ok": True}
+
+
+@app.post("/api/auth/telegram/link")
+async def link_telegram(request: Request):
+    """Collega la chat Telegram all'utente loggato.
+
+    Il bot riceve un messaggio con il codice; l'utente lo incolla qui e la
+    chat viene associata all'account, cosi' le notifiche arrivano nel posto
+    giusto e non a chiunque.
+    """
+    user = deps.require_user(request)
+    token = auth.secrets.token_urlsafe(6).upper()
+    with db.db() as conn:
+        conn.execute(
+            "INSERT INTO telegram_links(code, user_id, created_at, expires_at) VALUES (?,?,?,?)",
+            (
+                token,
+                int(user["id"]),
+                now_utc().isoformat(),
+                (now_utc() + timedelta(minutes=15)).isoformat(),
+            ),
+        )
+    # Se l'utente ha gia' un bot configurato, gli mandiamo il codice li'.
+    sent = False
+    if app_settings.get_user(int(user["id"]), "telegram_token"):
+        ok, _ = await notify.send_telegram_message(
+            f"Il tuo codice per collegare la chat: {token}\n\n"
+            "Rispondi /link CODICE per confermare.",
+            user_id=int(user["id"]),
+        )
+        sent = ok
+    return {
+        "ok": True,
+        "code": token,
+        "message": (
+            "Codice generato. Inoltralo al bot (/link CODICE) e poi premi «Collega»."
+            if not sent
+            else "Codice generato e inviato in chat: torna qui e premi «Collega»."
+        ),
+    }
+
+
+@app.post("/api/auth/telegram/confirm")
+async def confirm_telegram(request: Request):
+    """Conferma il collegamento della chat Telegram con il codice ricevuto."""
+    user = deps.require_user(request)
+    body = await request.json()
+    code = str(body.get("code") or "").strip().upper()
+    if not code:
+        raise HTTPException(status_code=400, detail="Codice mancante")
+    with db.db() as conn:
+        row = conn.execute(
+            "SELECT * FROM telegram_links WHERE code = ? AND user_id = ?",
+            (code, int(user["id"])),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=400, detail="Codice non valido")
+        if str(row["expires_at"] or "") < now_utc().isoformat():
+            conn.execute("DELETE FROM telegram_links WHERE id = ?", (row["id"],))
+            raise HTTPException(status_code=400, detail="Codice scaduto")
+        chat_id = str(row["chat_id"] or "").strip()
+        conn.execute("DELETE FROM telegram_links WHERE id = ?", (row["id"],))
+    if not chat_id:
+        raise HTTPException(status_code=400, detail="Il bot non ha ancora inviato il codice")
+    auth.set_telegram_chat(int(user["id"]), chat_id)
+    return {"ok": True, "telegram_chat_id": chat_id}
+
+
+# --------------------------------------------------------------------------- #
 # Stato e fonti
 # --------------------------------------------------------------------------- #
 @app.get("/api/status")
-async def status():
-    watches = store.list_watches()
+async def status(request: Request):
+    user = deps.require_user(request)
+    uid = int(user["id"])
+    watches = store.list_watches(uid)
     return {
         "app": APP_NAME,
         "version": __version__,
         "time": now_utc().isoformat(),
         "watches": len(watches),
         "active_watches": sum(1 for w in watches if w["active"]),
-        "unread_alerts": len(store.list_alerts(unread_only=True, limit=200)),
-        "pending_questions": questions_service.count_pending(),
+        "unread_alerts": len(store.list_alerts(unread_only=True, limit=200, user_id=uid)),
+        "pending_questions": questions_service.count_pending(user_id=uid),
         "scheduler": scheduler.info(),
         "sources": sources_meta(),
         "ai": _ai_status(),
+        "user": auth.public_user(user),
     }
 
 
@@ -138,29 +401,34 @@ async def geocode_endpoint(q: str = Query(..., min_length=2)):
 # Ricerche
 # --------------------------------------------------------------------------- #
 @app.get("/api/watches", response_model=list[WatchOut])
-async def list_watches():
-    return store.list_watches()
+async def list_watches(request: Request):
+    user = deps.require_user(request)
+    return store.list_watches(int(user["id"]))
 
 
 @app.post("/api/watches", response_model=WatchOut, status_code=201)
-async def create_watch(payload: WatchIn):
+async def create_watch(payload: WatchIn, request: Request):
+    user = deps.require_user(request)
     resolved = await _resolve_places(payload)
-    watch = store.create_watch(payload, resolved)
+    watch = store.create_watch(payload, resolved, user_id=int(user["id"]))
     _queue_run(watch["id"], "created", delay=0.4)
-    return store.get_watch(watch["id"])
+    return store.get_watch(watch["id"], user_id=int(user["id"]))
 
 
 @app.get("/api/watches/{watch_id}", response_model=WatchOut)
-async def get_watch(watch_id: int):
-    watch = store.get_watch(watch_id)
+async def get_watch(watch_id: int, request: Request):
+    user = deps.require_user(request)
+    watch = store.get_watch(watch_id, user_id=int(user["id"]))
     if not watch:
         raise HTTPException(status_code=404, detail="Ricerca non trovata")
     return watch
 
 
 @app.patch("/api/watches/{watch_id}", response_model=WatchOut)
-async def update_watch(watch_id: int, payload: WatchUpdate):
-    watch = store.get_watch(watch_id)
+async def update_watch(watch_id: int, payload: WatchUpdate, request: Request):
+    user = deps.require_user(request)
+    uid = int(user["id"])
+    watch = store.get_watch(watch_id, user_id=uid)
     if not watch:
         raise HTTPException(status_code=404, detail="Ricerca non trovata")
 
@@ -183,53 +451,62 @@ async def update_watch(watch_id: int, payload: WatchUpdate):
     if arrive_by and depart_after and depart_after >= arrive_by:
         raise HTTPException(status_code=400, detail="La partenza minima deve precedere l'arrivo massimo")
 
-    updated = store.update_watch(watch_id, WatchUpdate(**changes))
+    updated = store.update_watch(watch_id, WatchUpdate(**changes), user_id=uid)
     if any(k in changes for k in ("sources", "arrive_by", "depart_after", "from_place", "to_place", "max_price")):
         _queue_run(watch_id, "updated")
     return updated
 
 
 @app.delete("/api/watches/{watch_id}", status_code=204)
-async def delete_watch(watch_id: int):
-    if not store.delete_watch(watch_id):
+async def delete_watch(watch_id: int, request: Request):
+    user = deps.require_user(request)
+    if not store.delete_watch(watch_id, user_id=int(user["id"])):
         raise HTTPException(status_code=404, detail="Ricerca non trovata")
     return Response(status_code=204)
 
 
 @app.post("/api/watches/{watch_id}/run")
-async def run_now(watch_id: int):
-    if not store.get_watch(watch_id):
+async def run_now(watch_id: int, request: Request):
+    user = deps.require_user(request)
+    if not store.get_watch(watch_id, user_id=int(user["id"])):
         raise HTTPException(status_code=404, detail="Ricerca non trovata")
     _queue_run(watch_id, "manual", delay=0.05)
     return {"status": "queued"}
 
 
 @app.post("/api/watches/{watch_id}/toggle", response_model=WatchOut)
-async def toggle_watch(watch_id: int):
-    watch = store.get_watch(watch_id)
+async def toggle_watch(watch_id: int, request: Request):
+    user = deps.require_user(request)
+    uid = int(user["id"])
+    watch = store.get_watch(watch_id, user_id=uid)
     if not watch:
         raise HTTPException(status_code=404, detail="Ricerca non trovata")
-    updated = store.set_watch_active(watch_id, not watch["active"])
+    updated = store.set_watch_active(watch_id, not watch["active"], user_id=uid)
     if updated and updated["active"]:
         _queue_run(watch_id, "resumed")
     return updated
 
 
 @app.get("/api/watches/{watch_id}/offers", response_model=list[OfferOut])
-async def watch_offers(watch_id: int, include_inactive: bool = False):
-    if not store.get_watch(watch_id):
+async def watch_offers(watch_id: int, request: Request, include_inactive: bool = False):
+    user = deps.require_user(request)
+    if not store.get_watch(watch_id, user_id=int(user["id"])):
         raise HTTPException(status_code=404, detail="Ricerca non trovata")
     return store.list_offers(watch_id, include_inactive=include_inactive)
 
 
 @app.get("/api/watches/{watch_id}/runs", response_model=list[RunOut])
-async def watch_runs(watch_id: int):
+async def watch_runs(watch_id: int, request: Request):
+    user = deps.require_user(request)
+    if not store.get_watch(watch_id, user_id=int(user["id"])):
+        raise HTTPException(status_code=404, detail="Ricerca non trovata")
     return store.list_runs(watch_id)
 
 
 @app.get("/api/watches/{watch_id}/links")
-async def watch_links(watch_id: int):
-    watch = store.get_watch(watch_id)
+async def watch_links(watch_id: int, request: Request):
+    user = deps.require_user(request)
+    watch = store.get_watch(watch_id, user_id=int(user["id"]))
     if not watch:
         raise HTTPException(status_code=404, detail="Ricerca non trovata")
     return {"links": store.links_for_watch(watch)}
@@ -239,16 +516,18 @@ async def watch_links(watch_id: int):
 # Avvisi
 # --------------------------------------------------------------------------- #
 @app.get("/api/alerts")
-async def alerts(unread: bool = False, limit: int = Query(50, ge=1, le=200)):
-    return store.list_alerts(unread_only=unread, limit=limit)
+async def alerts(request: Request, unread: bool = False, limit: int = Query(50, ge=1, le=200)):
+    user = deps.require_user(request)
+    return store.list_alerts(unread_only=unread, limit=limit, user_id=int(user["id"]))
 
 
 @app.post("/api/alerts/read")
-async def read_alerts(payload: dict | None = None):
+async def read_alerts(request: Request, payload: dict | None = None):
+    user = deps.require_user(request)
     ids = None
     if payload and isinstance(payload.get("ids"), list):
         ids = [int(i) for i in payload["ids"]]
-    return {"updated": store.mark_alerts_read(ids)}
+    return {"updated": store.mark_alerts_read(ids, user_id=int(user["id"]))}
 
 
 # --------------------------------------------------------------------------- #
@@ -333,28 +612,52 @@ async def gtfs_update_endpoint(feed: list[str] | None = Query(None)):
 # Impostazioni
 # --------------------------------------------------------------------------- #
 @app.get("/api/settings")
-async def get_settings():
-    return app_settings.get_all(mask=True)
+async def get_settings(request: Request):
+    """Impostazioni: quelle comuni piu' quelle personali dell'utente."""
+    user = deps.require_user(request)
+    values = app_settings.get_all(mask=True)
+    values.update(app_settings.get_user_all(int(user["id"]), mask=True))
+    return values
 
 
 @app.put("/api/settings")
-async def put_settings(payload: SettingsIn):
+async def put_settings(payload: SettingsIn, request: Request):
+    """Salva le impostazioni. Quelle globali richiedono il ruolo admin."""
+    user = deps.require_user(request)
     values = payload.model_dump(exclude_unset=True)
-    return app_settings.update(values)
+    personal = {k: v for k, v in values.items() if k in app_settings.PER_USER_KEYS}
+    shared = {k: v for k, v in values.items() if k in app_settings.GLOBAL_KEYS}
+
+    if shared:
+        if not user.get("is_admin"):
+            raise HTTPException(
+                status_code=403, detail="Le impostazioni comuni si modificano solo da un amministratore"
+            )
+        app_settings.update(shared)
+    if personal:
+        app_settings.update_user(int(user["id"]), personal)
+
+    merged = app_settings.get_all(mask=True)
+    merged.update(app_settings.get_user_all(int(user["id"]), mask=True))
+    return merged
 
 
 @app.post("/api/settings/test-telegram")
-async def test_telegram():
+async def test_telegram(request: Request):
+    user = deps.require_user(request)
     ok, error = await notify.send_telegram(
-        f"✅ {APP_NAME}: notifiche Telegram configurate correttamente."
+        f"✅ {APP_NAME}: notifiche Telegram configurate correttamente.",
+        user_id=int(user["id"]),
     )
     return {"ok": ok, "error": error}
 
 
 @app.post("/api/settings/test-email")
-async def test_email():
+async def test_email(request: Request):
+    user = deps.require_user(request)
     ok, error = await notify.send_email(
-        f"{APP_NAME} - test", "✅ Le notifiche email sono configurate correttamente."
+        f"{APP_NAME} - test", "✅ Le notifiche email sono configurate correttamente.",
+        user_id=int(user["id"]),
     )
     return {"ok": ok, "error": error}
 
@@ -363,22 +666,25 @@ async def test_email():
 # Notifiche push per la PWA (Web Push + VAPID)
 # --------------------------------------------------------------------------- #
 @app.get("/api/push/status")
-async def push_status():
+async def push_status(request: Request):
+    user = deps.require_user(request)
     return {
         "available": push_service.available(),
         "public_key": push_service.public_key(),
-        "subscriptions": push_service.count(),
+        "subscriptions": push_service.count(user_id=int(user["id"])),
     }
 
 
 @app.post("/api/push/subscribe")
 async def push_subscribe(payload: PushSubscribeIn, request: Request):
+    user = deps.require_user(request)
     if not push_service.available():
         raise HTTPException(503, "Notifiche push non disponibili: manca la libreria pywebpush")
     try:
         total = push_service.subscribe(
             {"endpoint": payload.endpoint, "keys": payload.keys.model_dump(), "label": payload.label},
             user_agent=request.headers.get("user-agent"),
+            user_id=int(user["id"]),
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -386,20 +692,26 @@ async def push_subscribe(payload: PushSubscribeIn, request: Request):
 
 
 @app.post("/api/push/unsubscribe")
-async def push_unsubscribe(payload: PushUnsubscribeIn):
-    return {"ok": True, "subscriptions": push_service.unsubscribe(payload.endpoint)}
+async def push_unsubscribe(payload: PushUnsubscribeIn, request: Request):
+    user = deps.require_user(request)
+    return {
+        "ok": True,
+        "subscriptions": push_service.unsubscribe(payload.endpoint, user_id=int(user["id"])),
+    }
 
 
 @app.post("/api/push/test")
-async def push_test():
+async def push_test(request: Request):
+    user = deps.require_user(request)
     outcomes = await push_service.send(
         f"{APP_NAME} - prova",
         "✅ Se vedi questa notifica, le push funzionano. Buon viaggio!",
         "/",
+        user_id=int(user["id"]),
     )
     ok = any(item["ok"] for item in outcomes)
     error = "" if ok else "; ".join(item["error"] for item in outcomes if item.get("error"))
-    return {"ok": ok, "error": error, "devices": push_service.count()}
+    return {"ok": ok, "error": error, "devices": push_service.count(user_id=int(user["id"]))}
 
 
 # --------------------------------------------------------------------------- #
@@ -417,7 +729,8 @@ def _ai_status() -> dict:
 
 
 @app.get("/api/ai/status")
-async def ai_status():
+async def ai_status(request: Request):
+    user = deps.require_user(request)
     info = _ai_status()
     with db.db() as conn:
         row = conn.execute(
@@ -425,7 +738,7 @@ async def ai_status():
         ).fetchone()
     info["calls"] = int(row["calls"]) if row else 0
     info["tokens"] = int(row["tokens"]) if row else 0
-    info["pending_questions"] = questions_service.count_pending()
+    info["pending_questions"] = questions_service.count_pending(user_id=int(user["id"]))
     return info
 
 
@@ -469,8 +782,10 @@ async def ai_test():
 
 
 @app.get("/api/watches/{watch_id}/plan")
-async def watch_plan(watch_id: int):
-    watch = store.get_watch(watch_id)
+async def watch_plan(watch_id: int, request: Request):
+    user = deps.require_user(request)
+    uid = int(user["id"])
+    watch = store.get_watch(watch_id, user_id=uid)
     if not watch:
         raise HTTPException(status_code=404, detail="Ricerca non trovata")
     plans = store.current_plans(watch_id)
@@ -480,28 +795,35 @@ async def watch_plan(watch_id: int):
         "alternatives": [p for p in plans if p["kind"] != "cheapest"],
         "summary": watch.get("ai_summary"),
         "best_price": watch.get("ai_best_price"),
-        "questions": questions_service.list_for_watch(watch_id, status="pending"),
+        "questions": questions_service.list_for_watch(watch_id, status="pending", user_id=uid),
         "ai": _ai_status(),
     }
 
 
 @app.get("/api/watches/{watch_id}/questions")
-async def watch_questions(watch_id: int, status: str | None = None):
-    if not store.get_watch(watch_id):
+async def watch_questions(watch_id: int, request: Request, status: str | None = None):
+    user = deps.require_user(request)
+    uid = int(user["id"])
+    if not store.get_watch(watch_id, user_id=uid):
         raise HTTPException(status_code=404, detail="Ricerca non trovata")
-    return questions_service.list_for_watch(watch_id, status=status)
+    return questions_service.list_for_watch(watch_id, status=status, user_id=uid)
 
 
 @app.get("/api/questions")
-async def all_questions(status: str = "pending"):
+async def all_questions(request: Request, status: str = "pending"):
+    user = deps.require_user(request)
+    uid = int(user["id"])
     if status == "pending":
-        return questions_service.pending(limit=50)
-    return questions_service.list_all(status=status)
+        return questions_service.pending(limit=50, user_id=uid)
+    return questions_service.list_all(status=status, user_id=uid)
 
 
 @app.post("/api/questions/{question_id}/answer")
-async def answer_question(question_id: int, payload: AnswerIn):
-    result = await questions_service.answer(question_id, payload.answer.strip(), source=payload.source)
+async def answer_question(question_id: int, payload: AnswerIn, request: Request):
+    user = deps.require_user(request)
+    result = await questions_service.answer(
+        question_id, payload.answer.strip(), source=payload.source, user_id=int(user["id"])
+    )
     if not result:
         raise HTTPException(status_code=404, detail="Domanda non trovata")
     watch_id = int(result["question"]["watch_id"])
@@ -510,8 +832,9 @@ async def answer_question(question_id: int, payload: AnswerIn):
 
 
 @app.post("/api/questions/{question_id}/skip")
-async def skip_question(question_id: int):
-    result = questions_service.skip(question_id)
+async def skip_question(question_id: int, request: Request):
+    user = deps.require_user(request)
+    result = questions_service.skip(question_id, user_id=int(user["id"]))
     if not result:
         raise HTTPException(status_code=404, detail="Domanda non trovata")
     return result
@@ -561,11 +884,26 @@ async def favicon():
     return Response(status_code=204)
 
 
+class _WebStatic(StaticFiles):
+    """File statici senza cache aggressiva.
+
+    L'app cambia spesso: meglio che il browser (e il service worker) prendano
+    sempre la versione corrente di HTML, JS e CSS. Le icone, invece, possono
+    restare in cache per un po'.
+    """
+
+    async def get_response(self, path: str, scope):  # type: ignore[override]
+        response = await super().get_response(path, scope)
+        if path.endswith((".html", ".js", ".css", ".webmanifest")) or path in ("", "/"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 # I file statici stanno nella radice del frontend (layout GitHub Pages).
 # Il mount va registrato IN FONDO, cosi' le route /api e /config.json
 # dichiarate sopra hanno la precedenza.
 if WEB_DIR.exists():
-    app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
+    app.mount("/", _WebStatic(directory=WEB_DIR, html=True), name="web")
 
 
 if __name__ == "__main__":

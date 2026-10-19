@@ -11,6 +11,37 @@ from ..timeutil import ROME
 SECRET_KEYS = {"telegram_token", "smtp_password", "groq_api_key", "vapid_private_key"}
 MASK = "••••••••"
 
+# Impostazioni condivise da tutta l'istanza: servono a tutti (una sola chiave
+# Groq, un solo paio di chiavi VAPID). Le preferenze personali stanno in
+# `user_settings` e sono per-utente.
+GLOBAL_KEYS = {
+    "groq_api_key",
+    "ai_enabled",
+    "ai_model_smart",
+    "ai_model_fast",
+    "gtfs_enabled",
+    "vapid_private_key",
+    "vapid_public_key",
+    "telegram_offset",
+    "sources_migrated_gtfs",
+}
+
+# Impostazioni personali: valgono per il singolo utente.
+PER_USER_KEYS = {
+    "telegram_token",
+    "telegram_chat_id",
+    "smtp_host",
+    "smtp_port",
+    "smtp_user",
+    "smtp_password",
+    "smtp_from",
+    "smtp_to",
+    "smtp_tls",
+    "quiet_from",
+    "quiet_to",
+    "notify_enabled",
+}
+
 DEFAULTS: dict[str, str] = {
     "telegram_token": "",
     "telegram_chat_id": "",
@@ -102,6 +133,63 @@ def _parse_hhmm(value: str) -> time | None:
         return time(int(hour), int(minute))
     except Exception:
         return None
+
+
+# --------------------------------------------------------------------------- #
+# Impostazioni per utente
+# --------------------------------------------------------------------------- #
+def get_user_all(user_id: int, mask: bool = False) -> dict[str, str]:
+    """Impostazioni di un utente: globali + personali, con le personali che sovrascrivono."""
+    values = {key: DEFAULTS[key] for key in PER_USER_KEYS}
+    with db.db() as conn:
+        for row in conn.execute("SELECT key, value FROM user_settings WHERE user_id = ?", (user_id,)):
+            if row["key"] in PER_USER_KEYS:
+                values[row["key"]] = row["value"]
+    if mask:
+        for key in SECRET_KEYS:
+            if values.get(key):
+                values[key] = MASK
+    return values
+
+
+def get_user(user_id: int, key: str, default: str = "") -> str:
+    if key in GLOBAL_KEYS:
+        return get(key, default)
+    return get_user_all(user_id).get(key, default)
+
+
+def update_user(user_id: int, values: dict[str, str | None]) -> dict[str, str]:
+    """Salva le impostazioni personali. Le globali restano nel loro posto."""
+    with db.db() as conn:
+        for key, value in values.items():
+            if key not in PER_USER_KEYS or value is None:
+                continue
+            if key in SECRET_KEYS and value == MASK:
+                continue
+            conn.execute(
+                "INSERT INTO user_settings(user_id, key, value) VALUES (?,?,?) "
+                "ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value",
+                (user_id, key, str(value)),
+            )
+    return get_user_all(user_id, mask=True)
+
+
+def is_quiet_for(user_id: int | None, moment: datetime | None = None) -> bool:
+    """Fascia di silenzio: quella dell'utente se conosciuto, altrimenti quella globale."""
+    values = get_user_all(user_id) if user_id else get_all()
+    start = _parse_hhmm(values.get("quiet_from", ""))
+    end = _parse_hhmm(values.get("quiet_to", ""))
+    if not start or not end:
+        return False
+    current = (moment or datetime.now(ROME)).astimezone(ROME).time()
+    if start <= end:
+        return start <= current < end
+    return current >= start or current < end
+
+
+def notifications_enabled_for(user_id: int | None) -> bool:
+    values = get_user_all(user_id) if user_id else get_all()
+    return values.get("notify_enabled", "1") == "1"
 
 
 def is_quiet(moment: datetime | None = None) -> bool:

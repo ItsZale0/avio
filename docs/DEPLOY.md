@@ -162,9 +162,43 @@ migliore.
 
 ## Sicurezza
 
-L'app **non ha autenticazione**: chi conosce l'URL del tunnel puo' leggere e
-modificare le tue ricerche. Quindi:
+L'app ha **accesso multi-utente**: nome utente, password (bcrypt) e sessione in
+cookie `HttpOnly`. Ogni utente vede solo le proprie ricerche, offerte, avvisi
+e notifiche. Però l'accesso protegge i dati, non il canale: chi conosce l'URL
+del tunnel vede comunque la schermata di login. Quindi:
 
 - non pubblicare l'URL;
 - meglio se dietro **Cloudflare Access** (login) o con un sottodominio non indovinabile;
 - non esporre mai `127.0.0.1:8787` direttamente su internet.
+
+### Gestione degli account
+
+| Azione | Come |
+| --- | --- |
+| Creare il primo account (amministratore) | dal form di registrazione, o `python -m app.cli user-add NOME` |
+| Approvare un account in attesa | *Impostazioni → Utenti → Approva* |
+| Disabilitare un account | *Impostazioni → Utenti → Disabilita* (revoca le sessioni) |
+| Elencare gli account | `python -m app.cli users` |
+| Cambiare la propria password | *Impostazioni → Account*, oppure dall'amministratore |
+
+Le password non si vedono mai in chiaro: nel database c'e' solo l'hash bcrypt.
+Il token di sessione viene memorizzato come hash SHA-256, e i cookie sono
+`HttpOnly` + `SameSite=Lax` + `Secure` quando la connessione e' HTTPS.
+
+### Collegare Telegram al proprio account
+
+Il bot Telegram e' unico per l'istanza, ma ogni utente riceve solo le notifiche
+delle proprie ricerche. Per collegare la chat:
+
+1. in Impostazioni → Telegram, genera un codice;
+2. scrivi al bot: `/link CODICE`;
+3. da quel momento la chat e' associata al tuo account.
+
+Le impostazioni di Telegram (token, chat ID) sono **per utente**: ognuno puo'
+usare il proprio bot, se vuole.
+
+### Dati personali nel database
+
+`data/carpool.db` contiene tutto: account, hash delle password, token, ricerche.
+Sta in `.gitignore` e non finisce mai nel repo. Se fai un backup, trattalo
+come materiale sensibile.

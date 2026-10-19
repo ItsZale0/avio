@@ -219,3 +219,48 @@ class RunOut(BaseModel):
     ai_used: int = 0
     ai_tokens: int = 0
     plan_price: float | None = None
+
+
+# --------------------------------------------------------------------------- #
+# Autenticazione
+# --------------------------------------------------------------------------- #
+class RegisterIn(BaseModel):
+    username: str = Field(..., min_length=3, max_length=40)
+    password: str = Field(..., min_length=8, max_length=200)
+    display_name: str | None = Field(None, max_length=80)
+
+
+class LoginIn(BaseModel):
+    username: str = Field(..., min_length=1, max_length=40)
+    password: str = Field(..., min_length=1, max_length=200)
+
+
+class PasswordChangeIn(BaseModel):
+    current_password: str = Field(..., min_length=1, max_length=200)
+    new_password: str = Field(..., min_length=8, max_length=200)
+
+
+class UserStatusIn(BaseModel):
+    status: str = Field(..., pattern="^(active|pending|disabled)$")
+
+
+class AdminUserCreateIn(BaseModel):
+    username: str = Field(..., min_length=3, max_length=40)
+    password: str = Field(..., min_length=8, max_length=200)
+    display_name: str | None = Field(None, max_length=80)
+    is_admin: bool = False
+
+
+class AdminPasswordResetIn(BaseModel):
+    password: str = Field(..., min_length=8, max_length=200)
+
+
+class UserOut(BaseModel):
+    id: int
+    username: str
+    display_name: str | None = None
+    is_admin: bool = False
+    status: str = "active"
+    telegram_chat_id: str | None = None
+    created_at: str | None = None
+    last_login_at: str | None = None

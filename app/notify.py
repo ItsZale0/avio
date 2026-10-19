@@ -14,10 +14,13 @@ from .timeutil import human_rome
 TELEGRAM_BASE = "https://api.telegram.org/bot{token}/{method}"
 
 
-async def telegram_call(method: str, payload: dict) -> tuple[bool, dict | str]:
+async def telegram_call(
+    method: str, payload: dict, *, token: str | None = None
+) -> tuple[bool, dict | str]:
     """Chiama l'API Telegram. Restituisce (ok, dato_o_errore)."""
-    values = app_settings.get_all()
-    token = values.get("telegram_token", "").strip()
+    if token is None:
+        token = app_settings.get_all().get("telegram_token", "")
+    token = (token or "").strip()
     if not token:
         return False, "Telegram non configurato (token mancante)"
     try:
@@ -32,16 +35,28 @@ async def telegram_call(method: str, payload: dict) -> tuple[bool, dict | str]:
 
 
 async def send_telegram_message(
-    text: str, *, reply_markup: dict | None = None, chat_id: str | None = None
+    text: str,
+    *,
+    reply_markup: dict | None = None,
+    chat_id: str | None = None,
+    user_id: int | None = None,
 ) -> tuple[bool, str, int | None]:
-    values = app_settings.get_all()
+    """Invia un messaggio Telegram.
+
+    Con `user_id` il destinatario e' l'utente (chat e token suoi); senza,
+    si usano le impostazioni globali dell'istanza.
+    """
+    if user_id is not None:
+        values = app_settings.get_user_all(user_id)
+    else:
+        values = app_settings.get_all()
     chat = (chat_id or values.get("telegram_chat_id", "")).strip()
     if not (values.get("telegram_token", "").strip() and chat):
         return False, "Telegram non configurato (token o chat_id mancante)", None
     payload: dict = {"chat_id": chat, "text": text, "disable_web_page_preview": True}
     if reply_markup:
         payload["reply_markup"] = reply_markup
-    ok, result = await telegram_call("sendMessage", payload)
+    ok, result = await telegram_call("sendMessage", payload, token=values.get("telegram_token"))
     if not ok:
         return False, str(result), None
     message_id = result.get("message_id") if isinstance(result, dict) else None
@@ -73,13 +88,16 @@ async def telegram_edit_message(chat_id: str | int, message_id: int, text: str) 
     )
 
 
-async def send_telegram(text: str) -> tuple[bool, str]:
-    ok, error, _ = await send_telegram_message(text)
+async def send_telegram(text: str, *, user_id: int | None = None) -> tuple[bool, str]:
+    ok, error, _ = await send_telegram_message(text, user_id=user_id)
     return ok, error
 
 
-def _send_email_sync(subject: str, text: str) -> tuple[bool, str]:
-    values = app_settings.get_all()
+def _send_email_sync(subject: str, text: str, user_id: int | None = None) -> tuple[bool, str]:
+    if user_id is not None:
+        values = app_settings.get_user_all(user_id)
+    else:
+        values = app_settings.get_all()
     host = values.get("smtp_host", "").strip()
     to_addr = values.get("smtp_to", "").strip()
     from_addr = values.get("smtp_from", "").strip() or values.get("smtp_user", "").strip()
@@ -113,29 +131,31 @@ def _send_email_sync(subject: str, text: str) -> tuple[bool, str]:
         return False, f"Email: {type(exc).__name__}: {exc}"
 
 
-async def send_email(subject: str, text: str) -> tuple[bool, str]:
-    return await asyncio.to_thread(_send_email_sync, subject, text)
+async def send_email(subject: str, text: str, *, user_id: int | None = None) -> tuple[bool, str]:
+    return await asyncio.to_thread(_send_email_sync, subject, text, user_id)
 
 
-async def send_push(text: str, subject: str, channels: list[str]) -> list[dict]:
+async def send_push(
+    text: str, subject: str, channels: list[str], *, user_id: int | None = None
+) -> list[dict]:
     """Invia sui canali richiesti. Restituisce l'esito per canale."""
     results: list[dict] = []
-    if not app_settings.notifications_enabled():
+    if not app_settings.notifications_enabled_for(user_id):
         return [{"channel": "push", "ok": False, "error": "Notifiche disattivate nelle impostazioni"}]
-    if app_settings.is_quiet():
+    if app_settings.is_quiet_for(user_id):
         return [{"channel": "push", "ok": False, "error": "Fascia di silenzio attiva"}]
 
     for channel in channels:
         if channel in ("web", "desktop"):
             continue
         if channel == "telegram":
-            ok, error = await send_telegram(text)
+            ok, error = await send_telegram(text, user_id=user_id)
         elif channel == "email":
-            ok, error = await send_email(subject, text)
+            ok, error = await send_email(subject, text, user_id=user_id)
         elif channel == "push":
             from .services import push as push_service
 
-            outcomes = await push_service.send(subject, text)
+            outcomes = await push_service.send(subject, text, user_id=user_id)
             ok = any(item["ok"] for item in outcomes)
             error = ""
             if not ok:

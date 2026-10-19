@@ -12,7 +12,7 @@ import logging
 from .. import db, geo, notify, store
 from ..ai import intelligence
 from ..schemas import DEFAULT_SOURCES, WatchIn
-from ..timeutil import now_utc
+from ..timeutil import human_rome, now_utc
 from . import questions as questions_service
 from . import settings as app_settings
 
@@ -20,11 +20,19 @@ log = logging.getLogger("carpool.telegram")
 
 
 def _configured_chat() -> str:
+    """Chat di fallback quando non c'e' un utente associato (istanza a utente singolo)."""
     return app_settings.get("telegram_chat_id", "").strip()
 
 
-async def _reply(text: str) -> None:
-    await notify.send_telegram_message(text)
+def _user_for_chat(chat_id: str) -> dict | None:
+    """Utente proprietario della chat Telegram (se registrato e attivo)."""
+    from .. import auth
+
+    return auth.user_for_telegram_chat(chat_id)
+
+
+async def _reply(text: str, *, user_id: int | None = None) -> None:
+    await notify.send_telegram_message(text, user_id=user_id)
 
 
 async def poll() -> None:
@@ -84,7 +92,10 @@ async def _handle_callback(callback: dict) -> None:
         await notify.telegram_answer_callback(callback_id, "")
         return
 
-    result = await questions_service.answer(qid, option_id, source="telegram")
+    owner = _user_for_chat(str(chat_id or ""))
+    result = await questions_service.answer(
+        qid, option_id, source="telegram", user_id=owner["id"] if owner else None
+    )
     if not result:
         await notify.telegram_answer_callback(callback_id, "Domanda non trovata")
         return
@@ -103,18 +114,104 @@ async def _handle_callback(callback: dict) -> None:
         )
 
 
+async def _handle_command(text: str, chat_id: str) -> None:
+    """Comandi del bot: /start, /link, /help, /chi."""
+    command = text.split()[0].lower().split("@")[0]
+
+    if command in ("/start", "/help"):
+        owner = _user_for_chat(chat_id)
+        if owner:
+            await notify.send_telegram_message(
+                "Ciao! Sono il tuo agente di viaggio.\n"
+                "Rispondi alle domande con i pulsanti, oppure scrivi un viaggio:\n"
+                "“Thiene → Trento, arrivo entro domani alle 11, max 20€”.",
+                user_id=int(owner["id"]),
+            )
+        else:
+            await notify.send_telegram_message(
+                "Per collegare questa chat al tuo profilo:\n"
+                "1) apri l'app e vai in Impostazioni → Telegram;\n"
+                "2) premi “Collega” e copia il codice che compare;\n"
+                "3) scrivimi qui: /link CODICE",
+                chat_id=chat_id,
+            )
+        return
+
+    if command == "/link":
+        parts = text.split(maxsplit=1)
+        if len(parts) < 2:
+            await notify.send_telegram_message(
+                "Scrivi: /link CODICE (il codice lo trovi nell'app, in Impostazioni → Telegram).",
+                chat_id=chat_id,
+            )
+            return
+        code = parts[1].strip().upper()
+        with db.db() as conn:
+            row = conn.execute(
+                "SELECT * FROM telegram_links WHERE code = ?", (code,)
+            ).fetchone()
+            if not row:
+                await notify.send_telegram_message("Codice non valido. Riprova.", chat_id=chat_id)
+                return
+            if str(row["expires_at"] or "") < now_utc().isoformat():
+                conn.execute("DELETE FROM telegram_links WHERE id = ?", (row["id"],))
+                await notify.send_telegram_message("Codice scaduto. Generane uno nuovo.", chat_id=chat_id)
+                return
+            conn.execute(
+                "UPDATE telegram_links SET chat_id = ? WHERE id = ?", (chat_id, row["id"])
+            )
+            user_id = int(row["user_id"])
+        from .. import auth
+
+        auth.set_telegram_chat(user_id, chat_id)
+        await notify.send_telegram_message(
+            "✅ Chat collegata. Da qui in poi ti scrivo solo per le tue ricerche.",
+            user_id=user_id,
+        )
+        return
+
+    if command == "/chi":
+        owner = _user_for_chat(chat_id)
+        if owner:
+            watches = store.list_watches(int(owner["id"]))
+            if not watches:
+                await notify.send_telegram_message(
+                    "Non hai ancora ricerche attive.", user_id=int(owner["id"])
+                )
+                return
+            righe = "\n".join(
+                f"• {w['from_place']} → {w['to_place']} (entro "
+                f"{human_rome(w['arrive_by'], '%a %d %b %H:%M')})"
+                for w in watches[:8]
+            )
+            await notify.send_telegram_message(
+                f"Le tue ricerche:\n{righe}", user_id=int(owner["id"])
+            )
+        return
+
+
 async def _handle_message(message: dict) -> None:
     chat_id = str((message.get("chat") or {}).get("id") or "")
     text = str(message.get("text") or "").strip()
     if not text:
         return
-    configured = _configured_chat()
-    if configured and chat_id and chat_id != configured:
-        return
+
     if text.startswith("/"):
+        await _handle_command(text, chat_id)
         return
 
-    pending = questions_service.pending(limit=1)
+    owner = _user_for_chat(chat_id)
+    if owner:
+        user_id: int | None = int(owner["id"])
+    else:
+        # Chat non registrata: se l'istanza ha una chat globale, si accetta
+        # solo quella (comportamento a utente singolo).
+        configured = _configured_chat()
+        if configured and chat_id and chat_id != configured:
+            return
+        user_id = None
+
+    pending = questions_service.pending(limit=1, user_id=user_id)
     looks_like_trip = (
         len(text) > 60
         or "->" in text
@@ -126,28 +223,33 @@ async def _handle_message(message: dict) -> None:
     )
 
     if pending and not looks_like_trip:
-        result = await questions_service.answer(int(pending[0]["id"]), text, source="telegram")
+        result = await questions_service.answer(
+            int(pending[0]["id"]), text, source="telegram", user_id=user_id
+        )
         if result:
-            await _reply("✅ Risposta salvata. Aggiorno la ricerca al prossimo giro.")
+            await _reply("✅ Risposta salvata. Aggiorno la ricerca al prossimo giro.", user_id=user_id)
             return
 
-    reply = await _trip_from_text(text)
+    reply = await _trip_from_text(text, user_id=user_id)
     if reply:
-        await _reply(reply)
+        await _reply(reply, user_id=user_id)
         return
 
     if pending:
-        result = await questions_service.answer(int(pending[0]["id"]), text, source="telegram")
+        result = await questions_service.answer(
+            int(pending[0]["id"]), text, source="telegram", user_id=user_id
+        )
         if result:
-            await _reply("✅ Risposta salvata. Aggiorno la ricerca al prossimo giro.")
+            await _reply("✅ Risposta salvata. Aggiorno la ricerca al prossimo giro.", user_id=user_id)
             return
 
     await _reply(
-        "Non ho capito. Scrivi un viaggio, ad esempio: “Thiene → Trento, arrivo entro domani alle 11, max 20€”."
+        "Non ho capito. Scrivi un viaggio, ad esempio: “Thiene → Trento, arrivo entro domani alle 11, max 20€”.",
+        user_id=user_id,
     )
 
 
-async def _trip_from_text(text: str) -> str | None:
+async def _trip_from_text(text: str, *, user_id: int | None = None) -> str | None:
     if len(text) < 6:
         return None
     parsed = await intelligence.parse_trip_text(text)
@@ -184,6 +286,7 @@ async def _trip_from_text(text: str) -> str | None:
     watch = store.create_watch(
         payload,
         {"from_lat": from_lat, "from_lon": from_lon, "to_lat": to_lat, "to_lon": to_lon},
+        user_id=user_id,
     )
     prefs = data.get("prefs") if isinstance(data.get("prefs"), dict) else {}
     with db.db() as conn:
@@ -200,8 +303,9 @@ async def _trip_from_text(text: str) -> str | None:
     )
 
 
-async def send_test() -> tuple[bool, str]:
+async def send_test(*, user_id: int | None = None) -> tuple[bool, str]:
     ok, error, _ = await notify.send_telegram_message(
-        "🤖 Bot pronto: posso farti domande qui in chat e capire nuovi viaggi."
+        "🤖 Bot pronto: posso farti domande qui in chat e capire nuovi viaggi.",
+        user_id=user_id,
     )
     return ok, error

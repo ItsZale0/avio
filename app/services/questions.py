@@ -33,18 +33,33 @@ def _row_to_question(row) -> dict[str, Any]:
     return item
 
 
-def get(question_id: int) -> dict[str, Any] | None:
+def _owner_clause(user_id: int | None) -> tuple[str, list[Any]]:
+    """Vincola le domande al proprietario della ricerca a cui appartengono."""
+    if user_id is None:
+        return "", []
+    return " AND watch_id IN (SELECT id FROM watches WHERE user_id = ?)", [user_id]
+
+
+def get(question_id: int, *, user_id: int | None = None) -> dict[str, Any] | None:
+    clause, params = _owner_clause(user_id)
     with db.db() as conn:
-        row = conn.execute("SELECT * FROM questions WHERE id = ?", (question_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM questions WHERE id = ?" + clause, [question_id, *params]
+        ).fetchone()
     return _row_to_question(row) if row else None
 
 
-def list_for_watch(watch_id: int, status: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
+def list_for_watch(
+    watch_id: int, status: str | None = None, limit: int = 20, *, user_id: int | None = None
+) -> list[dict[str, Any]]:
     query = "SELECT * FROM questions WHERE watch_id = ?"
     params: list[Any] = [watch_id]
     if status:
         query += " AND status = ?"
         params.append(status)
+    clause, extra = _owner_clause(user_id)
+    query += clause
+    params.extend(extra)
     query += " ORDER BY (status = 'pending') DESC, id DESC LIMIT ?"
     params.append(limit)
     with db.db() as conn:
@@ -52,20 +67,27 @@ def list_for_watch(watch_id: int, status: str | None = None, limit: int = 20) ->
     return [_row_to_question(row) for row in rows]
 
 
-def pending(limit: int = 20) -> list[dict[str, Any]]:
+def pending(limit: int = 20, *, user_id: int | None = None) -> list[dict[str, Any]]:
+    clause, params = _owner_clause(user_id)
     with db.db() as conn:
         rows = conn.execute(
-            "SELECT * FROM questions WHERE status = 'pending' ORDER BY id ASC LIMIT ?", (limit,)
+            "SELECT * FROM questions WHERE status = 'pending'" + clause + " ORDER BY id ASC LIMIT ?",
+            [*params, limit],
         ).fetchall()
     return [_row_to_question(row) for row in rows]
 
 
-def list_all(status: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
-    query = "SELECT * FROM questions"
+def list_all(
+    status: str | None = None, limit: int = 100, *, user_id: int | None = None
+) -> list[dict[str, Any]]:
+    query = "SELECT * FROM questions WHERE 1=1"
     params: list[Any] = []
     if status:
-        query += " WHERE status = ?"
+        query += " AND status = ?"
         params.append(status)
+    clause, extra = _owner_clause(user_id)
+    query += clause
+    params.extend(extra)
     query += " ORDER BY id DESC LIMIT ?"
     params.append(limit)
     with db.db() as conn:
@@ -166,9 +188,11 @@ def store_prefs(watch: dict[str, Any]) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
 
 
-async def answer(question_id: int, text: str, source: str = "web") -> dict[str, Any] | None:
+async def answer(
+    question_id: int, text: str, source: str = "web", *, user_id: int | None = None
+) -> dict[str, Any] | None:
     """Registra la risposta, aggiorna le preferenze e pianifica un nuovo giro."""
-    question = get(question_id)
+    question = get(question_id, user_id=user_id)
     if not question:
         return None
 
@@ -178,7 +202,7 @@ async def answer(question_id: int, text: str, source: str = "web") -> dict[str, 
             (text, source, now_utc().isoformat(), question_id),
         )
 
-    watch = store.get_watch(int(question["watch_id"]))
+    watch = store.get_watch(int(question["watch_id"]), user_id=user_id)
     applied: dict[str, Any] = {}
     if watch:
         from ..ai import interpret_answer
@@ -191,22 +215,30 @@ async def answer(question_id: int, text: str, source: str = "web") -> dict[str, 
             )
 
     # Le altre domande in attesa restano: se ne risponde una per volta.
-    return {"question": get(question_id), "applied": applied}
+    return {"question": get(question_id, user_id=user_id), "applied": applied}
 
 
-def skip(question_id: int) -> dict[str, Any] | None:
+def skip(question_id: int, *, user_id: int | None = None) -> dict[str, Any] | None:
+    question = get(question_id, user_id=user_id)
+    if not question:
+        return None
     with db.db() as conn:
         conn.execute(
             "UPDATE questions SET status='skipped', answered_at=? WHERE id=?",
             (now_utc().isoformat(), question_id),
         )
-    return get(question_id)
+    return get(question_id, user_id=user_id)
 
 
-async def send_to_telegram(question: dict[str, Any], watch: dict[str, Any] | None = None) -> tuple[bool, str]:
+async def send_to_telegram(
+    question: dict[str, Any], watch: dict[str, Any] | None = None
+) -> tuple[bool, str]:
     text = notify.format_question(question, watch)
     keyboard = notify.question_keyboard(question)
-    ok, error, message_id = await notify.send_telegram_message(text, reply_markup=keyboard)
+    owner = (watch or {}).get("user_id")
+    ok, error, message_id = await notify.send_telegram_message(
+        text, reply_markup=keyboard, user_id=owner
+    )
     if ok and message_id:
         # Registra la consegna: serve a capire se la domanda e' arrivata in chat.
         with db.db() as conn:
@@ -217,13 +249,16 @@ async def send_to_telegram(question: dict[str, Any], watch: dict[str, Any] | Non
     return ok, error
 
 
-def count_pending(watch_id: int | None = None) -> int:
+def count_pending(watch_id: int | None = None, *, user_id: int | None = None) -> int:
+    clause, extra = _owner_clause(user_id)
     with db.db() as conn:
         if watch_id is None:
-            row = conn.execute("SELECT COUNT(*) AS n FROM questions WHERE status='pending'").fetchone()
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM questions WHERE status='pending'" + clause, extra
+            ).fetchone()
         else:
             row = conn.execute(
-                "SELECT COUNT(*) AS n FROM questions WHERE status='pending' AND watch_id=?",
-                (watch_id,),
+                "SELECT COUNT(*) AS n FROM questions WHERE status='pending' AND watch_id=?" + clause,
+                [watch_id, *extra],
             ).fetchone()
     return int(row["n"]) if row else 0

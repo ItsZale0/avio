@@ -35,6 +35,11 @@ async def tick() -> None:
 
 async def cleanup() -> None:
     await asyncio.to_thread(store.cleanup_old_data, 90)
+    # Sessioni e token di reset scaduti: non serve tenerli in giro.
+    from .. import auth
+
+    await asyncio.to_thread(auth.purge_expired_sessions)
+    await asyncio.to_thread(auth.purge_expired_resets)
 
 
 def start() -> None:

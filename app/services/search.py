@@ -189,6 +189,8 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
                 if not ok and error and "non configurato" not in error:
                     errors.append(f"notify/telegram: {error}")
 
+        owner_id = watch.get("user_id")
+
         if intel.summary:
             hints.append(intel.summary)
 
@@ -212,7 +214,7 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
                 alerts_sent += 1
 
             channels = [c for c in watch["notify"] if c not in ("web", "desktop")]
-            push_results = await notify.send_push(message, subject, channels)
+            push_results = await notify.send_push(message, subject, channels, user_id=owner_id)
             for item in push_results:
                 if item["ok"]:
                     alerts_sent += 1

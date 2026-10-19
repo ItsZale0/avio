@@ -8,7 +8,7 @@
   <link rel="icon" href="favicon.svg" type="image/svg+xml" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=6" />
 </head>
 <body>
   <div class="ambient"></div>
@@ -35,6 +35,7 @@
       </button>
       <button class="btn icon" id="btnPromos" title="Offerte e codici sconto">🏷️</button>
       <button class="btn icon" id="btnSettings" title="Impostazioni">⚙️</button>
+      <button class="btn icon" id="btnLogout" title="Esci">🚪</button>
     </div>
   </header>
 
@@ -215,6 +216,27 @@
         <button class="btn icon ghost" data-close="settingsModal">✕</button>
       </div>
       <form id="settingsForm" class="modal-body">
+        <div class="section-title">Account</div>
+        <small class="field-hint" id="accountInfo">—</small>
+        <div class="field">
+          <label for="sNewPassword">Nuova password</label>
+          <input id="sNewPassword" type="password" autocomplete="new-password" placeholder="almeno 8 caratteri" />
+        </div>
+        <div class="field inline-field">
+          <input id="sCurrentPassword" type="password" autocomplete="current-password" placeholder="Password attuale" />
+          <button type="button" class="btn ghost" id="btnChangePassword">Cambia password</button>
+        </div>
+        <small class="field-hint" id="passwordResult"></small>
+
+        <div class="section-title admin-only hidden" id="adminSection">Utenti</div>
+        <div class="admin-only hidden" id="adminUsersList"></div>
+        <div class="admin-only hidden field inline-field" id="adminCreateBox">
+          <input id="sNewUser" placeholder="nuovo utente" minlength="3" />
+          <input id="sNewUserPass" type="password" placeholder="password" minlength="8" />
+          <button type="button" class="btn ghost" id="btnCreateUser">Crea</button>
+        </div>
+        <small class="field-hint admin-only hidden" id="adminHint">—</small>
+
         <div class="section-title">Telegram</div>
         <div class="grid-2">
           <div class="field">
@@ -228,6 +250,12 @@
         </div>
         <button type="button" class="btn ghost" id="btnTestTelegram">Invia messaggio di prova</button>
         <small class="field-hint" id="telegramTestResult"></small>
+        <div class="field inline-field">
+          <button type="button" class="btn ghost" id="btnTelegramLink">Collega la mia chat</button>
+          <input id="telegramLinkCode" placeholder="codice" />
+          <button type="button" class="btn ghost" id="btnTelegramConfirm">Collega</button>
+        </div>
+        <small class="field-hint" id="telegramLinkResult"></small>
 
         <div class="section-title">Email</div>
         <div class="grid-2">
@@ -331,10 +359,58 @@
 
   <div class="toasts" id="toasts"></div>
 
+  <!-- ===================== ACCESSO / REGISTRAZIONE ===================== -->
+  <div class="auth-screen hidden" id="authScreen">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <span class="brand-mark">🚗</span>
+        <div>
+          <h1>Carpool Hunter</h1>
+          <p>passaggi, bus e carsharing · Italia</p>
+        </div>
+      </div>
+
+      <div class="auth-tabs">
+        <button class="auth-tab active" id="tabLogin" data-auth-tab="login">Accedi</button>
+        <button class="auth-tab" id="tabRegister" data-auth-tab="register">Registrati</button>
+      </div>
+
+      <form id="loginForm" class="auth-form">
+        <div class="field">
+          <label for="aLoginUser">Nome utente</label>
+          <input id="aLoginUser" autocomplete="username" placeholder="es. zampe" required />
+        </div>
+        <div class="field">
+          <label for="aLoginPass">Password</label>
+          <input id="aLoginPass" type="password" autocomplete="current-password" placeholder="••••••••" required />
+        </div>
+        <button class="btn primary big" type="submit" id="btnLogin">Entra</button>
+        <small class="field-hint" id="loginHint"></small>
+      </form>
+
+      <form id="registerForm" class="auth-form hidden">
+        <div class="field">
+          <label for="aRegUser">Nome utente</label>
+          <input id="aRegUser" autocomplete="username" placeholder="es. zampe" minlength="3" required />
+        </div>
+        <div class="field">
+          <label for="aRegName">Come ti chiami <span class="muted">(facoltativo)</span></label>
+          <input id="aRegName" placeholder="es. Marco" maxlength="80" />
+        </div>
+        <div class="field">
+          <label for="aRegPass">Password</label>
+          <input id="aRegPass" type="password" autocomplete="new-password" placeholder="almeno 8 caratteri" minlength="8" required />
+        </div>
+        <button class="btn primary big" type="submit" id="btnRegister">Crea account</button>
+        <small class="field-hint" id="registerHint"></small>
+      </form>
+    </div>
+  </div>
+
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>

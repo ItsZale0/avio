@@ -127,8 +127,15 @@ const MAX_MAP_OFFERS = 40;
 async function api(path, options = {}) {
   const response = await fetch(API_BASE + path, {
     headers: { "Content-Type": "application/json" },
+    // La sessione vive in un cookie HttpOnly: va sempre mandato.
+    credentials: "include",
     ...options,
   });
+  if (response.status === 401) {
+    // Sessione scaduta o assente: torna alla schermata di accesso.
+    showAuthScreen();
+    throw new Error("Accesso richiesto");
+  }
   if (!response.ok) {
     let detail = response.statusText;
     try {
@@ -171,15 +178,125 @@ function openModal(id) { $("#" + id).classList.remove("hidden"); }
 function closeModal(id) { $("#" + id).classList.add("hidden"); }
 
 /* ------------------------------------------------------------------ */
+/* Accesso                                                             */
+/* ------------------------------------------------------------------ */
+function showAuthScreen() {
+  const screen = $("#authScreen");
+  if (screen) screen.classList.remove("hidden");
+  document.querySelector(".layout")?.classList.add("hidden");
+  document.querySelector(".topbar")?.classList.add("hidden");
+  stopPolling();
+}
+
+function hideAuthScreen() {
+  const screen = $("#authScreen");
+  if (screen) screen.classList.add("hidden");
+  document.querySelector(".layout")?.classList.remove("hidden");
+  document.querySelector(".topbar")?.classList.remove("hidden");
+}
+
+function switchAuthTab(which) {
+  const isLogin = which === "login";
+  $("#loginForm").classList.toggle("hidden", !isLogin);
+  $("#registerForm").classList.toggle("hidden", isLogin);
+  $$(".auth-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.authTab === which));
+  $("#loginHint").textContent = "";
+  $("#registerHint").textContent = "";
+}
+
+async function submitLogin(event) {
+  event.preventDefault();
+  const hint = $("#loginHint");
+  const button = $("#btnLogin");
+  button.disabled = true;
+  try {
+    await api("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        username: $("#aLoginUser").value.trim(),
+        password: $("#aLoginPass").value,
+      }),
+    });
+    hint.textContent = "";
+    $("#aLoginPass").value = "";
+    await bootApp();
+  } catch (error) {
+    hint.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function submitRegister(event) {
+  event.preventDefault();
+  const hint = $("#registerHint");
+  const button = $("#btnRegister");
+  button.disabled = true;
+  try {
+    const result = await api("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({
+        username: $("#aRegUser").value.trim(),
+        password: $("#aRegPass").value,
+        display_name: $("#aRegName").value.trim() || null,
+      }),
+    });
+    $("#aRegPass").value = "";
+    if (result.status === "pending") {
+      hint.textContent = result.message || "Account creato, in attesa di approvazione.";
+      switchAuthTab("login");
+    } else {
+      hint.textContent = "";
+      await bootApp();
+    }
+  } catch (error) {
+    hint.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function logout() {
+  try {
+    await api("/api/auth/logout", { method: "POST" });
+  } catch (_) { /* la sessione e' comunque da buttare */ }
+  state.watches = [];
+  state.selectedId = null;
+  state.watch = null;
+  showAuthScreen();
+  switchAuthTab("login");
+}
+
+/* ------------------------------------------------------------------ */
 /* Bootstrap                                                          */
 /* ------------------------------------------------------------------ */
 document.addEventListener("DOMContentLoaded", async () => {
   bindEvents();
   registerServiceWorker();
+  await loadRuntimeConfig();
   try {
-    await loadRuntimeConfig();
+    const authState = await api("/api/auth/status");
+    if (!authState.authenticated) {
+      showAuthScreen();
+      // Se non c'e' nessun account, il form di registrazione e' quello giusto.
+      switchAuthTab(authState.needs_setup ? "register" : "login");
+      return;
+    }
+    state.user = authState.user;
+    await bootApp();
+  } catch (error) {
+    toast("Impossibile contattare il server: " + error.message, "error");
+    $("#agentStatus").classList.add("offline");
+    $("#agentText").textContent = "offline";
+  }
+});
+
+async function bootApp() {
+  hideAuthScreen();
+  try {
     const status = await loadStatus();
     state.sources = status.sources || [];
+    state.user = status.user || state.user;
     await Promise.all([loadWatches(), loadSettings()]);
     if (state.watches.length) {
       await selectWatch(state.watches[0].id);
@@ -190,13 +307,20 @@ document.addEventListener("DOMContentLoaded", async () => {
     state.booted = true;
     startPolling();
   } catch (error) {
-    toast("Impossibile contattare il server: " + error.message, "error");
+    toast("Impossibile caricare i dati: " + error.message, "error");
     $("#agentStatus").classList.add("offline");
     $("#agentText").textContent = "offline";
   }
-});
+}
 
 function bindEvents() {
+  // Accesso
+  $("#loginForm").addEventListener("submit", submitLogin);
+  $("#registerForm").addEventListener("submit", submitRegister);
+  $$(".auth-tab").forEach((tab) =>
+    tab.addEventListener("click", () => switchAuthTab(tab.dataset.authTab))
+  );
+
   $("#btnNew").addEventListener("click", () => openWatchModal(null));
   $("#btnEmptyNew").addEventListener("click", () => openWatchModal(null));
   $("#btnSettings").addEventListener("click", openSettings);
@@ -204,6 +328,7 @@ function bindEvents() {
   $("#btnRefreshPromos").addEventListener("click", () => openPromos(true));
   $("#btnAlerts").addEventListener("click", () => { openModal("alertsDrawer"); loadAlerts(false); });
   $("#btnReadAll").addEventListener("click", markAllRead);
+  $("#btnLogout").addEventListener("click", logout);
 
   $("#watchList").addEventListener("click", (event) => {
     const item = event.target.closest(".watch-item");
@@ -234,6 +359,10 @@ function bindEvents() {
   $("#btnPushEnable").addEventListener("click", enablePush);
   $("#btnPushDisable").addEventListener("click", disablePush);
   $("#btnPushTest").addEventListener("click", testPush);
+  $("#btnChangePassword").addEventListener("click", changePassword);
+  $("#btnCreateUser").addEventListener("click", createUser);
+  $("#btnTelegramLink").addEventListener("click", telegramLink);
+  $("#btnTelegramConfirm").addEventListener("click", telegramConfirm);
 
   $("#questionsCard").addEventListener("click", (event) => {
     const button = event.target.closest("[data-answer]");
@@ -267,6 +396,13 @@ function startPolling() {
   state.polling = setInterval(() => {
     if (!document.hidden) refreshAll();
   }, 30000);
+}
+
+function stopPolling() {
+  if (state.polling) {
+    clearInterval(state.polling);
+    state.polling = null;
+  }
 }
 
 async function refreshAll() {
@@ -1139,6 +1275,19 @@ async function openSettings() {
   try {
     await loadSettings();
     const s = state.settings;
+    const isAdmin = !!state.user?.is_admin;
+
+    // Le impostazioni comuni (Groq, GTFS) si vedono solo da amministratore.
+    ["#sGroqKey", "#sAiSmart", "#sAiFast", "#sAiEnabled", "#sGtfsEnabled", "#btnGtfsUpdate",
+     "#btnTestAi", "#btnAiModels"].forEach((sel) => {
+      const el = $(sel);
+      if (el) el.closest(".field, .field.inline-field, .gtfs-feeds")?.classList.toggle("hidden", !isAdmin);
+    });
+    $$(".admin-only").forEach((el) => el.classList.toggle("hidden", !isAdmin));
+
+    renderAccountInfo();
+    if (isAdmin) loadAdminUsers();
+
     $("#sTelegramToken").value = s.telegram_token || "";
     $("#sTelegramChat").value = s.telegram_chat_id || "";
     $("#sSmtpHost").value = s.smtp_host || "";
@@ -1169,7 +1318,9 @@ async function openSettings() {
 }
 
 function settingsPayload() {
-  return {
+  // Le impostazioni personali vanno sempre; quelle comuni (Groq, modelli,
+  // GTFS) solo se l'utente e' amministratore.
+  const personal = {
     telegram_token: $("#sTelegramToken").value.trim(),
     telegram_chat_id: $("#sTelegramChat").value.trim(),
     smtp_host: $("#sSmtpHost").value.trim(),
@@ -1182,6 +1333,10 @@ function settingsPayload() {
     quiet_from: $("#sQuietFrom").value,
     quiet_to: $("#sQuietTo").value,
     notify_enabled: $("#sNotifyEnabled").checked ? "1" : "0",
+  };
+  if (!state.user?.is_admin) return personal;
+  return {
+    ...personal,
     groq_api_key: $("#sGroqKey").value.trim(),
     ai_model_smart: $("#sAiSmart").value.trim(),
     ai_model_fast: $("#sAiFast").value.trim(),
@@ -1201,6 +1356,139 @@ async function submitSettings(event) {
   } catch (error) {
     errorBox.textContent = error.message;
     errorBox.classList.remove("hidden");
+  }
+}
+
+/* ---------- account e utenti ---------- */
+function renderAccountInfo() {
+  const user = state.user || {};
+  const role = user.is_admin ? "amministratore" : "utente";
+  const telegram = user.telegram_chat_id ? "collegata" : "non collegata";
+  $("#accountInfo").textContent =
+    `${user.display_name || user.username || "—"} (${user.username || "?"}) · ${role} · Telegram ${telegram}`;
+}
+
+async function changePassword() {
+  const hint = $("#passwordResult");
+  const current = $("#sCurrentPassword").value;
+  const next = $("#sNewPassword").value;
+  if (!current || !next) {
+    hint.textContent = "Compila la password attuale e la nuova.";
+    return;
+  }
+  try {
+    const result = await api("/api/auth/password", {
+      method: "POST",
+      body: JSON.stringify({ current_password: current, new_password: next }),
+    });
+    hint.textContent = result.message || "Password aggiornata.";
+    $("#sCurrentPassword").value = "";
+    $("#sNewPassword").value = "";
+  } catch (error) {
+    hint.textContent = error.message;
+  }
+}
+
+async function loadAdminUsers() {
+  const box = $("#adminUsersList");
+  const hint = $("#adminHint");
+  try {
+    const data = await api("/api/auth/users");
+    if (!data.users.length) {
+      box.textContent = "Nessun account.";
+      return;
+    }
+    box.innerHTML = data.users
+      .map((u) => {
+        const label = esc(u.display_name || u.username);
+        const badge =
+          u.status === "active" ? "attivo" : u.status === "pending" ? "in attesa" : "disabilitato";
+        const role = u.is_admin ? " · admin" : "";
+        const action =
+          u.status === "active"
+            ? `<button type="button" class="btn ghost tiny" data-disable="${u.id}">Disabilita</button>`
+            : `<button type="button" class="btn ghost tiny" data-approve="${u.id}">Approva</button>`;
+        return `<div class="user-row"><span>${label} <small>${esc(u.username)}${role}</small></span>
+                <span class="pill ${u.status}">${badge}</span>${action}</div>`;
+      })
+      .join("");
+    hint.textContent = data.pending
+      ? `${data.pending} account in attesa di approvazione.`
+      : "Nessuna approvazione in sospeso.";
+
+    box.querySelectorAll("[data-approve]").forEach((button) =>
+      button.addEventListener("click", () => setUserStatus(Number(button.dataset.approve), "active"))
+    );
+    box.querySelectorAll("[data-disable]").forEach((button) =>
+      button.addEventListener("click", () => setUserStatus(Number(button.dataset.disable), "disabled"))
+    );
+  } catch (error) {
+    box.textContent = "";
+    hint.textContent = error.message;
+  }
+}
+
+async function setUserStatus(userId, status) {
+  try {
+    await api(`/api/auth/users/${userId}`, { method: "PATCH", body: JSON.stringify({ status }) });
+    toast(status === "active" ? "Account approvato" : "Account disabilitato");
+    loadAdminUsers();
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+
+async function createUser() {
+  const username = $("#sNewUser").value.trim();
+  const password = $("#sNewUserPass").value;
+  if (!username || !password) {
+    $("#adminHint").textContent = "Compila nome utente e password.";
+    return;
+  }
+  try {
+    await api("/api/auth/users", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    });
+    $("#sNewUser").value = "";
+    $("#sNewUserPass").value = "";
+    $("#adminHint").textContent = "Account creato.";
+    loadAdminUsers();
+  } catch (error) {
+    $("#adminHint").textContent = error.message;
+  }
+}
+
+/* ---------- collegamento della chat Telegram ---------- */
+async function telegramLink() {
+  const hint = $("#telegramLinkResult");
+  try {
+    const result = await api("/api/auth/telegram/link", { method: "POST" });
+    $("#telegramLinkCode").value = result.code;
+    hint.textContent =
+      result.message + " Poi scrivi al bot: /link " + result.code;
+  } catch (error) {
+    hint.textContent = error.message;
+  }
+}
+
+async function telegramConfirm() {
+  const hint = $("#telegramLinkResult");
+  const code = $("#telegramLinkCode").value.trim();
+  if (!code) {
+    hint.textContent = "Genera prima il codice.";
+    return;
+  }
+  try {
+    const result = await api("/api/auth/telegram/confirm", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    });
+    hint.textContent = "Chat collegata.";
+    if (state.user) state.user.telegram_chat_id = result.telegram_chat_id;
+    renderAccountInfo();
+  } catch (error) {
+    hint.textContent = error.message;
   }
 }
 

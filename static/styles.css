@@ -368,6 +368,58 @@ a:hover { text-decoration: underline; }
 .alert-item time { font-size: 10.5px; color: var(--muted-2); }
 .alert-item.unread h4::after { content: " •"; color: var(--accent); }
 
+/* ---------- elenco utenti (amministratore) ---------- */
+.user-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; margin-bottom: 6px;
+  background: #0d141c; border: 1px solid var(--line-soft);
+  border-radius: 10px; font-size: 13px;
+}
+.user-row > span:first-child { flex: 1; min-width: 0; }
+.user-row small { color: var(--muted-2); font-size: 11px; }
+.pill.pending { color: var(--warn); border-color: rgba(251, 191, 36, .4); }
+.pill.disabled { color: var(--danger); border-color: rgba(248, 113, 113, .4); }
+
+/* ---------- schermata di accesso ---------- */
+.auth-screen {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  background: rgba(3, 6, 10, .82);
+  backdrop-filter: blur(6px);
+  overflow-y: auto;
+}
+.auth-card {
+  width: min(420px, 100%);
+  background: #111922;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  padding: 26px 24px 24px;
+  display: flex; flex-direction: column; gap: 18px;
+}
+.auth-brand { display: flex; align-items: center; gap: 12px; }
+.auth-brand h1 { font-size: 20px; margin: 0; }
+.auth-brand p { margin: 2px 0 0; font-size: 12px; color: var(--muted-2); }
+
+.auth-tabs {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+  background: #0d141c; border: 1px solid var(--line);
+  border-radius: 12px; padding: 4px;
+}
+.auth-tab {
+  border: 0; background: transparent; color: var(--muted);
+  padding: 9px 10px; border-radius: 9px; cursor: pointer;
+  font: inherit; font-size: 13px; font-weight: 600;
+  transition: background .15s, color .15s;
+}
+.auth-tab:hover { color: var(--text); }
+.auth-tab.active { background: var(--panel-2); color: var(--text); }
+
+.auth-form { display: flex; flex-direction: column; gap: 13px; }
+.auth-form .btn.big { width: 100%; }
+.auth-form .field-hint { min-height: 15px; color: var(--danger); }
+
 /* ---------- modals ---------- */
 .modal-backdrop, .drawer-backdrop {
   position: fixed; inset: 0; z-index: 50;
