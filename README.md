@@ -274,10 +274,16 @@ ricalcola tutto.
 | *"Preferisco viaggiare in treno, senza cambi"* | cambia le preferenze |
 | *"Ho l'abbonamento IVOL"* | aggiunge l'abbonamento e ricalcola |
 | *"Parto dalla stazione di Trento"* | cambia il punto di ritrovo |
+| *"Parto dopo le 08:00"* | restringe la finestra e ricalcola |
+| *"Togli il limite di partenza"* | lo rimuove di nuovo |
 
 Le richieste che toccano i filtri vengono applicate e la ricerca riparte
-automaticamente. Senza intelligenza configurata l'agente risponde comunque con
-i dati reali e riconosce a mano le richieste più comuni.
+automaticamente. La conversazione **resta salvata** (anche dopo un ricarico
+o un riavvio): si riapre dal pulsante 💬 in basso a destra, e si azzera con
+*Azzera*. Se una richiesta rende la finestra impossibile (partenza dopo
+l'arrivo) l'agente te lo dice subito, invece di lasciare la pagina vuota.
+Senza intelligenza configurata l'agente risponde comunque con i dati reali e
+riconosce a mano le richieste più comuni.
 
 ---
 
