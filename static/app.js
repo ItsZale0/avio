@@ -173,13 +173,7 @@ async function api(path, options = {}) {
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
       response = await fetch(API_BASE + path, {
-        headers: {
-          "Content-Type": "application/json",
-          // ngrok (piano gratuito) mostra una pagina di avviso se non trova
-          // questo header: e' quello che dice all'ngrok "non sono un
-          // browser che sta cliccando". Gli altri fornitori lo ignorano.
-          "ngrok-skip-browser-warning": "1",
-        },
+        headers: { "Content-Type": "application/json" },
         // La sessione vive in un cookie HttpOnly: va sempre mandato.
         credentials: "include",
         ...options,
@@ -236,8 +230,8 @@ async function api(path, options = {}) {
   // e si spiega, invece di dare un errore JSON incomprensibile.
   if (text.includes("You are about to visit")) {
     throw new Error(
-      "Il tunnel ngrok sta chiedendo una conferma. Apri l'indirizzo del " +
-      "tunnel in una nuova scheda, clicca \"Visit Site\" e torna qui."
+      "Il tunnel ngrok chiede una conferma al browser. Apri l'indirizzo del " +
+      "tunnel in una nuova scheda, clicca \"Visit Site\" e poi torna qui."
     );
   }
   try {
