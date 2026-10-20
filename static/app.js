@@ -898,7 +898,7 @@ function renderPlan() {
            return `
            <div class="plan-alt">
              <span class="alt-profile">${esc(ALT_PROFILE[alt.profile] || "Alternativa")}</span>
-             <span>${esc(alt.title || "")}${alt.total_duration_min ? " · " + fmtDuration(alt.total_duration_min) : ""}${alt.changes ? " · " + (alt.changes === 1 ? "1 cambio" : alt.changes + " cambi") : ""}${altCovered ? " · coperto" : ""}</span>
+             <span>${esc(alt.title || "")}${alt.total_duration_min ? " · " + fmtDuration(alt.total_duration_min) : ""}${alt.changes ? " · " + (alt.changes === 1 ? "1 cambio" : alt.changes + " cambi") : ""}${alt.door_to_door_min && alt.door_to_door_min > (alt.total_duration_min || 0) ? " · p.a.p. " + fmtDuration(alt.door_to_door_min) : ""}${altCovered ? " · coperto" : ""}</span>
              <b>${altNet != null ? euro(altNet) : "—"}${altCovered && alt.total_price != null ? `<span class="was">${euro(alt.total_price)}</span>` : ""}</b>
            </div>`;
          }).join("")}
