@@ -180,6 +180,30 @@ Telegram: un messaggio qualsiasi diventa la risposta alla domanda in attesa.
   30 euro: l'agente lo sceglie e te lo spiega. Gli abbonamenti si impostano
   nella scheda della ricerca ("Abbonamenti in corso").
 
+### Gli abbonamenti: 59 tipi, con le condizioni vere
+
+L'agente conosce gli abbonamenti **verificati** (fonti ufficiali 2026), non un
+generico "abbonamento regionale":
+
+- **29 ferroviari** — l'abbonamento regionale Trenitalia di ognuna delle 20
+  regioni, Trenitalia Pass, Interrail, Carta Plus Lombardia, Carnet Italo;
+- **10 pass integrati regionali** — altoadigemobilita (250 €/anno, 39 €/mese,
+  U26 153/21 €, U19 max 21 €), Euregio Ticket (750 €/anno), abbonamento
+  provinciale Trentino, Guest Card Trentino, IVOL (118 €/mese), AUR, Salta Su,
+  Umbria Vai, FVG unico, Toscana Mobilita;
+- **20 urbani** — ATM Milano, ATAC Roma, GTT Torino, ACTV Venezia, Tper
+  Bologna, EAV Napoli, AMT Genova, Autolinee Firenze e cosi' via.
+
+Li scegli dalla ricerca in Impostazioni (o li scrivi a parole: *"ho l'abbonamento
+alto adige mobilita"*). Ogni voce dice **cosa non copre**: l'abbonamento
+regionale non vale su Frecce, Intercity ed EuroCity, e non vale in Campania,
+Abruzzo, Sardegna, Puglia, Trento e Bolzano.
+
+La copertura è quasi sempre **parziale** e viene calcolata tratto per tratto:
+l'altoadigemobilita sul treno Thiene→Trento copre il 36% del viaggio (la
+linea del Brennero entra in area a Fortezza), quello provinciale del Trentino
+il 56%.
+
 ### Il tempo conta quanto il prezzo
 
 Un bravo travel agent non sceglie solo il piu' economico: guarda anche

@@ -289,6 +289,32 @@ dice.
 
 Nessuna stima: senza browser l'adapter non propone nulla.
 
+### Il catalogo degli abbonamenti (59 tipi)
+
+`app/services/passes.py` contiene gli abbonamenti **verificati** (fonti
+ufficiali 2026), non un generico "abbonamento regionale":
+
+- **29 ferroviari**: l'abbonamento regionale Trenitalia di ognuna delle 20
+  regioni (tariffe 40/xx) + Trenitalia Pass, Interrail, Carta Plus Lombardia
+  (Trenord) e il Carnet Italo;
+- **10 pass integrati regionali**: altoadigemobilita, Euregio Ticket,
+  abbonamento provinciale Trentino, Guest Card Trentino, IVOL (Lombardia),
+  AUR (Piemonte), Salta Su (Emilia-Romagna), Umbria Vai, FVG unico, Toscana
+  Mobilita;
+- **20 urbani**: ATM Milano, ATAC Roma, GTT Torino, ACTV Venezia, Tper
+  Bologna, Metrocitta/EAV Napoli, AMT Genova, Autolinee/TFT Firenze, ACTR Pisa,
+  AMT Verona, Moovie Padova, SMS Bergamo, ATP Palermo, AMT Catania, AMT
+  Cagliari, Asu Foggia e altri.
+
+Ogni voce porta le **condizioni vere** (cosa non copre, dove non vale, quanto
+costa) e la fonte. La copertura e' quasi sempre **parziale** e viene calcolata
+tratto per tratto.
+
+La UI usa un **picker con ricerca** (59 voci in 3 gruppi) e il catalogo
+arriva dall'API `/api/passes`, cosi' non si duplica in JS. L'agente
+riconosce anche il nome scritto a parole: "ho l'abbonamento alto adige
+mobilita" -> `altoadigemobilita`, "ho IVOL" -> `ivol_lombardia`.
+
 ### Il tempo, i cambi e le priorità
 
 Il punteggio (`app/scoring.py`) pesa sei fattori, non solo il prezzo:

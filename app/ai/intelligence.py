@@ -10,6 +10,7 @@ Punti chiave:
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
@@ -950,8 +951,6 @@ async def interpret_answer(question: dict[str, Any], answer: str) -> dict[str, A
         cifre = [ch for ch in clean if ch.isdigit() or ch in ".,"]
         if cifre:
             try:
-                import re
-
                 numeri = re.findall(r"\d+(?:[.,]\d+)?", clean)
                 if numeri:
                     amount = float(numeri[0].replace(",", "."))
@@ -974,21 +973,25 @@ async def interpret_answer(question: dict[str, Any], answer: str) -> dict[str, A
             return {"prefs": {"allow_multi_leg": flag}, "note": clean}
 
     if key in ("abbonamenti", "passes", "pass"):
-        # Testo libero: "ho l'abbonamento Trenitalia" -> il tipo giusto.
+        # Testo libero: "ho l'abbonamento alto adige mobilita" -> quello giusto.
         testo = lowered
-        if ("abbonament" in testo or "carnet" in testo) and any(
-            word in testo for word in ("nessun", "niente", "non ", "no ")
+        if ("abbonament" in testo or "carnet" in testo or "pass" in testo) and re.search(
+            r"\b(nessun|niente|non|no)\b", testo
         ):
             return {"prefs": {"clear_passes": True}, "note": clean}
+        from ..services import passes as passes_service
+
+        # Il catalogo conosce decine di abbonamenti: si cerca quello citato.
+        trovato = passes_service.trova_per_testo(clean)
+        if trovato:
+            return {"prefs": {"add_pass": trovato}, "note": clean}
         if "freccia" in testo or "tutti i treni" in testo or "annuale" in testo:
             return {"prefs": {"add_pass": "trenitalia_tutti"}, "note": clean}
         if "carnet" in testo and "bus" in testo:
             return {"prefs": {"add_pass": "carnet_bus"}, "note": clean}
         if "carnet" in testo:
             return {"prefs": {"add_pass": "carnet_regionale"}, "note": clean}
-        if "trenitalia" in testo or "treno" in testo or "regionale" in testo:
-            return {"prefs": {"add_pass": "trenitalia_regionale"}, "note": clean}
-        if any(word in testo for word in ("bus", "metro", "urbano", "citta", "città", "tram")):
+        if any(word in testo for word in ("bus", "metro", "urbano", "citta", "tram")):
             return {"prefs": {"add_pass": "urbano"}, "note": clean}
 
     if key in ("punto_partenza", "punto_arrivo", "ritrovo", "punto"):

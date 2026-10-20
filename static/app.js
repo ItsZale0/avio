@@ -72,42 +72,73 @@ const ALT_PROFILE = {
   proposta: "Proposta",
 };
 
-// Gli abbonamenti che l'agente conosce (dati ufficiali 2026): se la tratta
-// e' coperta, il biglietto non lo paghi.
-const PASS_TYPES = [
-  { id: "altoadigemobilita", label: "altoadigemobilita (Alto Adige)", hint: "Tutti i mezzi di sudtirolmobil: treni regionali (anche Brennero-Trento), autobus, funivie" },
-  { id: "euregio_ticket", label: "Euregio Ticket", hint: "Trentino, Alto Adige e Tirolo: treni regionali, autobus, funivie" },
-  { id: "trentino_provinciale", label: "Abbonamento provinciale Trentino", hint: "Autobus Trentino Trasporti, Trento-Male, Valsugana, funivia Sardagna" },
-  { id: "guest_card_trentino", label: "Guest Card Trentino / Val di Sole", hint: "Gratis sul trenino Trento-Male e sui bus del Trentino" },
-  { id: "trenitalia_regionale", label: "Abbonamento regionale Trenitalia", hint: "Treni regionali della regione in cui e' preso (copre solo quella parte)" },
-  { id: "trenitalia_tutti", label: "Abbonamento Trenitalia (tutti i treni)", hint: "Copre anche Frecce e Intercity" },
-  { id: "carnet_regionale", label: "Carnet 10 biglietti regionali", hint: "Consuma 1 biglietto a ogni viaggio" },
-  { id: "ivol_lombardia", label: "IVOL (Lombardia)", hint: "Tutti i mezzi pubblici della Lombardia" },
-  { id: "salta_su_emilia", label: "Salta Su (Emilia-Romagna)", hint: "Card Unica con abbonamento ferroviario regionale" },
-  { id: "aur_piemonte", label: "AUR / Formula (Piemonte)", hint: "Abbonamento unico regionale" },
-  { id: "cis_lazio", label: "CIS settimanale (Lazio)", hint: "7 giorni, viaggi illimitati" },
-  { id: "toscana_regionale", label: "Abbonamento regionale Toscana", hint: "Treni regionali e autobus" },
-  { id: "veneto_regionale", label: "Abbonamento regionale Veneto", hint: "Treni regionali e autobus del Veneto" },
-  { id: "fvg_unico", label: "Abbonamento unico FVG", hint: "Treni Trenitalia + autobus extraurbani" },
-  { id: "urbano", label: "Abbonamento urbano (bus/metro)", hint: "Bus, metro e tram della citta'" },
-  { id: "carnet_urbano", label: "Carnet 10 biglietti urbani", hint: "Consuma 1 biglietto a ogni viaggio" },
-  { id: "trenitalia_veneto", label: "Abbonamento reg. Trenitalia Veneto", hint: "Treni regionali del Veneto" },
-  { id: "trenitalia_trentino", label: "Abbonamento reg. Trenitalia Trentino", hint: "Treni regionali del Trentino" },
-  { id: "trenitalia_lombardia", label: "Abbonamento reg. Trenitalia Lombardia", hint: "Treni regionali della Lombardia" },
-  { id: "trenitalia_piemonte", label: "Abbonamento reg. Trenitalia Piemonte", hint: "Treni regionali del Piemonte" },
-  { id: "trenitalia_emilia", label: "Abbonamento reg. Trenitalia Emilia", hint: "Treni regionali dell'Emilia" },
-  { id: "trenitalia_toscana", label: "Abbonamento reg. Trenitalia Toscana", hint: "Treni regionali della Toscana" },
-  { id: "trenitalia_lazio", label: "Abbonamento reg. Trenitalia Lazio", hint: "Treni regionali del Lazio" },
-  { id: "trenitalia_campania", label: "Abbonamento reg. Trenitalia Campania", hint: "Treni regionali della Campania" },
-  { id: "trenitalia_calabria", label: "Abbonamento reg. Trenitalia Calabria", hint: "Treni regionali della Calabria" },
-  { id: "trenitalia_puglia", label: "Abbonamento reg. Trenitalia Puglia", hint: "Treni regionali della Puglia" },
-  { id: "trenitalia_sicilia", label: "Abbonamento reg. Trenitalia Sicilia", hint: "Treni regionali della Sicilia" },
-  { id: "trenitalia_sardegna", label: "Abbonamento reg. Trenitalia Sardegna", hint: "Treni regionali della Sardegna" },
-  { id: "trenitalia_umbria", label: "Abbonamento reg. Trenitalia Umbria", hint: "Treni regionali dell'Umbria" },
-  { id: "trenitalia_marche", label: "Abbonamento reg. Trenitalia Marche", hint: "Treni regionali delle Marche" },
-  { id: "trenitalia_abruzzo", label: "Abbonamento reg. Trenitalia Abruzzo", hint: "Treni regionali dell'Abruzzo" },
-  { id: "trenitalia_fvg", label: "Abbonamento reg. Trenitalia FVG", hint: "Treni regionali del Friuli" },
-];
+// Gli abbonamenti che l'agente conosce arrivano dall'API (il catalogo
+// ufficiale e' in app/services/passes.py): qui solo la copia in memoria.
+let PASS_CATALOGO = [];
+
+/* Costruisce il selettore: ricerca + gruppi di caselle. */
+function renderPassPicker(box, selezionati, nomeCampo) {
+  if (!box) return;
+  const scelti = new Set(selezionati || []);
+  const perTipo = {};
+  for (const p of PASS_CATALOGO) {
+    (perTipo[p.tipo] = perTipo[p.tipo] || []).push(p);
+  }
+  const ordine = [
+    ["regione", "Regione e province"],
+    ["citta", "Citta'"],
+    ["ferrovia", "Ferrovia"],
+    ["altro", "Altri"],
+  ];
+  const gruppi = ordine
+    .filter(([tipo]) => perTipo[tipo] && perTipo[tipo].length)
+    .map(([tipo, titolo]) => {
+      const voci = perTipo[tipo]
+        .map(
+          (p) => `<label class="chip" title="${esc(p.nota || p.nome)}">
+            <input type="checkbox" name="${esc(nomeCampo)}" value="${esc(p.id)}"
+              data-search="${esc((p.nome + " " + (p.nota || "")).toLowerCase())}"
+              ${scelti.has(p.id) ? "checked" : ""} />
+            ${esc(p.nome)}
+          </label>`
+        )
+        .join("");
+      return `<div class="pass-group"><h5>${esc(titolo)}</h5><div class="chips">${voci}</div></div>`;
+    })
+    .join("");
+  box.innerHTML = `
+    <input type="search" class="pass-search" placeholder="Cerca un abbonamento (es. altoadige, ATM, IVOL)..."
+           data-target="${esc(box.id)}" />
+    <div class="pass-list">${gruppi}</div>`;
+}
+
+/* Filtra le caselle mentre l'utente scrive. */
+function filtraPass(ricerca) {
+  const testo = (ricerca || "").trim().toLowerCase();
+  document.querySelectorAll(".pass-list").forEach((lista) => {
+    lista.querySelectorAll("label.chip").forEach((etichetta) => {
+      const input = etichetta.querySelector("input");
+      const haystack = (input?.dataset.search || "").toLowerCase();
+      etichetta.style.display = !testo || haystack.includes(testo) ? "" : "none";
+    });
+    lista.querySelectorAll(".pass-group").forEach((gruppo) => {
+      const visibili = gruppo.querySelectorAll(
+        'label.chip:not([style*="display: none"])'
+      ).length;
+      gruppo.style.display = visibili ? "" : "none";
+    });
+  });
+}
+
+/* Carica il catalogo degli abbonamenti. */
+async function caricaCatalogoPass() {
+  try {
+    const dati = await api("/api/passes");
+    PASS_CATALOGO = dati.passes || [];
+  } catch (_) {
+    PASS_CATALOGO = [];
+  }
+}
 
 function fmtDuration(minutes) {
   if (!minutes) return "";
@@ -477,6 +508,7 @@ async function logout() {
 /* ------------------------------------------------------------------ */
 document.addEventListener("DOMContentLoaded", async () => {
   bindEvents();
+  await caricaCatalogoPass();
   registerServiceWorker();
   await loadRuntimeConfig();
   try {
@@ -586,6 +618,11 @@ function bindEvents() {
   $("#btnDelKey").addEventListener("click", deleteKey);
   $("#btnTelegramLink").addEventListener("click", telegramLink);
   $("#btnTelegramConfirm").addEventListener("click", telegramConfirm);
+  document.addEventListener("input", (event) => {
+    if (event.target.classList?.contains("pass-search")) {
+      filtraPass(event.target.value);
+    }
+  });
   $("#questionsCard").addEventListener("click", (event) => {
     const button = event.target.closest("[data-answer]");
     if (!button) return;
@@ -765,9 +802,9 @@ function renderDetail() {
   const passNames = ((watch.prefs && watch.prefs.passes) || [])
     .map((p) => {
       const tipo = typeof p === "string" ? p : p.tipo;
-      const known = PASS_TYPES.find((item) => item.id === tipo);
-      if (typeof p === "string") return known ? known.label : tipo;
-      return p.nome || (known ? known.label : tipo);
+      const known = PASS_CATALOGO.find((item) => item.id === tipo);
+      if (typeof p === "string") return known ? known.nome : tipo;
+      return p.nome || (known ? known.nome : tipo);
     })
     .join(", ");
   $("#watchSub").textContent =
@@ -1501,16 +1538,10 @@ function openWatchModal(watch) {
     input.checked = notify.includes(input.value);
   });
 
-  // Abbonamenti: la lista dei tipi noti, con i selezionati della ricerca.
+  // Abbonamenti: il catalogo viene dall'API, con i selezionati della ricerca.
   const currentPasses = (data.prefs && data.prefs.passes) || [];
   const selectedPasses = currentPasses.map((p) => (typeof p === "string" ? p : p.tipo));
-  $("#passesBox").innerHTML = PASS_TYPES.map((pass) => {
-    const checked = selectedPasses.includes(pass.id) ? "checked" : "";
-    return `<label class="chip" title="${esc(pass.hint)}">
-      <input type="checkbox" name="pass" value="${esc(pass.id)}" ${checked} />
-      ${esc(pass.label)}
-    </label>`;
-  }).join("");
+  renderPassPicker($("#passesBox"), selectedPasses, "pass");
 
   openModal("watchModal");
   setTimeout(() => $("#fFrom").focus(), 60);
@@ -1723,16 +1754,7 @@ async function openSettings() {
     }
     if (globalPasses && !Array.isArray(globalPasses)) globalPasses = [];
     const selezionati = globalPasses.map((p) => (typeof p === "string" ? p : p.tipo));
-    const box = $("#globalPassesBox");
-    if (box) {
-      box.innerHTML = PASS_TYPES.map((pass) => {
-        const checked = selezionati.includes(pass.id) ? "checked" : "";
-        return `<label class="chip" title="${esc(pass.hint)}">
-          <input type="checkbox" name="globalpass" value="${esc(pass.id)}" ${checked} />
-          ${esc(pass.label)}
-        </label>`;
-      }).join("");
-    }
+    renderPassPicker($("#globalPassesBox"), selezionati, "globalpass");
     $("#sSmtpHost").value = s.smtp_host || "";
     $("#sSmtpPort").value = s.smtp_port || "587";
     $("#sSmtpUser").value = s.smtp_user || "";

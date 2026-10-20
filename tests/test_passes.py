@@ -82,7 +82,9 @@ class NormalizeTests(unittest.TestCase):
     def test_string_list_is_accepted(self):
         result = passes_service.normalize_passes(["trenitalia_regionale"])
         self.assertEqual(len(result), 1)
-        self.assertEqual(result[0]["nome"], "Abbonamento regionale Trenitalia")
+        self.assertEqual(
+            result[0]["nome"], "Abbonamento regionale Trenitalia (quello di casa)"
+        )
 
     def test_unknown_types_are_dropped(self):
         self.assertEqual(passes_service.normalize_passes(["inesistente"]), [])

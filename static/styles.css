@@ -643,8 +643,28 @@ select { cursor: pointer; }
 }
 .plan-facts span { white-space: nowrap; }
 
-/* Confronto: tratte singole contro biglietto unico. */
-.confronti {
+/* Il selettore degli abbonamenti: ricerca + gruppi. */
+.pass-search {
+  width: 100%; margin-bottom: 10px;
+  background: rgba(10, 14, 19, 0.5);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px; padding: 8px 10px;
+  color: var(--text); font-size: 13px; font-family: inherit;
+}
+.pass-search:focus {
+  outline: none; border-color: rgba(96, 165, 250, 0.65);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.15);
+}
+.pass-list { max-height: 260px; overflow-y: auto; padding-right: 4px; }
+.pass-group { margin-bottom: 12px; }
+.pass-group h5 {
+  font-size: 11px; color: var(--muted-2); text-transform: uppercase;
+  letter-spacing: .06em; margin-bottom: 6px; font-weight: 600;
+}
+.pass-group .chips { gap: 6px; }
+.pass-group .chip { font-size: 12px; padding: 4px 9px; }
+
+/* Confronto: tratte singole contro biglietto unico. */.confronti {
   margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 10px;
 }
 .confronti h4 { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 7px; }

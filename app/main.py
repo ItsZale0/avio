@@ -624,6 +624,27 @@ async def gtfs_update_endpoint(feed: list[str] | None = Query(None)):
 # --------------------------------------------------------------------------- #
 # Impostazioni
 # --------------------------------------------------------------------------- #
+@app.get("/api/passes")
+async def list_passes(request: Request):
+    """Il catalogo degli abbonamenti conosciuti (per il selettore)."""
+    deps.require_user(request)
+    from .services import passes as passes_service
+
+    catalogo = []
+    for chiave, dati in passes_service.PASS_TYPES.items():
+        catalogo.append(
+            {
+                "id": chiave,
+                "nome": dati.get("nome", chiave),
+                "tipo": dati.get("tipo", "altro"),
+                "nota": dati.get("nota", ""),
+                "fonte": dati.get("fonte", ""),
+            }
+        )
+    catalogo.sort(key=lambda item: (item["tipo"], item["nome"]))
+    return {"passes": catalogo}
+
+
 @app.get("/api/settings")
 async def get_settings(request: Request):
     """Impostazioni: quelle comuni piu' quelle personali dell'utente."""
