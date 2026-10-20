@@ -165,6 +165,12 @@ class Candidate:
             "walk_in_km": round(self.walk_in_km, 1) if self.walk_in_km is not None else None,
             "changes": self.changes,
             "depart_at": self.depart_at.isoformat() if self.depart_at else None,
+            # Quando uscire di casa per arrivare al punto di ritrovo in tempo.
+            "leave_home_at": (
+                (self.depart_at - timedelta(minutes=self.walk_out_min)).isoformat()
+                if self.depart_at and self.walk_out_min
+                else None
+            ),
             "arrive_at": self.arrive_at.isoformat() if self.arrive_at else None,
             "estimated": self.estimated,
             "partial": self.partial,
@@ -201,7 +207,7 @@ def _walk_times(
     Il punto di ritrovo e' quello che l'utente ha indicato (o, se non c'e',
     il centro citta'): 20 minuti a piedi possono valere piu' di 20 euro.
     """
-    from ..geo import walking_minutes
+    from ..geo import walking_km, walking_minutes
 
     out_km: float | None = None
     in_km: float | None = None
@@ -209,14 +215,16 @@ def _walk_times(
         first = legs[0]
         origin = ctx.origin_coords
         if origin and first.pickup_lat is not None and first.pickup_lon is not None:
-            out_km = haversine_km(
-                origin[0], origin[1], first.pickup_lat, first.pickup_lon
+            out_km = walking_km(
+                haversine_km(origin[0], origin[1], first.pickup_lat, first.pickup_lon)
             )
         last = legs[-1]
         destination = ctx.destination_coords
         if destination and last.dropoff_lat is not None and last.dropoff_lon is not None:
-            in_km = haversine_km(
-                last.dropoff_lat, last.dropoff_lon, destination[0], destination[1]
+            in_km = walking_km(
+                haversine_km(
+                    last.dropoff_lat, last.dropoff_lon, destination[0], destination[1]
+                )
             )
     return (
         walking_minutes(out_km) or 0,
@@ -238,10 +246,15 @@ def _access_cost(offer: Offer, ctx: SearchContext) -> float:
 
 
 def _transfer_km(leg1: Offer, leg2: Offer) -> float | None:
+    """Il cammino nel cambio: distanza reale, non linea d'aria."""
     if None in (leg1.dropoff_lat, leg1.dropoff_lon, leg2.pickup_lat, leg2.pickup_lon):
         return None
-    return haversine_km(
-        leg1.dropoff_lat, leg1.dropoff_lon, leg2.pickup_lat, leg2.pickup_lon  # type: ignore[arg-type]
+    from ..geo import walking_km
+
+    return walking_km(
+        haversine_km(
+            leg1.dropoff_lat, leg1.dropoff_lon, leg2.pickup_lat, leg2.pickup_lon  # type: ignore[arg-type]
+        )
     )
 
 

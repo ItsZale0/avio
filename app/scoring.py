@@ -251,6 +251,14 @@ def score_offers(offers: list[Offer], ctx: SearchContext) -> dict[str, dict]:
             "details": {
                 "distanza_pickup_km": _round(offer.pickup_distance_km(ctx)),
                 "distanza_dropoff_km": _round(offer.dropoff_distance_km(ctx)),
+                # I minuti a piedi calcolati dal backend (percorso reale,
+                # non linea d'aria): il frontend non deve ricalcolarli.
+                "minuti_pickup_a_piedi": _minuti_a_piedi(
+                    offer.pickup_distance_km(ctx)
+                ),
+                "minuti_dropoff_a_piedi": _minuti_a_piedi(
+                    offer.dropoff_distance_km(ctx)
+                ),
                 "costo_accesso_stimato": access,
                 "costo_effettivo": round(costo + access, 2) if costo is not None else None,
                 "durata_min": offer.duration_min,
@@ -306,6 +314,13 @@ def score_offers(offers: list[Offer], ctx: SearchContext) -> dict[str, dict]:
             info["badges"].append("diretto")
 
     return result
+
+
+def _minuti_a_piedi(distanza_km: float | None) -> int | None:
+    """Minuti a piedi per una distanza in linea d'aria (percorso reale)."""
+    from .geo import walking_km, walking_minutes
+
+    return walking_minutes(walking_km(distanza_km))
 
 
 def _round(value: float | None) -> float | None:

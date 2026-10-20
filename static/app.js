@@ -1003,10 +1003,21 @@ function renderPlan() {
   const walkOut = Number(plan.walk_out_min || 0);
   const walkIn = Number(plan.walk_in_min || 0);
   const doorToDoor = plan.door_to_door_min != null ? Number(plan.door_to_door_min) : null;
+  // Il cammino: quanto a piedi prima e dopo, e quando uscire di casa.
+  const partiDiCasa = (() => {
+    if (!plan.depart_at || !walkOut) return "";
+    const partenza = new Date(plan.depart_at);
+    if (Number.isNaN(partenza.getTime())) return "";
+    partenza.setMinutes(partenza.getMinutes() - walkOut);
+    return `🏠 esci di casa alle ${partenza.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}`;
+  })();
   const walkNote =
     walkOut || walkIn
       ? `<span>🚶 ${walkOut ? walkOut + " min" : ""}${walkOut && walkIn ? " + " : ""}${walkIn ? walkIn + " min" : ""} a piedi</span>`
       : "";
+  const walkNote2 = walkIn
+    ? `<span>🚶 ${walkIn} min a piedi fino alla destinazione</span>`
+    : "";
   const alts = state.planAlternatives.length
     ? `<div class="plan-alts">
          <h4>Alternative: altri profili</h4>
@@ -1049,6 +1060,8 @@ function renderPlan() {
       ${duration ? `<span>⏱ ${duration}</span>` : ""}
       <span>🔁 ${changeLabel}</span>
       ${walkNote}
+      ${walkNote2}
+      ${partiDiCasa ? `<span>${partiDiCasa}</span>` : ""}
       ${doorToDoor ? `<span>🚶 porta a porta ${fmtDuration(doorToDoor)}</span>` : ""}
       ${covered ? `<span>🎟️ coperto da ${esc(passNames || "abbonamento")}</span>` : ""}
       ${plan.transfer_km != null ? `<span>🚶 ${plan.transfer_km} km a piedi nel cambio</span>` : ""}
@@ -1187,9 +1200,14 @@ function offerCard(offer, suppressNew = false) {
 
   const detailBits = [];
   if (duration) detailBits.push(`⏱ ${duration}`);
+  // I minuti a piedi li calcola il backend (percorso reale, non linea
+  // d'aria): se non ci sono, si stimano qui con la stessa regola.
   const walkKm = offer.details?.distanza_pickup_km;
-  if (walkKm != null && walkKm > 0.05) {
-    const minuti = Math.round((walkKm / 4.5) * 60);
+  const walkMin = offer.details?.minuti_pickup_a_piedi;
+  if (walkMin != null && walkMin > 0) {
+    detailBits.push(`🚶 ${walkMin} min a piedi fino al ritrovo`);
+  } else if (walkKm != null && walkKm > 0.05) {
+    const minuti = Math.round((walkKm * 1.25 / 4.5) * 60);
     detailBits.push(`🚶 ${minuti} min a piedi fino al ritrovo`);
   }
   const changes = offer.details?.cambi;

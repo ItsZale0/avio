@@ -130,6 +130,22 @@ def nearest_city(lat: float, lon: float, max_km: float = 40) -> tuple[str, float
 WALK_KMH = 4.5
 
 
+# La distanza in linea d'aria non e' la distanza che si percorre a piedi:
+# strade, marciapiedi e deviazioni allungano il percorso. Regola pratica dei
+# pianificatori: il cammino e' circa il 25% piu' lungo della retta.
+WALK_DETOUR = 1.25
+
+
+def walking_km(straight_km: float | None) -> float | None:
+    """Distanza a piedi stimata a partire dalla distanza in linea d'aria."""
+    if straight_km is None or straight_km < 0:
+        return None
+    if straight_km < 0.2:
+        # A pochi metri si va quasi in dritto: il ragionamento non serve.
+        return straight_km
+    return straight_km * WALK_DETOUR
+
+
 def walking_minutes(km: float | None) -> int | None:
     """Minuti di cammino per una distanza in linea d'aria.
 

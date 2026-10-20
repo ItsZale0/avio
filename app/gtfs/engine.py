@@ -15,7 +15,7 @@ import math
 from datetime import date as Date
 from typing import Any, Iterable, Iterator
 
-from ..geo import haversine_km
+from ..geo import haversine_km, walking_km
 from . import db as gtfsdb
 
 WEEKDAY_COLS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -299,7 +299,9 @@ def _walk_candidates(corridor: dict[str, tuple[float, float]], origin: str, *, l
             continue
         if abs(other_lat - lat) > 0.02 or abs(other_lon - lon) > 0.03:
             continue
-        distance = haversine_km(lat, lon, other_lat, other_lon)
+        # Il cammino e' piu' lungo della linea d'aria: si usa la stima
+        # del percorso reale (vedi geo.walking_km).
+        distance = walking_km(haversine_km(lat, lon, other_lat, other_lon)) or 0.0
         if distance <= walk_km:
             found.append((distance, stop_id))
     found.sort()
@@ -335,7 +337,8 @@ class _WalkIndex:
                     if other == stop_id:
                         continue
                     other_lat, other_lon = self.coords[other]
-                    distance = haversine_km(lat, lon, other_lat, other_lon)
+                    # Cammino reale, non linea d'aria (vedi geo.walking_km).
+                    distance = walking_km(haversine_km(lat, lon, other_lat, other_lon)) or 0.0
                     if distance <= walk_km:
                         found.append((distance, other))
         found.sort()

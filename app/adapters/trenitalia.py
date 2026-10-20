@@ -144,7 +144,15 @@ async def _lookup_station(
             if isinstance(items, list):
                 chosen = _choose_station(items, key, lat, lon)
                 if chosen and chosen.get("locationId"):
-                    result = {"id": chosen["locationId"], "name": chosen.get("name") or name}
+                    coords = chosen.get("geographicCoordinates") or {}
+                    result = {
+                        "id": chosen["locationId"],
+                        "name": chosen.get("name") or name,
+                        # Le coordinate vere della stazione: senza queste il
+                        # tempo a piedi viene calcolato sul centro citta'.
+                        "lat": coords.get("latitude"),
+                        "lon": coords.get("longitude"),
+                    }
             break
         except Exception as exc:  # noqa: BLE001
             log.debug("lookup stazione '%s' fallito (%s): %s", name, type(exc).__name__, exc)
@@ -350,11 +358,23 @@ class TrenitaliaAdapter(Adapter):
                     arrive_at=arrive_at,
                     price=round(price, 2),
                     pickup_name=solution.get("origin") or from_st["name"],
-                    pickup_lat=ctx.from_lat,
-                    pickup_lon=ctx.from_lon,
+                    pickup_lat=(
+                        from_st.get("lat")
+                        if from_st.get("lat") is not None
+                        else ctx.from_lat
+                    ),
+                    pickup_lon=(
+                        from_st.get("lon")
+                        if from_st.get("lon") is not None
+                        else ctx.from_lon
+                    ),
                     dropoff_name=solution.get("destination") or to_st["name"],
-                    dropoff_lat=ctx.to_lat,
-                    dropoff_lon=ctx.to_lon,
+                    dropoff_lat=(
+                        to_st.get("lat") if to_st.get("lat") is not None else ctx.to_lat
+                    ),
+                    dropoff_lon=(
+                        to_st.get("lon") if to_st.get("lon") is not None else ctx.to_lon
+                    ),
                     seats=None,
                     duration_min=duration_min,
                     deeplink="https://www.trenitalia.com/it.html",
