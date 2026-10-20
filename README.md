@@ -261,7 +261,7 @@ successivo. Puoi anche scrivere liberamente in chat: il bot interpreta la rispos
 
 ### 💬 Chiedi all'agente (qualsiasi domanda o richiesta)
 
-Nella scheda di ogni ricerca c'è la tab **"Chiedi"**: scrivi a parole e l'agente
+Il pulsante flottante **"💬 Chiedi"** in basso a destra apre l'agente: scrivi a parole e
 risponde **usando i dati reali** di quella ricerca (prezzi, orari, il piano
 scelto, i tempi a piedi, gli abbonamenti che hai), oppure esegue la richiesta e
 ricalcola tutto.
@@ -280,7 +280,7 @@ ricalcola tutto.
 Le richieste che toccano i filtri vengono applicate e la ricerca riparte
 automaticamente. La conversazione **resta salvata** (anche dopo un ricarico
 o un riavvio): si riapre dal pulsante 💬 in basso a destra, e si azzera con
-*Azzera*. Se una richiesta rende la finestra impossibile (partenza dopo
+*Azzera* (o si chiude con *Chiudi*). Se una richiesta rende la finestra impossibile (partenza dopo
 l'arrivo) l'agente te lo dice subito, invece di lasciare la pagina vuota.
 Senza intelligenza configurata l'agente risponde comunque con i dati reali e
 riconosce a mano le richieste più comuni.

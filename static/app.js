@@ -606,6 +606,7 @@ function bindEvents() {
   });
 
   $("#btnRunNow")?.addEventListener("click", runNow);
+  $("#chatFab")?.addEventListener("click", apriChat);
   $("#btnToggleWatch")?.addEventListener("click", toggleWatch);
   $("#btnEditWatch")?.addEventListener("click", () => openWatchModal(state.watch));
   $("#btnDeleteWatch")?.addEventListener("click", deleteWatch);
@@ -2403,6 +2404,13 @@ function apriChat() {
   setTimeout(() => $("#chatText")?.focus(), 150);
 }
 
+// "Chiudi": torna alla scheda delle offerte, cosi' la chat non resta appesa.
+function chiudiChat() {
+  state.tab = "best";
+  $$(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === "best"));
+  renderTab();
+}
+
 function renderChat(panel) {
   const watch = state.watch;
   if (!watch) return;
@@ -2424,11 +2432,14 @@ function renderChat(panel) {
       <div class="chat-head">
         <div class="chat-head-row">
           <strong>💬 Chiedi all'agente</strong>
-          ${
-            messaggi.length
-              ? `<button class="btn ghost tiny" type="button" id="chatPulisci">Azzera</button>`
-              : ""
-          }
+          <div class="chat-azioni">
+            ${
+              messaggi.length
+                ? `<button class="btn ghost tiny" type="button" id="chatPulisci">Azzera</button>`
+                : ""
+            }
+            <button class="btn ghost tiny" type="button" id="chatChiudi">Chiudi</button>
+          </div>
         </div>
         <small class="field-hint">
           Fai una domanda sui viaggi trovati o cambia la ricerca a parole
@@ -2497,6 +2508,7 @@ function renderChat(panel) {
     CHAT[watch.id] = [];
     renderChat($("#tabPanel"));
   });
+  $("#chatChiudi")?.addEventListener("click", chiudiChat);
   const scatola = $("#chatMessaggi");
   if (scatola) scatola.scrollTop = scatola.scrollHeight;
 }
