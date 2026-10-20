@@ -5,7 +5,7 @@
    I path sono relativi alla base dello SW, cosi' funziona sia in locale (/)
    sia su GitHub Pages (/carpool-intelligence/). */
 const BASE = new URL("./", self.location).pathname;
-const CACHE = "carpool-v6";
+const CACHE = "carpool-v7";
 const SHELL = [
   BASE,
   "styles.css",
@@ -42,8 +42,10 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname.startsWith(BASE + "api/") || url.pathname === BASE + "config.json") return;
 
   event.respondWith(
-    // Rete per prima: se il PC e' raggiungibile vedi sempre l'ultima versione.
-    fetch(request)
+    // Rete per prima, e SENZA cache HTTP: GitHub Pages tiene i file per 10
+    // minuti, e un app.js vecchio contiene il vecchio indirizzo del backend
+    // (il tunnel cambia URL a ogni riavvio) -> "Failed to fetch" al login.
+    fetch(request, { cache: "no-store" })
       .then((response) => {
         if (response && response.ok) {
           const copy = response.clone();

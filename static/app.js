@@ -124,21 +124,36 @@ const MODE_COLOR = {
 
 const MAX_MAP_OFFERS = 40;
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function api(path, options = {}) {
   let response;
-  try {
-    response = await fetch(API_BASE + path, {
-      headers: { "Content-Type": "application/json" },
-      // La sessione vive in un cookie HttpOnly: va sempre mandato.
-      credentials: "include",
-      ...options,
-    });
-  } catch (error) {
-    // Rete irraggiungibile: il tunnel e' probabilmente stato riavviato
-    // con un URL nuovo. Si ricarica la pagina per riprovare.
-    scheduleApiRetry();
-    throw new Error("Server non raggiungibile");
+  let lastError = null;
+
+  // Il tunnel puo' essere riavviato in qualunque momento e cambiare URL:
+  // se la richiesta fallisce a livello di rete si rilegge config.json
+  // (che nel frattempo e' stato aggiornato) e si riprova.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      response = await fetch(API_BASE + path, {
+        headers: { "Content-Type": "application/json" },
+        // La sessione vive in un cookie HttpOnly: va sempre mandato.
+        credentials: "include",
+        ...options,
+      });
+      break;
+    } catch (error) {
+      lastError = error;
+      if (attempt === 2) {
+        scheduleApiRetry();
+        throw new Error("Server non raggiungibile");
+      }
+      await loadRuntimeConfig();
+      await sleep(1500 * (attempt + 1));
+    }
   }
+  if (!response) throw lastError || new Error("Server non raggiungibile");
+
   if (response.status === 401) {
     // Sessione scaduta o assente: torna alla schermata di accesso.
     showAuthScreen();
@@ -195,14 +210,29 @@ function showApiHint() {
 }
 
 /* Se l'API non risponde, il tunnel potrebbe essere stato riavviato con un
-   URL nuovo: si ricarica la pagina per prendere il config.json fresco. */
+   URL nuovo: si ricarica la pagina, con attese crescenti, per prendere il
+   config.json fresco. */
 let _apiRetry = 0;
 function scheduleApiRetry() {
-  if (_apiRetry > 0) return;
-  _apiRetry = setTimeout(() => {
-    _apiRetry = 0;
-    window.location.reload();
-  }, 4000);
+  if (_apiRetry) return;
+  const delays = [5000, 15000, 30000];
+  let index = 0;
+  const retry = () => {
+    if (index >= delays.length) return;
+    const delay = delays[index++];
+    const notice = document.querySelector("#loginHint");
+    if (notice) {
+      notice.textContent =
+        "Server non raggiungibile: il tunnel potrebbe essere stato riavviato. " +
+        `Riprovo tra ${Math.round(delay / 1000)} secondi…`;
+      notice.className = "field-hint err";
+    }
+    _apiRetry = setTimeout(() => {
+      _apiRetry = 0;
+      window.location.reload();
+    }, delay);
+  };
+  retry();
 }
 
 function toast(message, kind = "") {
