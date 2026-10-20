@@ -49,6 +49,24 @@ jobs:
           echo "--- corpo ---"
           head -c 200 /tmp/c2; echo
           echo
+          echo "=== 4b. GET con User-Agent da browser (e senza header custom) ==="
+          code=$(curl -s -o /tmp/f -w "%{http_code}" \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" \
+            -H "Accept: application/json" \
+            -H "Origin: https://itszale0.github.io" \
+            "$URL/api/auth/status")
+          echo "HTTP $code"
+          head -c 200 /tmp/f; echo
+          echo
+          echo "=== 4c. GET con User-Agent da browser e header di bypass ==="
+          code=$(curl -s -o /tmp/g -w "%{http_code}" \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" \
+            -H "ngrok-skip-browser-warning: 1" \
+            -H "Origin: https://itszale0.github.io" \
+            "$URL/api/auth/status")
+          echo "HTTP $code"
+          head -c 200 /tmp/g; echo
+          echo
           echo "=== 5. POST reale (come fa il frontend) ==="
           code=$(curl -s -o /tmp/e -w "%{http_code}" -X POST \
             -H "Origin: https://itszale0.github.io" \
