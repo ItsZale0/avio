@@ -771,29 +771,46 @@ async function selectWatch(id) {
 }
 
 async function loadDetail(id) {
-  const [watch, offers, links, runs] = await Promise.all([
+  const [watch, offers, links, runs, domande] = await Promise.all([
     api(`/api/watches/${id}`),
     api(`/api/watches/${id}/offers`),
     api(`/api/watches/${id}/links`),
     api(`/api/watches/${id}/runs`),
+    api(`/api/watches/${id}/questions?status=pending`).catch(() => []),
   ]);
   state.watch = watch;
   state.offers = offers;
   state.links = links.links || [];
   state.runs = runs;
+  // Le domande in sospeso arrivano dall'API: se il piano non c'e' (nessuna
+  // combinazione valida) quelle del piano sarebbero vuote e l'utente non
+  // vedrebbe mai la domanda "vuoi alzare il budget?".
+  const inSospeso = (domande || []).filter((q) => q.status === "pending");
   try {
     const plan = await api(`/api/watches/${id}/plan`);
     state.plan = plan.plan || null;
     state.planAlternatives = plan.alternatives || [];
-    state.questions = plan.questions || [];
+    state.questions = _unisceDomande(plan.questions || [], inSospeso);
   } catch (_) {
     state.plan = null;
     state.planAlternatives = [];
-    state.questions = [];
+    state.questions = inSospeso;
   }
   showEmpty(false);
   renderDetail();
   renderTab();
+}
+
+/* Due liste di domande in una, senza ripetere la stessa. */
+function _unisceDomande(a, b) {
+  const visti = new Set();
+  const fuori = [];
+  for (const q of [...(a || []), ...(b || [])]) {
+    if (!q || q.id == null || visti.has(q.id)) continue;
+    visti.add(q.id);
+    fuori.push(q);
+  }
+  return fuori;
 }
 
 function showEmpty(empty) {
@@ -895,12 +912,38 @@ function renderConfronti(confronti) {
 
 function renderPlan() {
   const box = $("#planCard");
+  const vuoto = $("#noPlanCard");
   const plan = state.plan;
   if (!plan) {
     box.classList.add("hidden");
     box.innerHTML = "";
+    // Nessun piano: si spiega perche', altrimenti la pagina sembra vuota
+    // e rotta. Il testo viene dal backend (budget, orario, abbonamenti).
+    const motivo = state.watch?.ai_summary || "";
+    if (motivo) {
+      vuoto.classList.remove("hidden");
+      vuoto.innerHTML = `
+        <div class="eyebrow">🧮 Nessun piano</div>
+        <p class="noplan-motivo">${esc(motivo)}</p>
+        <p class="muted" style="margin:8px 0 12px">
+          Le fonti sono state interrogate e i prezzi sono quelli veri: cambiando
+          un filtro (budget, orario di arrivo, punto di ritrovo) il piano
+          ricompare.
+        </p>
+        <div class="noplan-actions">
+          <button class="btn ghost" id="btnNoPlanEdit">Modifica i filtri</button>
+          <button class="btn ghost" id="btnNoPlanRun">Cerca ora</button>
+        </div>`;
+      $("#btnNoPlanEdit")?.addEventListener("click", () => openWatchModal(state.watch));
+      $("#btnNoPlanRun")?.addEventListener("click", runNow);
+    } else {
+      vuoto.classList.add("hidden");
+      vuoto.innerHTML = "";
+    }
     return;
   }
+  vuoto.classList.add("hidden");
+  vuoto.innerHTML = "";
   box.classList.remove("hidden");
 
   const steps = (plan.steps || []).map((step) => {

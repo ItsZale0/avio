@@ -406,9 +406,13 @@ def update_ai_fields(
 ) -> None:
     with db.db() as conn:
         if reset_best:
+            # Il piano non c'e' piu': si azzerano prezzo e piano, ma la
+            # sintesi va aggiornata lo stesso (altrimenti resta quella
+            # vecchia e la dashboard non spiega il vuoto).
             conn.execute(
-                "UPDATE watches SET ai_best_price = ?, ai_plan_fingerprint = ?, ai_updated_at = ? WHERE id = ?",
-                (best_price, fingerprint, now_utc().isoformat(), watch_id),
+                "UPDATE watches SET ai_summary = ?, ai_best_price = ?, "
+                "ai_plan_fingerprint = ?, ai_updated_at = ? WHERE id = ?",
+                (summary, best_price, fingerprint, now_utc().isoformat(), watch_id),
             )
             return
         conn.execute(

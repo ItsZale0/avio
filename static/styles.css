@@ -572,6 +572,21 @@ select { cursor: pointer; }
   padding: 16px 18px;
   margin-bottom: 14px;
 }
+/* Quando non c'e' un piano: il riquadro spiega perche', cosi' la pagina
+   non sembra vuota e rotta. */
+.noplan-card {
+  border: 1px dashed var(--line);
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  margin-bottom: 14px;
+}
+.noplan-card .eyebrow {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted-2); font-weight: 650; margin-bottom: 6px;
+}
+.noplan-motivo { margin: 0; font-size: 15px; color: var(--text); }
+.noplan-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .plan-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .plan-head .eyebrow {
   font-size: 11px; text-transform: uppercase; letter-spacing: .08em;

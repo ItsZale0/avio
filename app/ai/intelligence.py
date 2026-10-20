@@ -454,6 +454,42 @@ def _point_questions(
     ]
 
 
+def _motivo_vincolo(
+    offers: list[Offer], ctx: SearchContext, prefs: dict[str, Any]
+) -> str:
+    """Perche' non c'e' nessuna combinazione valida, in una frase chiara.
+
+    Serve a spiegare all'utente il vuoto che vede: senza questa frase la
+    dashboard sembra rotta, mentre il motivo e' magari solo il budget.
+    """
+    latest = ctx.arrive_by + timedelta(minutes=int(prefs.get("flexible_days", 0)) * 1440)
+    in_window = [
+        o
+        for o in offers
+        if o.arrive_at is None
+        or (
+            ctx.arrival_day_start <= o.arrive_at <= latest
+            or (prefs.get("flexible_days", 0) and o.arrive_at > latest)
+        )
+    ]
+    if not in_window:
+        return "Nessuna offerta arriva entro l'orario che hai chiesto."
+    if ctx.max_price is not None:
+        over = [
+            o
+            for o in in_window
+            if o.price is not None and o.price > ctx.max_price
+        ]
+        if over:
+            cheapest = min(over, key=lambda o: o.price or 0)
+            return (
+                f"Nessuna offerta sta nel budget di {ctx.max_price:.2f} EUR: la piu' "
+                f"economica costa {cheapest.price:.2f} EUR "
+                f"({cheapest.operator or cheapest.source})."
+            )
+    return "Nessuna combinazione rispetta i vincoli attuali."
+
+
 def _relax_questions(
     offers: list[Offer], ctx: SearchContext, prefs: dict[str, Any]
 ) -> list[dict]:
@@ -738,7 +774,7 @@ async def analyze(
             + _xgo_question(prefs)
             + _point_questions(diagnostics, ctx, watch)
         )[:2]
-        result.summary = "Nessuna combinazione rispetta i vincoli attuali."
+        result.summary = _motivo_vincolo(diagnostics, ctx, prefs)
         return result
 
     client = client_from_settings()
