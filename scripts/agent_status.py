@@ -78,6 +78,30 @@ def _supervisor_pids() -> list[int]:
     return pids
 
 
+def _check_tunnel(public: str) -> str:
+    """Verifica che il tunnel pubblico risponda davvero.
+
+    Cloudflare quick tunnel usa la porta 7844: se la rete (router, ISP,
+    filtro DPI) la blocca, il tunnel non si registra e l'indirizzo risponde
+    con un errore 530. Meglio dirlo chiaramente che lasciare una dashboard
+    muta.
+    """
+    request = urllib.request.Request(f"{public.rstrip('/')}/api/auth/status")
+    try:
+        with urllib.request.urlopen(request, timeout=12) as response:
+            response.read()
+        return "collegato (risponde)"
+    except urllib.error.HTTPError as exc:
+        if exc.code in (502, 503, 530):
+            return (
+                f"NON collegato (HTTP {exc.code}): il tunnel non ha raggiunto "
+                "l'edge Cloudflare. Causa tipica: la rete blocca la porta 7844."
+            )
+        return f"non risponde (HTTP {exc.code})"
+    except Exception as exc:  # noqa: BLE001
+        return f"non raggiungibile ({type(exc).__name__})"
+
+
 def main() -> int:
     print("=" * 58)
     print("CARPOOL HUNTER - stato")
@@ -98,6 +122,11 @@ def main() -> int:
             if line.startswith("CARPOOL_PUBLIC_URL="):
                 public = line.split("=", 1)[1].strip()
     print(f"URL pubblico: {public or '(non configurato)'}")
+
+    # Il tunnel e' davvero collegato? Se la rete blocca la porta 7844 di
+    # Cloudflare, il tunnel non si registra e la dashboard resta muta.
+    if public:
+        print(f"Tunnel: {_check_tunnel(public)}")
 
     # API locale
     try:

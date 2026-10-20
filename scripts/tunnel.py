@@ -223,26 +223,104 @@ def redeploy_pages(token: str, repo: str = "ItsZale0/carpool-intelligence") -> b
         return False
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Tunnel Cloudflare per Carpool Hunter")
-    parser.add_argument("--port", type=int, default=8787)
-    parser.add_argument("--no-github", action="store_true", help="non toccare il repo GitHub")
-    args = parser.parse_args()
+def check_tunnel(url: str, attempts: int = 6, wait: int = 5) -> bool:
+    """Verifica che il tunnel pubblico risponda.
 
+    Cloudflare quick tunnel usa la porta 7844: se la rete la blocca, il
+    tunnel non si registra e l'indirizzo risponde 530. Meglio accorgersene
+    subito che aspettare una dashboard muta.
+    """
+    for attempt in range(attempts):
+        try:
+            request = urllib.request.Request(f"{url.rstrip('/')}/api/auth/status")
+            with urllib.request.urlopen(request, timeout=12) as response:
+                response.read()
+            return True
+        except urllib.error.HTTPError as exc:
+            if exc.code not in (502, 503, 530):
+                return True  # risponde: e' un errore dell'app, non del tunnel
+        except Exception:  # noqa: BLE001
+            pass
+        if attempt + 1 < attempts:
+            time.sleep(wait)
+    return False
+
+
+def find_ngrok() -> str | None:
+    """Cerca l'eseguibile di ngrok (percorso noto o PATH)."""
+    candidates = [
+        BASE / "ngrok.exe",
+        Path(r"C:\Program Files\ngrok\ngrok.exe"),
+        Path(r"C:\Program Files (x86)\ngrok\ngrok.exe"),
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return shutil_which("ngrok")
+
+
+def ngrok_token() -> str:
+    """Il token ngrok dalla variabile d'ambiente o dal file .env."""
+    token = (os.getenv("NGROK_AUTHTOKEN") or "").strip()
+    if token:
+        return token
+    env_path = BASE / ".env"
+    if env_path.exists():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("NGROK_AUTHTOKEN="):
+                return line.split("=", 1)[1].strip()
+    return ""
+
+
+def start_ngrok(port: int) -> tuple[subprocess.Popen, str | None]:
+    """Avvia ngrok e restituisce (processo, URL pubblico).
+
+    ngrok gira sulla 443 (quindi passa anche dove la 7844 e' bloccata) e
+    con un account gratuito dà un indirizzo **stabile**.
+    """
+    binary = find_ngrok()
+    if not binary:
+        raise RuntimeError("ngrok non trovato")
+    token = ngrok_token()
+    if not token:
+        raise RuntimeError("manca NGROK_AUTHTOKEN")
+    command = [binary, "http", str(port), "--log", "stdout", "--log-format", "logfmt"]
+    env = dict(os.environ)
+    env["NGROK_AUTHTOKEN"] = token
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+        env=env,
+    )
+    url: str | None = None
+    deadline = time.time() + 40
+    for line in process.stdout:  # type: ignore[union-attr]
+        sys.stdout.write("  " + line)
+        sys.stdout.flush()
+        match = re.search(r"url=(\S+)", line)
+        if match:
+            url = match.group(1).strip().rstrip('"')
+            break
+        if time.time() > deadline:
+            break
+    return process, url
+
+
+def start_cloudflared(port: int) -> tuple[subprocess.Popen, str | None]:
+    """Avvia cloudflared e restituisce (processo, URL pubblico)."""
     binary = find_cloudflared()
     if not binary:
-        print(
-            "cloudflared non trovato.\n"
-            "  Installalo con:  winget install --id Cloudflare.cloudflared",
-            file=sys.stderr,
-        )
-        return 1
-
-    print("Avvio il tunnel verso http://127.0.0.1:%d ..." % args.port)
+        raise RuntimeError("cloudflared non trovato")
+    print("Avvio il tunnel verso http://127.0.0.1:%d ..." % port)
     # http2 invece di quic: su reti domestiche il QUIC cade spesso
     # ("timeout: no recent network activity") e il tunnel si interrompe.
     command = [
-        binary, "tunnel", "--url", f"http://127.0.0.1:{args.port}",
+        binary, "tunnel", "--url", f"http://127.0.0.1:{port}",
         "--no-autoupdate", "--protocol", "http2",
     ]
     process = subprocess.Popen(
@@ -254,39 +332,107 @@ def main() -> int:
         errors="replace",
         bufsize=1,
     )
-
     url: str | None = None
     deadline = time.time() + 40
-    try:
-        for line in process.stdout:  # type: ignore[union-attr]
-            sys.stdout.write("  " + line)
-            sys.stdout.flush()
-            match = URL_PATTERN.search(line)
-            if match and not url:
-                url = match.group(0)
-                print()
-                print(f"Tunnel attivo: {url}")
-                if update_env(url):
-                    print("  .env aggiornato (CARPOOL_PUBLIC_URL)")
-                if not args.no_github:
-                    publish_backend_pointer(url)
-                    update_github_variable(url)
-                print("  Per aggiornare anche la dashboard su GitHub Pages:")
-                print("    -> Actions -> Deploy frontend su GitHub Pages -> Re-run all jobs")
-                break
-            if time.time() > deadline:
-                print("  Timeout: nessun URL ricevuto.", file=sys.stderr)
-                break
+    for line in process.stdout:  # type: ignore[union-attr]
+        sys.stdout.write("  " + line)
+        sys.stdout.flush()
+        match = URL_PATTERN.search(line)
+        if match:
+            url = match.group(0)
+            break
+        if time.time() > deadline:
+            break
+    return process, url
 
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Tunnel pubblico per Carpool Hunter")
+    parser.add_argument("--port", type=int, default=8787)
+    parser.add_argument("--no-github", action="store_true", help="non toccare GitHub")
+    parser.add_argument(
+        "--provider",
+        choices=("auto", "cloudflared", "ngrok"),
+        default="auto",
+        help="auto: ngrok se configurato, altrimenti Cloudflare",
+    )
+    args = parser.parse_args()
+
+    # ngrok gira sulla 443 e dà un URL stabile: se è configurato, è la scelta
+    # migliore. Altrimenti si prova Cloudflare.
+    providers: list[str] = []
+    if args.provider in ("auto", "ngrok") and find_ngrok() and ngrok_token():
+        providers.append("ngrok")
+    if args.provider in ("auto", "cloudflared"):
+        providers.append("cloudflared")
+
+    if not providers:
+        print(
+            "Nessun tunnel disponibile.\n"
+            "  - Cloudflare:  winget install --id Cloudflare.cloudflared\n"
+            "  - ngrok (URL stabile): scarica l'eseguibile, mettilo nella cartella\n"
+            "    del progetto e imposta NGROK_AUTHTOKEN (authtoken su ngrok.com).",
+            file=sys.stderr,
+        )
+        return 1
+
+    process: subprocess.Popen | None = None
+    url: str | None = None
+    provider = ""
+    for provider in providers:
+        print(f"\n=== Tunnel {provider} verso http://127.0.0.1:{args.port} ===")
+        try:
+            if provider == "ngrok":
+                process, url = start_ngrok(args.port)
+            else:
+                process, url = start_cloudflared(args.port)
+        except Exception as exc:  # noqa: BLE001
+            print(f"  {provider} non avviabile: {exc}", file=sys.stderr)
+            continue
         if not url:
-            return 1
+            print(f"  {provider}: nessun URL ricevuto.", file=sys.stderr)
+            if process is not None and process.poll() is None:
+                _terminate_tree(process)
+            process = None
+            continue
+        break
 
+    if process is None or not url:
+        return 1
+
+    try:
+        print(f"\nTunnel attivo ({provider}): {url}")
+        if update_env(url):
+            print("  .env aggiornato (CARPOOL_PUBLIC_URL)")
+        if not args.no_github:
+            publish_backend_pointer(url)
+            update_github_variable(url)
+        print("  Verifico che il tunnel sia collegato...")
+        if check_tunnel(url):
+            print("  Tunnel OK: l'indirizzo pubblico risponde.")
+        else:
+            print(
+                "  ATTENZIONE: il tunnel non risponde.\n"
+                "    Il tunnel Cloudflare usa la porta 7844: se la rete (router, "
+                "ISP, filtro) la blocca,\n"
+                "    il collegamento non si stabilisce e la dashboard su "
+                "GitHub Pages resta muta.\n"
+                "    Prove: cambia rete (es. hotspot del telefono), riavvia il "
+                "router,\n"
+                "    oppure usa ngrok (lavora sulla 443): scaricalo nella "
+                "cartella del progetto\n"
+                "    e imposta NGROK_AUTHTOKEN. L'app in locale "
+                "(http://127.0.0.1:8787) funziona comunque.",
+                file=sys.stderr,
+            )
+        print("  Per aggiornare anche la dashboard su GitHub Pages:")
+        print("    -> Actions -> Deploy frontend su GitHub Pages -> Re-run all jobs")
         print("\nPremi CTRL+C per chiudere il tunnel.")
         process.wait()
     except KeyboardInterrupt:
         print("\nChiudo il tunnel.")
     finally:
-        if process.poll() is None:
+        if process is not None and process.poll() is None:
             _terminate_tree(process)
     return 0
 

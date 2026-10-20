@@ -860,7 +860,9 @@ async def interpret_answer(question: dict[str, Any], answer: str) -> dict[str, A
     if key in ("abbonamenti", "passes", "pass"):
         # Testo libero: "ho l'abbonamento Trenitalia" -> il tipo giusto.
         testo = lowered
-        if any(word in testo for word in ("nessun", "niente", "no abbonament", "pagho ogni")):
+        if ("abbonament" in testo or "carnet" in testo) and any(
+            word in testo for word in ("nessun", "niente", "non ", "no ")
+        ):
             return {"prefs": {"clear_passes": True}, "note": clean}
         if "freccia" in testo or "tutti i treni" in testo or "annuale" in testo:
             return {"prefs": {"add_pass": "trenitalia_tutti"}, "note": clean}

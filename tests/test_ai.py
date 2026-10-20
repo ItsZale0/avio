@@ -5,12 +5,26 @@ from __future__ import annotations
 import asyncio
 import unittest
 import unittest.mock
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from app.adapters.base import Offer, SearchContext
 from app.ai import intelligence
 from app.ai.planner import build_candidates
 from app.timeutil import ROME, iso, now_utc
+
+
+def reference(hours: float = 2) -> datetime:
+    """Momento di riferimento stabile per i test.
+
+    Non si usa "adesso": se la finestra attraversa la mezzanotte, l'offerta
+    arriverebbe nel giorno sbagliato e il test fallirebbe a seconda dell'ora
+    in cui gira. Partiamo da domani mattina alle 8 locali: tutta la
+    finestra resta dentro lo stesso giorno.
+    """
+    local = (now_utc() + timedelta(days=1)).astimezone(ROME)
+    base = local.replace(hour=8, minute=0, second=0, microsecond=0)
+    return (base + timedelta(hours=hours)).astimezone(timezone.utc)
+
 
 # Due snodi lontani dalla destinazione: costringono a usare prima e ultima tratta.
 HUB_A = (46.20, 11.75)
@@ -74,7 +88,7 @@ def context(arrive_by: datetime, *, max_price: float | None = None) -> SearchCon
 
 class PlannerTests(unittest.TestCase):
     def test_cheapest_single_wins(self):
-        base = now_utc() + timedelta(hours=3)
+        base = reference(3)
         arrive_by = base + timedelta(hours=6)
         offers = [
             make_offer("itabus", "a", "bus", 20.0, base, 120),
@@ -86,7 +100,7 @@ class PlannerTests(unittest.TestCase):
         self.assertAlmostEqual(candidates[0].total_price, 8.0)
 
     def test_two_leg_combo_can_be_cheaper(self):
-        base = now_utc() + timedelta(hours=2)
+        base = reference(2)
         arrive_by = base + timedelta(hours=8)
         station = (46.3, 11.8)
         car = make_offer("carsharing", "car", "carsharing", 4.0, base, 60, dropoff=station)
@@ -108,7 +122,7 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(candidates[0].kind, "combo")
 
     def test_combo_rejected_when_departure_before_arrival(self):
-        base = now_utc() + timedelta(hours=2)
+        base = reference(2)
         arrive_by = base + timedelta(hours=8)
         station = (46.0, 11.4)
         car = make_offer("carsharing", "car", "carsharing", 4.0, base, 120, dropoff=station)
@@ -117,7 +131,7 @@ class PlannerTests(unittest.TestCase):
         self.assertFalse([c for c in candidates if c.kind == "combo"])
 
     def test_combo_rejected_when_transfer_too_far(self):
-        base = now_utc() + timedelta(hours=2)
+        base = reference(2)
         arrive_by = base + timedelta(hours=8)
         car = make_offer("carsharing", "car", "carsharing", 4.0, base, 60, dropoff=(41.9, 12.5))
         bus = make_offer("flixbus", "bus", "bus", 5.0, base + timedelta(minutes=90), 90, pickup=(46.0, 11.4))
@@ -144,7 +158,7 @@ class PlannerTests(unittest.TestCase):
         return [car, train, last, direct]
 
     def test_three_leg_trip_with_total_cost(self):
-        base = now_utc() + timedelta(hours=2)
+        base = reference(2)
         arrive_by = base + timedelta(hours=8)
         candidates = build_candidates(self._three_legs(base), context(arrive_by))
         triple = next((c for c in candidates if c.kind == "triple"), None)
@@ -158,7 +172,7 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(triple.arrive_at, base + timedelta(minutes=240))
 
     def test_three_leg_plan_has_three_steps(self):
-        base = now_utc() + timedelta(hours=2)
+        base = reference(2)
         arrive_by = base + timedelta(hours=8)
         candidates = build_candidates(self._three_legs(base), context(arrive_by))
         triple = next(c for c in candidates if c.kind == "triple")
@@ -171,7 +185,7 @@ class PlannerTests(unittest.TestCase):
         self.assertIn("trenitalia", explanation.lower())
 
     def test_three_leg_rejected_when_last_mile_far_from_destination(self):
-        base = now_utc() + timedelta(hours=2)
+        base = reference(2)
         arrive_by = base + timedelta(hours=8)
         offers = self._three_legs(base)
         # L'ultimo miglio non arriva a destinazione: niente viaggio a 3 tratte.
@@ -189,7 +203,7 @@ class PlannerTests(unittest.TestCase):
         self.assertFalse([c for c in candidates if c.kind == "triple"])
 
     def test_three_leg_rejected_when_transfer_too_short(self):
-        base = now_utc() + timedelta(hours=2)
+        base = reference(2)
         arrive_by = base + timedelta(hours=8)
         offers = self._three_legs(base)
         # L'ultimo miglio parte prima che il treno sia arrivato.
@@ -198,7 +212,7 @@ class PlannerTests(unittest.TestCase):
         self.assertFalse([c for c in candidates if c.kind == "triple"])
 
     def test_multi_leg_can_be_disabled(self):
-        base = now_utc() + timedelta(hours=2)
+        base = reference(2)
         arrive_by = base + timedelta(hours=8)
         candidates = build_candidates(
             self._three_legs(base), context(arrive_by), allow_multi_leg=False
@@ -207,7 +221,7 @@ class PlannerTests(unittest.TestCase):
         self.assertTrue(all(c.kind == "single" for c in candidates))
 
     def test_combo_with_unpriced_leg_is_partial(self):
-        base = now_utc() + timedelta(hours=2)
+        base = reference(2)
         arrive_by = base + timedelta(hours=8)
         hub = (46.20, 11.75)
         access = make_offer("flixbus", "access", "bus", 3.0, base, 60, dropoff=hub)
@@ -231,7 +245,7 @@ class PlannerTests(unittest.TestCase):
         self.assertIn("parziale", intelligence._templated_explanation(partial, {}).lower())
 
     def test_combo_of_two_unpriced_legs_is_dropped(self):
-        base = now_utc() + timedelta(hours=2)
+        base = reference(2)
         arrive_by = base + timedelta(hours=8)
         hub = (46.20, 11.75)
         first = make_offer("gtfs", "first", "bus", None, base, 60, dropoff=hub)
@@ -242,7 +256,7 @@ class PlannerTests(unittest.TestCase):
         self.assertFalse([c for c in candidates if c.kind in ("combo", "triple")])
 
     def test_legs_pool_unlocks_triples_dropped_by_filters(self):
-        base = now_utc() + timedelta(hours=2)
+        base = reference(2)
         arrive_by = base + timedelta(hours=8)
         # Solo la tratta diretta "passa i filtri"; le tratte intermedie arrivano
         # a snodi lontani dalla destinazione e stanno nel pool grezzo.
@@ -271,7 +285,7 @@ class IntelligenceFallbackTests(unittest.IsolatedAsyncioTestCase):
         self._patcher.stop()
 
     async def test_no_ai_still_returns_cheapest_plan(self):
-        base = now_utc() + timedelta(hours=2)
+        base = reference(2)
         arrive_by = base + timedelta(hours=6)
         offers = [
             make_offer("itabus", "a", "bus", 15.0, base, 100),
@@ -293,7 +307,7 @@ class IntelligenceFallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.plan["explanation"])
 
     async def test_question_when_arrival_is_late(self):
-        base = now_utc() + timedelta(hours=2)
+        base = reference(2)
         arrive_by = base + timedelta(hours=3)
         late = make_offer("flixbus", "late", "bus", 6.0, base, 300)  # arriva dopo il limite
         ctx = context(arrive_by)
@@ -323,7 +337,7 @@ class LateWindowTests(unittest.TestCase):
     def test_flexible_days_keeps_late_offers(self):
         from app.services.search import _filter_offers
 
-        base = now_utc() + timedelta(hours=2)
+        base = reference(2)
         arrive_by = base + timedelta(hours=2)
         late = make_offer("flixbus", "late", "bus", 6.0, base, 300)
         ctx = context(arrive_by)

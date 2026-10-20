@@ -52,6 +52,44 @@ deploy a mano dalla tab *Actions*).
 setx GITHUB_TOKEN "ghp_..."
 ```
 
+### Il tunnel non si collega? (porta 7844 bloccata)
+
+Il tunnel "quick" di Cloudflare usa la **porta 7844** in uscita. Se il router,
+l'ISP o un filtro bloccano le porte non standard, il tunnel non si registra e
+l'indirizzo pubblico risponde `530`: la dashboard su GitHub Pages resta muta
+mentre l'app in locale funziona.
+
+Come accorgersene:
+
+```powershell
+python scripts\agent_status.py
+# Tunnel: NON collegato (HTTP 530): ...
+```
+
+Le soluzioni, in ordine di semplicità:
+
+1. **cambiare rete** per qualche minuto (hotspot del telefono): se il tunnel
+   si collega, il problema è la rete di casa;
+2. **riavviare il router** o controllare le sue impostazioni di firewall
+   (molti router hanno un filtro "porta non standard" attivabile);
+3. **ngrok** (URL stabile, lavora sulla 443): scarica `ngrok.exe` nella
+   cartella del progetto, crea un account gratuito su
+   <https://dashboard.ngrok.com>, prendi l'authtoken e mettilo in `.env`:
+
+   ```ini
+   NGROK_AUTHTOKEN=2abcDEF...
+   ```
+
+   `scripts/tunnel.py` lopreferisce da solo quando è configurato: con
+   `ngrok` l'indirizzo pubblico **non cambia più** a ogni riavvio.
+
+Verifica rapida di cosa è bloccato:
+
+```powershell
+Test-NetConnection 198.41.192.107 -Port 7844   # edge Cloudflare
+Test-NetConnection 1.1.1.1 -Port 443            # dovrebbe funzionare
+```
+
 ### Il link che dai agli altri
 
 L'unico indirizzo da usare e' **<https://itszale0.github.io/carpool-intelligence/>**:

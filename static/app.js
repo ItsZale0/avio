@@ -333,7 +333,8 @@ function scheduleApiRetry() {
     const notice = document.querySelector("#loginHint");
     if (notice) {
       notice.textContent =
-        "Server non raggiungibile: il tunnel potrebbe essere stato riavviato. " +
+        "Server non raggiungibile: l'agente sul PC potrebbe essere spento, " +
+        "o il tunnel bloccato dalla rete. " +
         `Riprovo tra ${Math.round(delay / 1000)} secondi…`;
       notice.className = "field-hint err";
     }
