@@ -219,6 +219,14 @@ const RAW_BACKEND =
 /* Tutti i backend conosciuti, in ordine di preferenza. */
 let API_FALLBACKS = [];
 
+/* Se il tunnel ngrok non e' ancora stato "sbloccato" dal browser, ogni
+   richiesta si ferma alla pagina di avviso di ngrok e il browser blocca la
+   risposta (CORS). Il rimedio e' aprire una volta l'indirizzo del tunnel e
+   cliccare "Visit Site". */
+const MESSAGGIO_TUNNEL =
+  "Server non raggiungibile. Se usi il tunnel ngrok, apri l'indirizzo del " +
+  'tunnel in una nuova scheda, clicca "Visit Site" e poi torna qui.';
+
 async function api(path, options = {}) {
   let response;
   let lastError = null;
@@ -256,12 +264,12 @@ async function api(path, options = {}) {
       }
       if (attempt >= 3) {
         scheduleApiRetry();
-        throw new Error("Server non raggiungibile");
+        throw new Error(MESSAGGIO_TUNNEL);
       }
       await sleep(1500 * (attempt + 1));
     }
   }
-  if (!response) throw lastError || new Error("Server non raggiungibile");
+  if (!response) throw lastError || new Error(MESSAGGIO_TUNNEL);
 
   if (response.status === 401) {
     // Accesso richiesto: torna alla schermata di accesso. Con l'accesso
@@ -285,10 +293,7 @@ async function api(path, options = {}) {
   // ngrok free manda la pagina di avviso al posto dell'app: si riconosce
   // e si spiega, invece di dare un errore JSON incomprensibile.
   if (text.includes("You are about to visit")) {
-    throw new Error(
-      "Il tunnel ngrok chiede una conferma al browser. Apri l'indirizzo del " +
-      "tunnel in una nuova scheda, clicca \"Visit Site\" e poi torna qui."
-    );
+    throw new Error(MESSAGGIO_TUNNEL);
   }
   try {
     return JSON.parse(text);
@@ -534,9 +539,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   } catch (error) {
     showAuthScreen();
     const hint = $("#loginHint");
-    hint.textContent =
-      "Server non raggiungibile: il tunnel potrebbe essere stato riavviato. " +
-      "Riprovo fra poco…";
+    hint.textContent = MESSAGGIO_TUNNEL;
     hint.className = "field-hint err";
     scheduleApiRetry();
   }
@@ -565,8 +568,8 @@ async function bootApp() {
     startPolling();
   } catch (error) {
     toast("Impossibile caricare i dati: " + error.message, "error");
-    $("#agentStatus").classList.add("offline");
-    $("#agentText").textContent = "offline";
+    $("#agentStatus")?.classList.add("offline");
+    $("#agentText") && ($("#agentText").textContent = "non raggiungibile");
   }
 }
 
