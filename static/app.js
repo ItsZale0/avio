@@ -572,23 +572,23 @@ async function bootApp() {
 
 function bindEvents() {
   // Accesso
-  $("#loginForm").addEventListener("submit", submitLogin);
+  $("#loginForm")?.addEventListener("submit", submitLogin);
 
-  $("#btnNew").addEventListener("click", () => openWatchModal(null));
-  $("#btnEmptyNew").addEventListener("click", () => openWatchModal(null));
-  $("#btnSettings").addEventListener("click", openSettings);
-  $("#btnPromos").addEventListener("click", () => openPromos(false));
-  $("#btnRefreshPromos").addEventListener("click", () => openPromos(true));
-  $("#btnAlerts").addEventListener("click", () => { openModal("alertsDrawer"); loadAlerts(false); });
-  $("#btnReadAll").addEventListener("click", markAllRead);
-  $("#btnLogout").addEventListener("click", logout);
+  $("#btnNew")?.addEventListener("click", () => openWatchModal(null));
+  $("#btnEmptyNew")?.addEventListener("click", () => openWatchModal(null));
+  $("#btnSettings")?.addEventListener("click", openSettings);
+  $("#btnPromos")?.addEventListener("click", () => openPromos(false));
+  $("#btnRefreshPromos")?.addEventListener("click", () => openPromos(true));
+  $("#btnAlerts")?.addEventListener("click", () => { openModal("alertsDrawer"); loadAlerts(false); });
+  $("#btnReadAll")?.addEventListener("click", markAllRead);
+  $("#btnLogout")?.addEventListener("click", logout);
 
-  $("#watchList").addEventListener("click", (event) => {
+  $("#watchList")?.addEventListener("click", (event) => {
     const item = event.target.closest(".watch-item");
     if (item) selectWatch(Number(item.dataset.id));
   });
 
-  $("#tabs").addEventListener("click", (event) => {
+  $("#tabs")?.addEventListener("click", (event) => {
     const button = event.target.closest(".tab");
     if (!button) return;
     state.tab = button.dataset.tab;
@@ -596,40 +596,49 @@ function bindEvents() {
     renderTab();
   });
 
-  $("#btnRunNow").addEventListener("click", runNow);
-  $("#btnToggleWatch").addEventListener("click", toggleWatch);
-  $("#btnEditWatch").addEventListener("click", () => openWatchModal(state.watch));
-  $("#btnDeleteWatch").addEventListener("click", deleteWatch);
+  $("#btnRunNow")?.addEventListener("click", runNow);
+  $("#btnToggleWatch")?.addEventListener("click", toggleWatch);
+  $("#btnEditWatch")?.addEventListener("click", () => openWatchModal(state.watch));
+  $("#btnDeleteWatch")?.addEventListener("click", deleteWatch);
 
-  $("#watchForm").addEventListener("submit", submitWatch);
-  $("#settingsForm").addEventListener("submit", submitSettings);
-  $("#btnTestTelegram").addEventListener("click", testTelegram);
-  $("#btnTestEmail").addEventListener("click", testEmail);
-  $("#btnAiFill").addEventListener("click", aiFill);
-  $("#btnTestAi").addEventListener("click", testAi);
-  $("#btnAiModels").addEventListener("click", listAiModels);
-  $("#btnGtfsUpdate").addEventListener("click", updateGtfs);
-  $("#btnPushEnable").addEventListener("click", enablePush);
-  $("#btnPushDisable").addEventListener("click", disablePush);
-  $("#btnPushTest").addEventListener("click", testPush);
-  $("#btnSetAccess").addEventListener("click", setAccessPassword);
-  $("#btnClearAccess").addEventListener("click", clearAccessPassword);
-  $("#btnNewKey").addEventListener("click", generateKey);
-  $("#btnDelKey").addEventListener("click", deleteKey);
-  $("#btnTelegramLink").addEventListener("click", telegramLink);
-  $("#btnTelegramConfirm").addEventListener("click", telegramConfirm);
+  $("#watchForm")?.addEventListener("submit", submitWatch);
+  $("#settingsForm")?.addEventListener("submit", submitSettings);
+  $("#btnTestTelegram")?.addEventListener("click", testTelegram);
+  $("#btnAiFill")?.addEventListener("click", aiFill);
+  $("#btnTestAi")?.addEventListener("click", testAi);
+  $("#btnAiModels")?.addEventListener("click", listAiModels);
+  $("#btnGtfsUpdate")?.addEventListener("click", updateGtfs);
+  $("#btnPushEnable")?.addEventListener("click", enablePush);
+  $("#btnPushDisable")?.addEventListener("click", disablePush);
+  $("#btnPushTest")?.addEventListener("click", testPush);
+  $("#btnSetAccess")?.addEventListener("click", setAccessPassword);
+  $("#btnClearAccess")?.addEventListener("click", clearAccessPassword);
+  $("#btnNewKey")?.addEventListener("click", generateKey);
+  $("#btnDelKey")?.addEventListener("click", deleteKey);
+  $("#btnTelegramLink")?.addEventListener("click", telegramLink);
+  $("#btnTelegramConfirm")?.addEventListener("click", telegramConfirm);
   document.addEventListener("input", (event) => {
     if (event.target.classList?.contains("pass-search")) {
       filtraPass(event.target.value);
     }
   });
-  $("#questionsCard").addEventListener("click", (event) => {
+  // Le impostazioni sono a schede: una per argomento.
+  $("#settingsTabs")?.addEventListener("click", (event) => {
+    const bottone = event.target.closest(".tab");
+    if (!bottone) return;
+    const gruppo = bottone.dataset.tab;
+    $$("#settingsTabs .tab").forEach((t) => t.classList.toggle("active", t === bottone));
+    $$("[data-pane]").forEach((pane) => {
+      pane.classList.toggle("active", pane.dataset.pane === gruppo);
+    });
+  });
+  $("#questionsCard")?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-answer]");
     if (!button) return;
     answerQuestion(Number(button.dataset.qid), button.dataset.answer);
   });
   // Risposta aperta (invio col tasto Invio o col bottone).
-  $("#questionsCard").addEventListener("submit", (event) => {
+  $("#questionsCard")?.addEventListener("submit", (event) => {
     const form = event.target.closest(".q-free");
     if (!form) return;
     event.preventDefault();
@@ -1302,7 +1311,7 @@ async function renderMap(panel) {
       <span class="map-hint" id="mapLegend"></span>
     </div>
     <div class="map-canvas" id="mapCanvas"></div>`;
-  $("#mapZones").addEventListener("change", (event) => {
+  $("#mapZones")?.addEventListener("change", (event) => {
     state.showZones = event.target.checked;
     drawMap();
   });
@@ -1740,11 +1749,11 @@ async function openSettings() {
     renderAccessInfo();
     loadTelegramChats();
 
-    $("#sTelegramToken").value = s.telegram_token || "";
-    $("#sTelegramChat").value = s.telegram_chat_id || "";
-    if ($("#sXgo")) $("#sXgo").value = s.xgo || "";
-    if ($("#sNgrokToken")) $("#sNgrokToken").value = s.ngrok_authtoken || "";
-    if ($("#sNgrokDomain")) $("#sNgrokDomain").value = s.ngrok_domain || "";
+    impostaValore("#sTelegramToken", s.telegram_token);
+    impostaValore("#sTelegramChat", s.telegram_chat_id);
+    impostaValore("#sXgo", s.xgo);
+    impostaValore("#sNgrokToken", s.ngrok_authtoken);
+    impostaValore("#sNgrokDomain", s.ngrok_domain);
     // Gli abbonamenti globali dell'utente.
     let globalPasses = [];
     try {
@@ -1755,23 +1764,16 @@ async function openSettings() {
     if (globalPasses && !Array.isArray(globalPasses)) globalPasses = [];
     const selezionati = globalPasses.map((p) => (typeof p === "string" ? p : p.tipo));
     renderPassPicker($("#globalPassesBox"), selezionati, "globalpass");
-    $("#sSmtpHost").value = s.smtp_host || "";
-    $("#sSmtpPort").value = s.smtp_port || "587";
-    $("#sSmtpUser").value = s.smtp_user || "";
-    $("#sSmtpPassword").value = s.smtp_password || "";
-    $("#sSmtpFrom").value = s.smtp_from || "";
-    $("#sSmtpTo").value = s.smtp_to || "";
-    $("#sSmtpTls").checked = (s.smtp_tls || "1") === "1";
-    $("#sNotifyEnabled").checked = (s.notify_enabled || "1") === "1";
-    $("#sQuietFrom").value = s.quiet_from || "";
-    $("#sQuietTo").value = s.quiet_to || "";
-    $("#sGroqKey").value = s.groq_api_key || "";
-    $("#sAiEnabled").checked = (s.ai_enabled || "1") === "1";
-    $("#sGtfsEnabled").checked = (s.gtfs_enabled || "1") === "1";
-    $("#aiTestResult").textContent = "";
-    $("#settingsError").classList.add("hidden");
-    $("#telegramTestResult").textContent = "";
-    $("#emailTestResult").textContent = "";
+    impostaChecked("#sNotifyEnabled", s.notify_enabled, "1");
+    impostaValore("#sQuietFrom", s.quiet_from);
+    impostaValore("#sQuietTo", s.quiet_to);
+    impostaValore("#sGroqKey", s.groq_api_key);
+    impostaChecked("#sAiEnabled", s.ai_enabled, "1");
+    impostaChecked("#sGtfsEnabled", s.gtfs_enabled, "1");
+    impostaTesto("#aiTestResult", "");
+    $("#settingsError")?.classList.add("hidden");
+    impostaTesto("#telegramTestResult", "");
+    impostaTesto("#telegramLinkResult", "");
     loadGtfsStatus();
     renderPushStatus();
     openModal("settingsModal");
@@ -1841,30 +1843,52 @@ async function loadModelOptions(smart, fast) {
   }
 }
 
+/* Un campo che non esiste (o e' vuoto) non deve rompere il salvataggio. */
+function val(selettore) {
+  const elemento = $(selettore);
+  return elemento ? String(elemento.value || "").trim() : "";
+}
+
+function checked(selettore) {
+  const elemento = $(selettore);
+  return elemento ? !!elemento.checked : false;
+}
+
+/* Scrive un valore solo se il campo esiste davvero. */
+function impostaValore(selettore, valore) {
+  const elemento = $(selettore);
+  if (elemento) elemento.value = valore || "";
+}
+
+/* Spunta una casella solo se il campo esiste davvero. */
+function impostaChecked(selettore, valore, predefinito) {
+  const elemento = $(selettore);
+  if (elemento) elemento.checked = (valore ?? predefinito) === "1";
+}
+
+/* Scrive un testo solo se l'etichetta esiste davvero. */
+function impostaTesto(selettore, testo) {
+  const elemento = $(selettore);
+  if (elemento) elemento.textContent = testo;
+}
+
 function settingsPayload() {
   // Le impostazioni personali vanno sempre; quelle comuni (Groq, modelli,
   // GTFS) solo se l'utente e' amministratore.
   const personal = {
-    telegram_token: $("#sTelegramToken").value.trim(),
-    telegram_chat_id: $("#sTelegramChat").value.trim(),
-    smtp_host: $("#sSmtpHost").value.trim(),
-    smtp_port: $("#sSmtpPort").value.trim(),
-    smtp_user: $("#sSmtpUser").value.trim(),
-    smtp_password: $("#sSmtpPassword").value,
-    smtp_from: $("#sSmtpFrom").value.trim(),
-    smtp_to: $("#sSmtpTo").value.trim(),
-    smtp_tls: $("#sSmtpTls").checked ? "1" : "0",
-    quiet_from: $("#sQuietFrom").value,
-    quiet_to: $("#sQuietTo").value,
-    notify_enabled: $("#sNotifyEnabled").checked ? "1" : "0",
+    telegram_token: val("#sTelegramToken"),
+    telegram_chat_id: val("#sTelegramChat"),
+    quiet_from: val("#sQuietFrom"),
+    quiet_to: val("#sQuietTo"),
+    notify_enabled: checked("#sNotifyEnabled") ? "1" : "0",
   };
   if (!state.user?.is_admin) return personal;
   return {
     ...personal,
-    groq_api_key: $("#sGroqKey").value.trim(),
-    ngrok_authtoken: $("#sNgrokToken").value.trim(),
-    ngrok_domain: $("#sNgrokDomain").value.trim(),
-    xgo: $("#sXgo") ? $("#sXgo").value : "",
+    groq_api_key: val("#sGroqKey"),
+    ngrok_authtoken: val("#sNgrokToken"),
+    ngrok_domain: val("#sNgrokDomain"),
+    xgo: val("#sXgo"),
     // Gli abbonamenti globali: una lista JSON di {tipo}.
     passes: JSON.stringify(
       $$("#globalPassesBox input[name=globalpass]:checked").map((i) => ({ tipo: i.value }))
@@ -2246,21 +2270,6 @@ async function testTelegram() {
   }
 }
 
-async function testEmail() {
-  const hint = $("#emailTestResult");
-  hint.textContent = "invio…";
-  hint.className = "field-hint";
-  try {
-    await api("/api/settings", { method: "PUT", body: JSON.stringify(settingsPayload()) });
-    const result = await api("/api/settings/test-email", { method: "POST" });
-    hint.textContent = result.ok ? "✓ email inviata" : "✗ " + result.error;
-    hint.className = "field-hint " + (result.ok ? "ok" : "err");
-  } catch (error) {
-    hint.textContent = "✗ " + error.message;
-    hint.className = "field-hint err";
-  }
-}
-
 /* ------------------------------------------------------------------ */
 /* Avvisi                                                             */
 /* ------------------------------------------------------------------ */
@@ -2352,25 +2361,60 @@ function promoCards(items, subtitle) {
     </a>`).join("");
 }
 
+/* Raggruppa per operatore: le offerte di un vettore insieme. */
+function perOperatore(elementi) {
+  const gruppi = {};
+  for (const item of elementi) {
+    const chiave = (item.operator || "Altro").trim() || "Altro";
+    (gruppi[chiave] = gruppi[chiave] || []).push(item);
+  }
+  return Object.entries(gruppi).sort((a, b) => a[0].localeCompare(b[0]));
+}
+
 function renderPromos(data) {
   const offers = data.offers || [];
   const coupons = data.coupons || [];
   const errors = data.errors || [];
   const updated = data.updated_at ? fmtDate(data.updated_at) : "";
 
-  const offersHtml = offers.length
-    ? promoCards(offers, (o) => `${o.operator || ""} · offerta`)
+  const gruppiOfferte = perOperatore(offers);
+  const offersHtml = gruppiOfferte.length
+    ? gruppiOfferte
+        .map(
+          ([operatore, voci]) => `<div class="promo-gruppo">
+            <h5>${esc(operatore)}</h5>
+            <div class="links-grid">${promoCards(voci, () => "offerta")}</div>
+          </div>`
+        )
+        .join("")
     : `<div class="hint" style="padding:10px 0">Nessuna offerta letta adesso: riprova tra poco o apri le pagine dei vettori qui sotto.</div>`;
+
+  const gruppiCoupon = perOperatore(coupons);
+  const couponsHtml = gruppiCoupon.length
+    ? gruppiCoupon
+        .map(
+          ([operatore, voci]) => `<div class="promo-gruppo">
+            <h5>${esc(operatore)}</h5>
+            <div class="links-grid">${promoCards(voci, (c) => c.note || "codici e promozioni")}</div>
+          </div>`
+        )
+        .join("")
+    : `<div class="hint" style="padding:10px 0">Nessun codice trovato.</div>`;
 
   $("#promosBody").innerHTML = `
     <p class="muted" style="margin:0 0 14px">
-      Offerte e codici letti direttamente dalle pagine ufficiali dei vettori.
+      Offerte e codici letti direttamente dalle pagine ufficiali dei vettori:
+      quello che trovi qui e' quello che vale adesso, non un archivio.
       ${updated ? `Ultimo aggiornamento: ${esc(updated)}.` : ""}
     </p>
     <div class="section-title">🔥 Offerte del momento</div>
-    <div class="links-grid">${offersHtml}</div>
+    ${offersHtml}
     <div class="section-title">🎟️ Codici sconto &amp; voucher</div>
-    <div class="links-grid">${promoCards(coupons, (c) => `${c.operator || ""}${c.note ? " · " + c.note : ""}`)}</div>
+    <p class="muted" style="margin:0 0 10px">
+      I codici veri stanno nelle pagine ufficiali del vettore: le apri con un
+      tocco e trovi quello attivo.
+    </p>
+    ${couponsHtml}
     ${errors.length ? `<small class="field-hint">Alcune pagine non hanno risposto: ${esc(errors.join(" · "))}</small>` : ""}`;
 }
 

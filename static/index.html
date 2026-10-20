@@ -201,7 +201,6 @@
           <div class="chips" id="notifyBox">
             <label class="chip"><input type="checkbox" name="notify" value="web" checked /> Dashboard</label>
             <label class="chip"><input type="checkbox" name="notify" value="telegram" /> Telegram</label>
-            <label class="chip"><input type="checkbox" name="notify" value="email" /> Email</label>
             <label class="chip"><input type="checkbox" name="notify" value="push" /> Push (telefono)</label>
             <label class="chip"><input type="checkbox" name="notify" value="desktop" /> Notifica desktop</label>
           </div>
@@ -237,181 +236,190 @@
         <button class="btn icon ghost" data-close="settingsModal">✕</button>
       </div>
       <form id="settingsForm" class="modal-body">
-        <div class="section-title">Accesso al sito</div>
-        <small class="field-hint" id="accessInfo">—</small>
-        <div class="field">
-          <label for="sAccessPassword">Password d'accesso</label>
-          <input id="sAccessPassword" type="password" autocomplete="new-password"
-                 placeholder="almeno 8 caratteri" />
-          <small class="field-hint">Se la imposti, il sito chiede la password. Lascia vuoto per toglierla.</small>
-        </div>
-        <div class="field inline-field">
-          <button type="button" class="btn ghost" id="btnSetAccess">Imposta password</button>
-          <button type="button" class="btn ghost" id="btnClearAccess">Togli password</button>
-        </div>
-        <small class="field-hint" id="accessResult"></small>
-
-        <div class="section-title">Chiave segreta (accesso con un tocco)</div>
-        <small class="field-hint" id="keyInfo">—</small>
-        <div class="field inline-field">
-          <button type="button" class="btn ghost" id="btnNewKey">Genera chiave</button>
-          <button type="button" class="btn ghost" id="btnDelKey">Togli chiave</button>
-        </div>
-        <div class="field hidden" id="keyBox">
-          <label for="keyValue">La chiave (si vede solo adesso)</label>
-          <input id="keyValue" readonly />
-          <small class="field-hint">Mettila nell'URL: <code>indirizzo/?key=...</code></small>
+        <div class="tabs" id="settingsTabs">
+          <button type="button" class="tab active" data-tab="accesso">Accesso</button>
+          <button type="button" class="tab" data-tab="viaggi">Viaggi</button>
+          <button type="button" class="tab" data-tab="avvisi">Avvisi</button>
+          <button type="button" class="tab" data-tab="intelligenza">Intelligenza</button>
         </div>
 
-        <div class="section-title">Accesso da fuori (tunnel)</div>
-        <div class="grid-2">
-          <div class="field">
-            <label for="sNgrokToken">Authtoken ngrok</label>
-            <input id="sNgrokToken" name="ngrok_authtoken" type="password"
-                   placeholder="2abcDEF…" autocomplete="off" />
+        <!-- ============ ACCESSO ============ -->
+        <div class="tab-pane active" data-pane="accesso">
+          <div class="section-title">Accesso con un tocco</div>
+          <small class="field-hint" id="keyInfo">—</small>
+          <div class="field inline-field">
+            <button type="button" class="btn ghost" id="btnNewKey">Genera chiave</button>
+            <button type="button" class="btn ghost" id="btnDelKey">Togli chiave</button>
           </div>
+          <div class="field hidden" id="keyBox">
+            <label for="keyValue">La chiave (si vede solo adesso)</label>
+            <input id="keyValue" readonly />
+            <small class="field-hint">Mettila nell'URL: <code>indirizzo/?key=...</code></small>
+          </div>
+
+          <div class="section-title">Accesso da fuori (tunnel)</div>
+          <div class="grid-2">
+            <div class="field">
+              <label for="sNgrokToken">Authtoken ngrok</label>
+              <input id="sNgrokToken" name="ngrok_authtoken" type="password"
+                     placeholder="2abcDEF…" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label for="sNgrokDomain">Dominio ngrok (facoltativo)</label>
+              <input id="sNgrokDomain" name="ngrok_domain"
+                     placeholder="es. mio-veloce.ngrok-free.app" autocomplete="off" />
+              <small class="field-hint">
+                Se lo riservi nella tua area ngrok, l'indirizzo pubblico non
+                cambia più nemmeno al riavvio.
+              </small>
+            </div>
+          </div>
+          <small class="field-hint">
+            Il tunnel ngrok lavora sulla porta 443, quindi funziona anche dove
+            Cloudflare è bloccato. Prendi l'authtoken su
+            <code>dashboard.ngrok.com/get-started/your-authtoken</code>,
+            poi riavvia l'agente.
+          </small>
+
+          <details class="adv-box">
+            <summary>Password d'accesso (uso avanzato)</summary>
+            <small class="field-hint" id="accessInfo">—</small>
+            <div class="field">
+              <input id="sAccessPassword" type="password" autocomplete="new-password"
+                     placeholder="almeno 8 caratteri" />
+            </div>
+            <div class="field inline-field">
+              <button type="button" class="btn ghost" id="btnSetAccess">Imposta password</button>
+              <button type="button" class="btn ghost" id="btnClearAccess">Togli password</button>
+            </div>
+            <small class="field-hint" id="accessResult"></small>
+          </details>
+        </div>
+
+        <!-- ============ VIAGGI ============ -->
+        <div class="tab-pane" data-pane="viaggi">
+          <div class="section-title">I tuoi abbonamenti</div>
           <div class="field">
-            <label for="sNgrokDomain">Dominio ngrok (facoltativo)</label>
-            <input id="sNgrokDomain" name="ngrok_domain"
-                   placeholder="es. mio-veloce.ngrok-free.app" autocomplete="off" />
+            <div id="globalPassesBox"></div>
             <small class="field-hint">
-              Se lo riservi nella tua area ngrok, l'indirizzo pubblico non
-              cambia più nemmeno al riavvio.
+              Valgono per tutte le ricerche. Se la tratta è coperta, il
+              biglietto non lo paghi (o lo paghi solo in parte: gli abbonamenti
+              regionali coprono la parte di viaggio nella loro area).
             </small>
           </div>
-        </div>
-        <small class="field-hint">
-          Il tunnel ngrok lavora sulla porta 443, quindi funziona anche dove
-          Cloudflare è bloccato. Prendi l'authtoken su
-          <code>dashboard.ngrok.com/get-started/your-authtoken</code>,
-          poi riavvia l'agente.
-        </small>
 
-        <div class="section-title">Agevolazioni Trenitalia</div>
-        <div class="field">
-          <label for="sXgo">Programma X-GO</label>
-          <select id="sXgo" name="xgo">
-            <option value="">Nessuna agevolazione</option>
-            <option value="giovane">X-GO Young (meno di 30 anni) — -20% sui Regionali</option>
-            <option value="senior">X-GO Senior (60 anni o piu') — -20% sui Regionali</option>
-          </select>
+          <div class="section-title">Agevolazioni Trenitalia</div>
+          <div class="field">
+            <label for="sXgo">Programma X-GO</label>
+            <select id="sXgo" name="xgo">
+              <option value="">Nessuna agevolazione</option>
+              <option value="giovane">X-GO Young (meno di 30 anni) — -20% sui Regionali</option>
+              <option value="senior">X-GO Senior (60 anni o piu') — -20% sui Regionali</option>
+            </select>
+            <small class="field-hint">
+              Lo sconto vale solo sui treni regionali selezionati dalla promozione,
+              non in Campania, Abruzzo, Sardegna, Puglia, Trento e Bolzano, e fino
+              al 30 novembre 2026.
+            </small>
+          </div>
+
+          <div class="section-title">Orari GTFS (treni e bus)</div>
+          <div class="field inline-field">
+            <label class="chip"><input type="checkbox" id="sGtfsEnabled" checked /> Orari GTFS attivi</label>
+            <button type="button" class="btn ghost" id="btnGtfsUpdate">Aggiorna orari</button>
+          </div>
+          <small class="field-hint" id="gtfsStatus">—</small>
+          <div class="gtfs-feeds" id="gtfsFeeds"></div>
+
+          <div class="section-title">Fonti dati</div>
           <small class="field-hint">
-            Lo sconto vale solo sui treni regionali selezionati dalla promozione,
-            non in Campania, Abruzzo, Sardegna, Puglia, Trento e Bolzano, e fino
-            al 30 novembre 2026.
+            I prezzi dei treni vengono dalle API di Trenitalia, quelli dei bus
+            e dei passaggi da Itabus, FlixBus, Omio e BlaBlaCar. BlaBlaCar non
+            ha un'API pubblica: la ricerca viene letta dal sito con un browser,
+            quindi i prezzi sono quelli veri del momento.
           </small>
         </div>
 
-        <div class="section-title">I tuoi abbonamenti</div>
-        <div class="field">
-          <div class="chips" id="globalPassesBox"></div>
-          <small class="field-hint">
-            Valgono per tutte le ricerche. Se la tratta e' coperta, il
-            biglietto non lo paghi (o lo paghi solo in parte: gli abbonamenti
-            regionali coprono la parte di viaggio nella loro area).
-          </small>
-        </div>
+        <!-- ============ AVVISI ============ -->
+        <div class="tab-pane" data-pane="avvisi">
+          <div class="section-title">Telegram</div>
+          <div class="grid-2">
+            <div class="field">
+              <label for="sTelegramToken">Bot token</label>
+              <input id="sTelegramToken" name="telegram_token" type="password" placeholder="123456:ABC…" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label for="sTelegramChat">Chat ID</label>
+              <input id="sTelegramChat" name="telegram_chat_id" placeholder="es. 123456789" />
+            </div>
+          </div>
+          <button type="button" class="btn ghost" id="btnTestTelegram">Invia messaggio di prova</button>
+          <small class="field-hint" id="telegramTestResult"></small>
+          <div class="field inline-field">
+            <button type="button" class="btn ghost" id="btnTelegramLink">Collega la mia chat</button>
+            <input id="telegramLinkCode" placeholder="codice" />
+            <button type="button" class="btn ghost" id="btnTelegramConfirm">Collega</button>
+          </div>
+          <small class="field-hint" id="telegramLinkResult"></small>
 
-        <div class="section-title">Telegram</div>
-        <div class="grid-2">
-          <div class="field">
-            <label for="sTelegramToken">Bot token</label>
-            <input id="sTelegramToken" name="telegram_token" type="password" placeholder="123456:ABC…" autocomplete="off" />
+          <div class="section-title">Chat e gruppi Telegram</div>
+          <small class="field-hint" id="telegramChatsInfo">—</small>
+          <div id="telegramChatsList"></div>
+          <div class="field inline-field hidden" id="telegramAddBotBox">
+            <a class="btn ghost" id="telegramAddBot" href="#" target="_blank" rel="noopener">Aggiungimi a un gruppo</a>
+            <small class="field-hint">Aggiungi il bot al gruppo: si registra da solo e ti scrive li'.</small>
+          </div>
+
+          <div class="section-title">Notifiche push (telefono)</div>
+          <small class="field-hint" id="pushStatus">—</small>
+          <div class="field inline-field">
+            <button type="button" class="btn ghost" id="btnPushEnable">Attiva su questo dispositivo</button>
+            <button type="button" class="btn ghost" id="btnPushDisable">Disattiva su questo dispositivo</button>
+            <button type="button" class="btn ghost" id="btnPushTest">Invia prova</button>
+          </div>
+          <small class="field-hint">Le push arrivano solo ai dispositivi che le attivano qui (telefono o PC). Su iPhone/iPad richiedono l'app aggiunta alla schermata Home e iOS 16.4 o successivo.</small>
+
+          <div class="section-title">Agente</div>
+          <div class="grid-2">
+            <div class="field"><label for="sQuietFrom">Silenzio dalle</label><input id="sQuietFrom" name="quiet_from" type="time" /></div>
+            <div class="field"><label for="sQuietTo">Silenzio fino alle</label><input id="sQuietTo" name="quiet_to" type="time" /></div>
           </div>
           <div class="field">
-            <label for="sTelegramChat">Chat ID</label>
-            <input id="sTelegramChat" name="telegram_chat_id" placeholder="es. 123456789" />
+            <label class="chip"><input type="checkbox" id="sNotifyEnabled" checked /> Avvisi attivi (tutti i canali)</label>
           </div>
         </div>
-        <button type="button" class="btn ghost" id="btnTestTelegram">Invia messaggio di prova</button>
-        <small class="field-hint" id="telegramTestResult"></small>
-        <div class="field inline-field">
-          <button type="button" class="btn ghost" id="btnTelegramLink">Collega la mia chat</button>
-          <input id="telegramLinkCode" placeholder="codice" />
-          <button type="button" class="btn ghost" id="btnTelegramConfirm">Collega</button>
-        </div>
-        <small class="field-hint" id="telegramLinkResult"></small>
 
-        <div class="section-title">Chat e gruppi Telegram</div>
-        <small class="field-hint" id="telegramChatsInfo">—</small>
-        <div id="telegramChatsList"></div>
-        <div class="field inline-field hidden" id="telegramAddBotBox">
-          <a class="btn ghost" id="telegramAddBot" href="#" target="_blank" rel="noopener">Aggiungimi a un gruppo</a>
-          <small class="field-hint">Aggiungi il bot al gruppo: si registra da solo e ti scrive li'.</small>
-        </div>
-
-        <div class="section-title">Email</div>
-        <div class="grid-2">
-          <div class="field"><label for="sSmtpHost">Server SMTP</label><input id="sSmtpHost" name="smtp_host" placeholder="smtp.gmail.com" /></div>
-          <div class="field"><label for="sSmtpPort">Porta</label><input id="sSmtpPort" name="smtp_port" placeholder="587" /></div>
-          <div class="field"><label for="sSmtpUser">Utente</label><input id="sSmtpUser" name="smtp_user" placeholder="tu@email.it" autocomplete="off" /></div>
-          <div class="field"><label for="sSmtpPassword">Password / app password</label><input id="sSmtpPassword" name="smtp_password" type="password" autocomplete="new-password" /></div>
-          <div class="field"><label for="sSmtpFrom">Mittente</label><input id="sSmtpFrom" name="smtp_from" placeholder="tu@email.it" /></div>
-          <div class="field"><label for="sSmtpTo">Destinatario</label><input id="sSmtpTo" name="smtp_to" placeholder="tu@email.it" /></div>
-        </div>
-        <div class="field inline-field">
-          <label class="chip"><input type="checkbox" id="sSmtpTls" checked /> STARTTLS</label>
-          <button type="button" class="btn ghost" id="btnTestEmail">Invia email di prova</button>
-        </div>
-        <small class="field-hint" id="emailTestResult"></small>
-
-        <div class="section-title">Agente</div>
-        <div class="grid-2">
-          <div class="field"><label for="sQuietFrom">Silenzio dalle</label><input id="sQuietFrom" name="quiet_from" type="time" /></div>
-          <div class="field"><label for="sQuietTo">Silenzio fino alle</label><input id="sQuietTo" name="quiet_to" type="time" /></div>
-        </div>
-        <div class="field">
-          <label class="chip"><input type="checkbox" id="sNotifyEnabled" checked /> Avvisi attivi (tutti i canali)</label>
-        </div>
-
-        <div class="section-title">Notifiche push (telefono)</div>
-        <small class="field-hint" id="pushStatus">—</small>
-        <div class="field inline-field">
-          <button type="button" class="btn ghost" id="btnPushEnable">Attiva su questo dispositivo</button>
-          <button type="button" class="btn ghost" id="btnPushDisable">Disattiva su questo dispositivo</button>
-          <button type="button" class="btn ghost" id="btnPushTest">Invia prova</button>
-        </div>
-        <small class="field-hint">Le push arrivano solo ai dispositivi che le attivano qui (telefono o PC). Su iPhone/iPad richiedono l'app aggiunta alla schermata Home e iOS 16.4 o successivo.</small>
-
-        <div class="section-title">Intelligenza (Groq)</div>
-        <div class="field">
-          <label for="sGroqKey">Chiave API Groq (gratuita su console.groq.com)</label>
-          <input id="sGroqKey" name="groq_api_key" type="password" autocomplete="off" />
-          <small class="field-hint">Senza chiave restano attivi ricerca, avvisi e piani automatici (motore a punteggi), ma niente spiegazioni né domande intelligenti.</small>
-        </div>
-        <div class="grid-2">
+        <!-- ============ INTELLIGENZA ============ -->
+        <div class="tab-pane" data-pane="intelligenza">
+          <div class="section-title">Intelligenza (Groq)</div>
           <div class="field">
-            <label for="sAiSmart">Modello ragionamento</label>
-            <select id="sAiSmart" name="ai_model_smart">
-              <option value="">— carica i modelli —</option>
-            </select>
-            <small class="field-hint">Sceglie il piano e scrive la spiegazione.</small>
+            <label for="sGroqKey">Chiave API Groq (gratuita su console.groq.com)</label>
+            <input id="sGroqKey" name="groq_api_key" type="password" autocomplete="off" />
+            <small class="field-hint">Senza chiave restano attivi ricerca, avvisi e piani automatici (motore a punteggi), ma niente spiegazioni né domande intelligenti.</small>
           </div>
-          <div class="field">
-            <label for="sAiFast">Modello veloce</label>
-            <select id="sAiFast" name="ai_model_fast">
-              <option value="">— carica i modelli —</option>
-            </select>
-            <small class="field-hint">Interpreta le richieste e le risposte.</small>
+          <div class="grid-2">
+            <div class="field">
+              <label for="sAiSmart">Modello ragionamento</label>
+              <select id="sAiSmart" name="ai_model_smart">
+                <option value="">— carica i modelli —</option>
+              </select>
+              <small class="field-hint">Sceglie il piano e scrive la spiegazione.</small>
+            </div>
+            <div class="field">
+              <label for="sAiFast">Modello veloce</label>
+              <select id="sAiFast" name="ai_model_fast">
+                <option value="">— carica i modelli —</option>
+              </select>
+              <small class="field-hint">Interpreta le richieste e le risposte.</small>
+            </div>
           </div>
+          <div class="field inline-field">
+            <label class="chip"><input type="checkbox" id="sAiEnabled" checked /> Intelligenza attiva</label>
+            <button type="button" class="btn ghost" id="btnTestAi">Prova AI</button>
+            <button type="button" class="btn ghost" id="btnAiModels">Aggiorna elenco modelli</button>
+          </div>
+          <small class="field-hint" id="aiTestResult"></small>
         </div>
-        <div class="field inline-field">
-          <label class="chip"><input type="checkbox" id="sAiEnabled" checked /> Intelligenza attiva</label>
-          <button type="button" class="btn ghost" id="btnTestAi">Prova AI</button>
-          <button type="button" class="btn ghost" id="btnAiModels">Aggiorna elenco modelli</button>
-        </div>
-        <small class="field-hint" id="aiTestResult"></small>
-
-        <div class="section-title">Orari GTFS (treni e bus)</div>
-        <div class="field inline-field">
-          <label class="chip"><input type="checkbox" id="sGtfsEnabled" checked /> Orari GTFS attivi</label>
-          <button type="button" class="btn ghost" id="btnGtfsUpdate">Aggiorna orari</button>
-        </div>
-        <small class="field-hint" id="gtfsStatus">—</small>
-        <div class="gtfs-feeds" id="gtfsFeeds"></div>
-
-        <div class="section-title">BlaBlaCar</div>
-        <small class="field-hint">L'API pubblica di BlaBlaCar è stata dismessa: la ricerca si apre con il link diretto, nella scheda «Link utili».</small>
 
         <div class="form-error hidden" id="settingsError"></div>
         <div class="modal-foot">

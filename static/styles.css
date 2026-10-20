@@ -643,6 +643,40 @@ select { cursor: pointer; }
 }
 .plan-facts span { white-space: nowrap; }
 
+/* Le impostazioni a schede: un argomento per volta, niente muri di campi. */
+.tabs {
+  display: flex; gap: 4px; margin-bottom: 16px;
+  border-bottom: 1px solid var(--line); padding-bottom: 0;
+  flex-wrap: wrap;
+}
+.tabs .tab {
+  background: none; border: 1px solid transparent; border-bottom: none;
+  border-radius: 9px 9px 0 0; padding: 7px 14px; margin-bottom: -1px;
+  color: var(--muted); font-size: 13px; font-family: inherit; cursor: pointer;
+}
+.tabs .tab:hover { color: var(--text); }
+.tabs .tab.active {
+  color: var(--text); background: var(--panel, rgba(10, 14, 19, 0.6));
+  border-color: var(--line); font-weight: 600;
+}
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+
+/* Le impostazioni avanzate: chiuse, si aprono se servono. */
+.adv-box {
+  margin-top: 18px; border: 1px solid var(--line-soft);
+  border-radius: 10px; padding: 10px 12px;
+}
+.adv-box summary {
+  cursor: pointer; font-size: 12.5px; color: var(--muted);
+  list-style: none; user-select: none;
+}
+.adv-box summary::-webkit-details-marker { display: none; }
+.adv-box summary::before { content: "▸ "; color: var(--muted-2); }
+.adv-box[open] summary::before { content: "▾ "; }
+.adv-box[open] summary { margin-bottom: 10px; color: var(--text); }
+.adv-box .field { margin-top: 8px; }
+
 /* Il selettore degli abbonamenti: ricerca + gruppi. */
 .pass-search {
   width: 100%; margin-bottom: 10px;
@@ -741,3 +775,11 @@ select { cursor: pointer; }
   .offer-side { flex-direction: row; align-items: center; justify-content: space-between; width: 100%; }
   .detail-actions { width: 100%; }
 }
+
+/* Le offerte raggruppate per operatore. */
+.promo-gruppo { margin-bottom: 14px; }
+.promo-gruppo h5 {
+  font-size: 11px; color: var(--muted-2); text-transform: uppercase;
+  letter-spacing: .06em; margin-bottom: 7px; font-weight: 600;
+}
+.promo-gruppo .links-grid { margin-top: 0; }
