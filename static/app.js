@@ -103,6 +103,7 @@ const BADGES = {
   closest: "Più vicino",
   price_drop: "Ribasso",
   under_budget: "Sotto budget",
+  over_budget: "Sopra budget",
   estimate: "Stima",
   orario: "Orario",
 };
@@ -813,6 +814,11 @@ function offerCard(offer, suppressNew = false) {
   }
   if (offer.details?.tariffa) detailBits.push(esc(offer.details.tariffa));
   if (offer.details?.disponibilita) detailBits.push(esc(offer.details.disponibilita));
+  if (offer.details?.sopra_budget && offer.details?.eccesso != null) {
+    detailBits.push(
+      `💸 ${euro(offer.details.eccesso)} oltre il tuo budget di ${euro(offer.details.budget)}`
+    );
+  }
 
   const priceHtml = offer.price == null
     ? (offer.details?.orario_gtfs

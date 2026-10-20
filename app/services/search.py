@@ -41,9 +41,16 @@ def build_context(watch: dict[str, Any]) -> SearchContext:
 
 
 def _filter_offers(offers: list[Offer], ctx: SearchContext, late_minutes: int = 0) -> list[Offer]:
+    """Filtra le offerte, ma non lascia mai la ricerca vuota per colpa del budget.
+
+    Se il budget scarta tutto, le offerte piu' economiche che lo superano
+    vengono tenute lo stesso, marcate come "sopra budget": e' l'informazione
+    che serve all'utente per decidere (e all'agente per proporre un piano).
+    """
     now = now_utc()
     latest = ctx.arrive_by + timedelta(minutes=max(0, late_minutes))
     kept: list[Offer] = []
+    over_budget: list[Offer] = []
     for offer in offers:
         if not offer.depart_at and offer.mode != "transit":
             continue
@@ -57,8 +64,6 @@ def _filter_offers(offers: list[Offer], ctx: SearchContext, late_minutes: int = 
             # Arrivo oltre il limite ma dentro la flessibilita' concessa dall'utente.
             late = int((offer.arrive_at - ctx.arrive_by).total_seconds() // 60)
             offer.details = {**(offer.details or {}), "oltre_limite_min": late}
-        if ctx.max_price is not None and offer.price is not None and offer.price > ctx.max_price:
-            continue
 
         limit = max(ctx.radius_km * 1.4, ctx.radius_km + 2.5)
         # Se la fonte ha dovuto spostarsi su una citta' vicina (es. FlixBus),
@@ -71,7 +76,25 @@ def _filter_offers(offers: list[Offer], ctx: SearchContext, late_minutes: int = 
             dropoff = offer.dropoff_distance_km(ctx)
             if dropoff is not None and dropoff > limit:
                 continue
+
+        if ctx.max_price is not None and offer.price is not None and offer.price > ctx.max_price:
+            # Sopra budget: si accantona invece di scartare subito.
+            over_budget.append(offer)
+            continue
         kept.append(offer)
+
+    if not kept and over_budget:
+        # Il budget ha cancellato tutto: si mostrano le piu' economiche
+        # comunque, con l'etichetta "sopra budget".
+        over_budget.sort(key=lambda o: (o.price is None, o.price or 0, o.arrive_at or now))
+        for offer in over_budget[:12]:
+            offer.details = {
+                **(offer.details or {}),
+                "sopra_budget": True,
+                "budget": ctx.max_price,
+                "eccesso": round((offer.price or 0) - (ctx.max_price or 0), 2),
+            }
+            kept.append(offer)
     return kept
 
 

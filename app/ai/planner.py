@@ -288,6 +288,10 @@ def build_candidates(
 
     latest = ctx.arrive_by + timedelta(minutes=flexible_minutes)
     candidates: dict[tuple, Candidate] = {}
+    # Candidati che superano il budget: si tengono da parte. Se il budget
+    # esaurisce i candidati, si mostrano i piu' economici anche se superano
+    # il tetto, con la nota "sopra budget".
+    over_budget: dict[tuple, Candidate] = {}
 
     singles = sorted(priced, key=lambda o: (o.price or 0) + _access_cost(o, ctx))[:MAX_SINGLES]
     for offer in singles:
@@ -295,7 +299,7 @@ def build_candidates(
             continue
         if not _reaches_destination(offer, ctx):
             continue
-        candidates[("single", offer.fingerprint)] = Candidate(
+        candidate = Candidate(
             id="",
             kind="single",
             legs=[offer],
@@ -307,6 +311,10 @@ def build_candidates(
             estimated=offer.price_is_estimate,
             access_cost=_access_cost(offer, ctx),
         )
+        if ctx.max_price is not None and candidate.total_price > ctx.max_price:
+            over_budget[("single", offer.fingerprint)] = candidate
+            continue
+        candidates[("single", offer.fingerprint)] = candidate
 
     # Combinazioni a piu' tratte: accesso per raggiungere la tratta principale,
     # ed eventualmente un ultimo miglio per arrivare a destinazione.
@@ -345,9 +353,7 @@ def build_candidates(
                 if not priced_legs:
                     continue
                 total = round(sum(leg.price for leg in priced_legs), 2)
-                if ctx.max_price is not None and total > ctx.max_price:
-                    continue
-                candidates[("combo", leg1.fingerprint, leg2.fingerprint)] = Candidate(
+                candidate = Candidate(
                     id="",
                     kind="combo",
                     legs=[leg1, leg2],
@@ -363,6 +369,10 @@ def build_candidates(
                     else [],
                     unpriced_legs=2 - len(priced_legs),
                 )
+                if ctx.max_price is not None and total > ctx.max_price:
+                    over_budget[("combo", leg1.fingerprint, leg2.fingerprint)] = candidate
+                    continue
+                candidates[("combo", leg1.fingerprint, leg2.fingerprint)] = candidate
 
         for candidate in _build_triples(
             legs_pool,
@@ -372,10 +382,26 @@ def build_candidates(
             transfer_min=transfer_min,
             max_wait_min=max_wait_min,
         ):
-            if ctx.max_price is not None and candidate.total_price > ctx.max_price:
-                continue
             key = ("triple", *(leg.fingerprint for leg in candidate.legs))
+            if ctx.max_price is not None and candidate.total_price > ctx.max_price:
+                over_budget[key] = candidate
+                continue
             candidates.setdefault(key, candidate)
+
+    if not candidates and over_budget:
+        # Il budget ha esaurito i candidati: si mostrano i piu' economici
+        # comunque, con la nota che superano il tetto.
+        cheapest = sorted(
+            over_budget.values(),
+            key=lambda c: (c.total_price, c.total_duration_min or 10**6),
+        )[:6]
+        for candidate in cheapest:
+            candidate.notes = list(candidate.notes or []) + [
+                f"sopra il budget di {ctx.max_price:.2f} EUR"
+            ]
+            candidates[("over", candidate.legs[0].fingerprint, *(
+                leg.fingerprint for leg in candidate.legs[1:]
+            ))] = candidate
 
     all_candidates = list(candidates.values())
 

@@ -147,7 +147,10 @@ def score_offers(offers: list[Offer], ctx: SearchContext) -> dict[str, dict]:
             info["badges"].append("estimate")
         if offer.details.get("orario_gtfs"):
             info["badges"].append("orario")
-        if (
+        if offer.details.get("sopra_budget"):
+            # Prezzo oltre il budget: resta visibile, ma segnalato.
+            info["badges"].append("over_budget")
+        elif (
             ctx.max_price is not None
             and offer.price is not None
             and offer.price <= ctx.max_price * 0.85

@@ -75,9 +75,23 @@ class FilterTest(unittest.TestCase):
         ctx = make_context()
         self.assertEqual(len(_filter_offers([make_offer()], ctx)), 1)
 
-    def test_drops_over_budget(self):
+    def test_drops_over_budget_when_something_fits(self):
+        # Se un'offerta sta nel budget, quelle fuori budget vengono scartate.
         ctx = make_context(max_price=15)
-        self.assertEqual(_filter_offers([make_offer(price=25)], ctx), [])
+        offer = make_offer(price=25)
+        cheap = make_offer(price=10, external_id="x-cheap")
+        kept = _filter_offers([offer, cheap], ctx)
+        self.assertEqual([o.external_id for o in kept], ["x-cheap"])
+
+    def test_keeps_over_budget_when_nothing_fits(self):
+        # Se il budget scarta tutto, si mostrano comunque le piu' economiche:
+        # e' l'informazione che serve all'utente per decidere.
+        ctx = make_context(max_price=15)
+        kept = _filter_offers([make_offer(price=25)], ctx)
+        self.assertEqual(len(kept), 1)
+        self.assertTrue(kept[0].details.get("sopra_budget"))
+        self.assertEqual(kept[0].details.get("budget"), 15)
+        self.assertEqual(kept[0].details.get("eccesso"), 10)
 
     def test_drops_late_arrival(self):
         ctx = make_context()
