@@ -606,7 +606,6 @@ function bindEvents() {
   });
 
   $("#btnRunNow")?.addEventListener("click", runNow);
-  $("#chatFab")?.addEventListener("click", apriChat);
   $("#btnToggleWatch")?.addEventListener("click", toggleWatch);
   $("#btnEditWatch")?.addEventListener("click", () => openWatchModal(state.watch));
   $("#btnDeleteWatch")?.addEventListener("click", deleteWatch);
