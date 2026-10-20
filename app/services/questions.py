@@ -12,7 +12,7 @@ from datetime import timedelta
 from typing import Any
 
 from .. import db, notify, store
-from ..timeutil import now_utc
+from ..timeutil import iso, now_utc
 
 # Massimo due domande in attesa per ricerca: oltre, l'utente smette di
 # rispondere e le opzioni si contraddicono.
@@ -242,9 +242,10 @@ def merge_prefs(watch: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
         if key in ("set_depart_after", "set_arrive_by"):
             # L'orario di partenza o arrivo chiesto a parole:
             # "parto dopo le 9", "devo essere li' entro le 12".
+            # Si salva in UTC come tutto il resto (l'ora scritta e' italiana).
             field = "depart_after" if key == "set_depart_after" else "arrive_by"
             value = str(value or "").strip()
-            changes[field] = value or None
+            changes[field] = iso(value) if value else None
             continue
         if key not in KNOWN_PREFS and key not in PASS_ACTIONS:
             continue
@@ -265,6 +266,13 @@ def merge_prefs(watch: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
             conn.execute(
                 f"UPDATE watches SET {assignments} WHERE id = ?", list(changes.values()) + [watch["id"]]
             )
+    if changes:
+        # Il piano calcolato prima non vale piu': i limiti sono cambiati.
+        # Va azzerato SUBITO (non quando finisce il ricalcolo), altrimenti
+        # per qualche secondo l'app mostra un piano che non rispetta i
+        # nuovi limiti (es. treno delle 07:21 con "parto dopo le 07:30").
+        if any(chiave in changes for chiave in ("depart_after", "arrive_by", "max_price")):
+            store.clear_plans(watch["id"])
     return {"prefs": prefs, "changes": changes}
 
 

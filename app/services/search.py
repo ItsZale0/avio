@@ -108,7 +108,10 @@ def _filter_offers(offers: list[Offer], ctx: SearchContext, late_minutes: int = 
             continue
         if offer.depart_at and offer.depart_at < now - timedelta(minutes=5):
             continue
-        if ctx.depart_after and offer.depart_at and offer.depart_at < ctx.depart_after - timedelta(minutes=15):
+        if ctx.depart_after and offer.depart_at and offer.depart_at < ctx.depart_after - timedelta(minutes=1):
+            # Il limite di partenza e' dell'utente e vale al minuto: prima
+            # c'era una "grazia" di 15 minuti che faceva passare (e
+            # confermare) un treno precedente all'orario chiesto.
             continue
         if offer.arrive_at and offer.arrive_at < earliest:
             # Arrivato il giorno prima (o prima): fuori dalla finestra.

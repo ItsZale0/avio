@@ -96,10 +96,11 @@ class MergeTests(unittest.TestCase):
                 watch, {"set_depart_after": "2026-10-22T07:00:00"}
             )
             self.assertEqual(
-                merge["changes"].get("depart_after"), "2026-10-22T07:00:00"
+                merge["changes"].get("depart_after"), "2026-10-22T05:00:00+00:00"
             )
             salvata = store.get_watch(999)
-            self.assertEqual(salvata.get("depart_after"), "2026-10-22T07:00:00")
+            # In UTC, come tutto il resto: 07:00 in Italia = 05:00 UTC.
+            self.assertEqual(salvata.get("depart_after"), "2026-10-22T05:00:00+00:00")
         finally:
             with db.db() as conn:
                 conn.execute("DELETE FROM watches WHERE id = 999")
@@ -211,6 +212,154 @@ class TimeDisplayTests(unittest.TestCase):
 
     def test_vuoto(self):
         self.assertEqual(chat._fmt(None), "-")
+
+
+class LimitePartenzaTests(unittest.TestCase):
+    """Il limite di partenza vale al minuto, anche quando il piano e' comodo."""
+
+    def test_un_treno_che_parte_prima_del_limite_viene_scartato(self):
+        from datetime import datetime, timezone
+
+        from app.adapters.base import Offer, SearchContext
+        from app.services.search import _filter_offers
+
+        giorno = datetime.now(timezone.utc) + timedelta(days=2)
+        limite = giorno.replace(hour=5, minute=30, second=0, microsecond=0)  # 07:30 Roma
+        ctx = SearchContext(
+            watch_id=1,
+            from_place="Thiene",
+            to_place="Trento",
+            from_lat=45.70,
+            from_lon=11.47,
+            to_lat=46.07,
+            to_lon=11.12,
+            depart_after=limite,
+            arrive_by=limite + timedelta(hours=3),
+            radius_km=10,
+            passengers=1,
+            max_price=50,
+        )
+
+        def offer(minuti):
+            partenza = limite + timedelta(minutes=minuti)
+            return Offer(
+                source="trenitalia",
+                external_id=f"t{minuti}",
+                mode="treno",
+                operator="Trenitalia",
+                depart_at=partenza,
+                arrive_at=partenza + timedelta(hours=2),
+                price=13.23,
+                pickup_name="Thiene",
+                pickup_lat=45.700667,
+                pickup_lon=11.475408,
+                dropoff_name="Trento",
+                dropoff_lat=46.072113,
+                dropoff_lon=11.119547,
+                duration_min=120,
+            )
+
+        self.assertEqual(_filter_offers([offer(-9)], ctx), [])  # 07:21
+        self.assertEqual(len(_filter_offers([offer(1)], ctx)), 1)  # 07:31
+        self.assertEqual(len(_filter_offers([offer(0)], ctx)), 1)  # 07:30
+
+    def _watch_with_plan(self, limite: str = "2026-10-22T07:30") -> int:
+        from app import db
+
+        db.init_db()
+        with db.db() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO watches(id, user_id, name, from_place, to_place, "
+                "arrive_by, depart_after, max_price, radius_km, passengers, sources, notify, "
+                "interval_min, active, created_at, prefs) VALUES(996, 3, 'test limite', "
+                "'Thiene', 'Trento', '2026-10-22T09:00:00+00:00', ?, 20, 5, 1, '[]', "
+                "'[]', 60, 1, '2026-10-20T10:00:00', '{}')",
+                (limite,),
+            )
+            conn.execute("UPDATE plans SET is_current = 0 WHERE watch_id = 996")
+            conn.execute(
+                "INSERT INTO plans(watch_id, run_id, kind, title, total_price, steps, "
+                "created_at, is_current, depart_at, arrive_at, walk_out_min, walk_in_min) "
+                "VALUES(996, NULL, 'cheapest', 'Treno regionale', 13.23, '[]', "
+                "'2026-10-20T20:08:21', 1, '2026-10-22T07:21:00+02:00', "
+                "'2026-10-22T09:50:00+02:00', 28, 0)"
+            )
+        self.addCleanup(self._cleanup)
+        return 996
+
+    def _cleanup(self):
+        from app import db
+
+        with db.db() as conn:
+            conn.execute("DELETE FROM plans WHERE watch_id = 996")
+            conn.execute("DELETE FROM watches WHERE id = 996")
+
+    def test_il_piano_fuori_limite_viene_segnalato(self):
+        self._watch_with_plan()
+        avviso = chat._avviso_piano(996, 3)
+        self.assertIn("07:21", avviso)
+        self.assertIn("06:53", avviso)  # 28 minuti a piedi prima del treno
+        self.assertIn("prima del limite", avviso)
+
+    def test_un_piano_nei_limiti_non_produce_avvisi(self):
+        self._watch_with_plan(limite="2026-10-22T07:00")
+        self.assertEqual(chat._avviso_piano(996, 3), "")
+
+    def test_il_contesto_mostra_il_limite_in_ora_italiana(self):
+        self._watch_with_plan()
+        contesto = chat._contesto(chat.get_watch(996))
+        self.assertEqual(contesto["ricerca"]["partenza_minima"], "2026-10-22 07:30")
+        self.assertEqual(contesto["piano"]["uscita_da_casa"], "2026-10-22 06:53")
+
+    def test_senza_piano_il_limite_si_toglie(self):
+        from app import db
+
+        self._watch_with_plan()
+        with db.db() as conn:
+            conn.execute("UPDATE plans SET is_current = 0 WHERE watch_id = 996")
+        cambi, nota = chat._allinea_il_limite("vai con quello", 996, 3)
+        self.assertIn("depart_after", cambi)
+        self.assertIsNone(cambi["depart_after"])
+        self.assertIn("tolto il limite", nota)
+
+    def test_accettando_il_piano_il_limite_si_allinea(self):
+        self._watch_with_plan()
+        cambi, nota = chat._allinea_il_limite("vai con quello", 996, 3)
+        self.assertEqual(cambi.get("depart_after"), "2026-10-22T05:21:00+00:00")
+        self.assertIn("07:21", nota)  # ora locale, non UTC
+        self.assertEqual(chat._avviso_piano(996, 3), "")
+
+    def test_una_domanda_normale_non_tocca_il_limite(self):
+        self._watch_with_plan()
+        self.assertEqual(chat._allinea_il_limite("quanto costa?", 996, 3), ({}, ""))
+
+    def test_cambiare_un_limite_azzera_subito_il_piano(self):
+        """Il piano vecchio non deve restare a schermo mentre si ricalcola."""
+        from app.services import questions as questions_service
+
+        self._watch_with_plan()
+        self.assertIsNotNone(chat._piano_migliore(996))
+        questions_service.merge_prefs(chat.get_watch(996), {"set_depart_after": "2026-10-22T08:00"})
+        self.assertIsNone(chat._piano_migliore(996))
+
+    def test_il_limite_appena_messo_avvisa_delle_opzioni_escluse(self):
+        from app import db
+
+        self._watch_with_plan()
+        with db.db() as conn:
+            conn.execute("DELETE FROM offers WHERE watch_id = 996")
+            conn.execute(
+                "INSERT INTO offers(watch_id, fingerprint, source, mode, operator, depart_at, "
+                "arrive_at, price, score, first_seen, last_seen, active) VALUES(996, 'fp', "
+                "'trenitalia', 'treno', 'Trenitalia', '2026-10-22T04:21:00+00:00', "
+                "'2026-10-22T08:29:00+00:00', 11.9, 10, '2026-10-20T10:00:00', "
+                "'2026-10-20T10:00:00', 1)"
+            )
+        avviso = chat._avviso_limite_nuovo(996, {"depart_after": "2026-10-22T05:30:00+00:00"})
+        self.assertIn("06:21", avviso)  # l'offerta che resta fuori, in ora locale
+        self.assertIn("07:30", avviso)  # il nuovo limite, in ora locale
+        with db.db() as conn:
+            conn.execute("DELETE FROM offers WHERE watch_id = 996")
 
 
 if __name__ == "__main__":

@@ -460,8 +460,16 @@ async def update_watch(watch_id: int, payload: WatchUpdate, request: Request):
             changes[f"{key}_lat"] = None
             changes[f"{key}_lon"] = None
 
-    arrive_by = changes.get("arrive_by", parse_dt(watch["arrive_by"]))
-    depart_after = changes.get("depart_after", parse_dt(watch.get("depart_after")))
+    # Confronto sempre in UTC: la patch puo' arrivare con orari senza fuso
+    # (es. "2026-10-22T07:21") e il confronto misto andava in errore 500.
+    arrive_by = (
+        parse_dt(changes["arrive_by"]) if "arrive_by" in changes else parse_dt(watch["arrive_by"])
+    )
+    depart_after = (
+        parse_dt(changes["depart_after"])
+        if "depart_after" in changes
+        else parse_dt(watch.get("depart_after"))
+    )
     if arrive_by and depart_after and depart_after >= arrive_by:
         raise HTTPException(status_code=400, detail="La partenza minima deve precedere l'arrivo massimo")
 
