@@ -74,6 +74,7 @@ Documento di architettura della v0.1 e traccia per le iterazioni successive.
 | `password_resets` | token temporanei per il recupero password | `token_hash` (unico), `user_id`, `expires_at` |
 | `user_settings` | impostazioni personali | `user_id` + `key` (PK composta), `value` |
 | `telegram_links` | collegamento fra chat Telegram e account | `code` (unico), `user_id`, `chat_id`, `expires_at` |
+| `telegram_chats` | chat, gruppi e canali dove il bot scrive | `user_id`, `chat_id`, `chat_type`, `title`, `is_default` |
 | `watches` | una ricerca salvata | `user_id`, `from_place/lat/lon`, `to_place/lat/lon`, `depart_after`, `arrive_by`, `max_price`, `radius_km`, `sources` JSON, `notify` JSON, `interval_min`, `active`, `next_run_at` |
 | `offers` | offerte trovate, una riga per (ricerca, fingerprint) | `watch_id`, `source`, `mode`, `operator`, `depart_at`, `arrive_at`, `price`, `price_is_estimate`, `pickup/dropoff`, `score`, `badges` JSON, `details` JSON, `first_seen`, `last_seen`, `prev_price` |
 | `runs` | cronologia esecuzioni | `watch_id`, `status` (ok/partial/error), `offers_found`, `alerts_sent`, `errors` JSON, `notes` JSON |
@@ -115,12 +116,15 @@ Tutti gli orari sono salvati in **UTC ISO 8601**; l'interfaccia li mostra nel fu
 5. filtri duri:
       depart_at >= now - 5 min
       depart_at >= depart_after - 15 min
+      arrive_at >= inizio del giorno richiesto (arrival_day_start)
       arrive_at <= arrive_by + 10 min + flessibilità (prefs.flexible_days * 24 h)
       price <= max_price
       distanza pickup/dropoff <= max(raggio*1.4, raggio+2.5) km
 6. calcola score + badge + costo effettivo
 7. upsert offerte; rileva nuove e ribassi (>= max(0,50 €, 4%))
-8. disattiva offerte già passate
+8. disattiva le offerte già passate **e quelle che questo giro non ha
+   più trovato**: la lista deve riflettere i filtri attuali, non quelli
+   di una ricerca precedente
 9. pianificatore: costruisce le combinazioni candidate (1-3 tratte:
    accesso → principale → ultimo miglio), l'AI sceglie la più economica
    e la spiega (oppure fallback deterministico)
@@ -189,13 +193,26 @@ aggiorna `watches.prefs` (o `max_price`) e fa ripartire una ricerca subito. Le d
 già poste o risposte non si ripetono (dedupe per `key`). Con l'AI attiva, il modello
 può aggiungere fino a 2 domande proprie ("accetti un cambio?", "quanti bagagli?").
 
-**Il budget non deve mai far sparire i risultati.** Se il tetto scarta tutte le
-offerte, `_filter_offers` tiene le dodici più economiche e le marca
-`details.sopra_budget` (con budget ed eccesso); il planner fa lo stesso con i
-candidati. Così l'utente vede il prezzo reale del viaggio più economico,
-l'AI può scrivere il piano ("supera il budget di 8 €") e la card offre un
-pulsante per alzare il tetto con un clic. Senza questo, un budget troppo basso
-lasciava la ricerca vuota e priva di qualsiasi piano.
+**La finestra temporale.** "Devo essere a Trento entro le 11 di giovedì" vuol
+dire tre cose: il giorno è giovedì, l'ora è le 11, e il viaggio avviene
+dentro quella giornata. Per questo l'arrivo deve essere **nel giorno
+richiesto** (`arrival_day_start` = mezzanotte di quel giorno, ora italiana) e
+non oltre l'ora indicata. `depart_after` ("non partire prima delle 6") è un
+vincolo diverso: governs la partenza, non l'arrivo.
+
+Quando non esiste nulla che arriva in tempo, l'agente propone le due
+flessibilità sensate, una alla volta:
+
+| Situazione | `key` | Opzioni |
+|---|---|---|
+| Il più vicino arriva la sera prima | `arrivo_giorno_prima` | no, voglio arrivare quel giorno / sì, arrivo la sera prima |
+| Una corsa arriva dopo l'ora | `flexible_days` | no / anche il giorno dopo / fino a 2 giorni dopo |
+| Il budget è troppo basso | `budget_flex` | resto sul budget / alzo a X € |
+
+**Il budget non deve mai far sparire i risultati.** Se il tetto scarta tutte
+le offerte, l'agente non propone un piano fuori filtro: chiede, con il
+**prezzo reale** della soluzione più economica ("costa 11,90 €, sopra il budget
+di 8 €"), e un clic porta il tetto al giusto livello.
 
 ### Bot Telegram in polling
 
@@ -203,6 +220,27 @@ lasciava la ricerca vuota e priva di qualsiasi piano.
 legge `getUpdates`, gestisce i `callback_query` con `data = ans:{id}:{opzione}` e,
 se scrivi un nuovo viaggio in chat, crea la ricerca. Nessun webhook, nessun server
 pubblico: basta il token del bot già configurato.
+
+**Chat, gruppi e canali.** Le chat dove il bot può scrivere stanno in
+`telegram_chats` (una riga per chat, con `is_default` per indicare quella
+predefinita). Si registrano in tre modi:
+
+1. **aggiungendo il bot a un gruppo**: Telegram manda un messaggio di servizio
+   `new_chat_members`, il bot lo intercetta e registra la chat da solo, con un
+   messaggio di conferma. È il modo più semplice per "dare l'accesso" a un
+   gruppo ( anche privato: basta che il bot sia aggiunto come membro).
+2. con il comando `/chat` scritto dentro la chat da registrare;
+3. dalla web: *Impostazioni → Chat e gruppi Telegram*, che elenca le chat
+   registrate e permette di scegliere la predefinita o toglierne una.
+
+I comandi del bot: `/start`, `/help`, `/chi` (le tue ricerche), `/chat`
+(registra questa chat), `/chats` (elenco), `/removechat`, `/link CODICE`
+(collega la chat al tuo profilo).
+
+Gli avvisi di una ricerca arrivano a **tutte** le chat registrate
+dell'utente: `notify.send_telegram_message(..., user_id=...)` scorre
+`telegram_chats.chat_ids(user_id)` e invia a ciascuna, con fallback sulla chat
+globale se non ce n'è nessuna.
 
 ---
 
@@ -277,7 +315,7 @@ Non serve toccare il motore: filtri, scoring, deduplica e avvisi sono automatici
 |---|---|---|---|
 | `omio` | endpoint app (GoEuro) `v5/searches` + `v5/results` | media | aggregatore multi-compagnia (treni/bus/voli); non documentato |
 | `trenitalia` | endpoint interno `app.lefrecce.it` BFF | media | prezzi ufficiali; non documentato |
-| `blablacar` | solo link di ricerca (API pubblica dismessa) | — | nessuna chiamata: hint + link |
+| `blablacar` | solo link di ricerca (API pubblica dismessa) | — | nessuna chiamata: hint + link. **Verificato**: ogni endpoint (anche la pagina di ricerca) risponde `403` con interstitial CAPTCHA (DataDome) a client non-browser: i prezzi non sono ottenibili senza aggirare la protezione, che questo progetto non fa. Il deep link apre la ricerca gia' parametrizzata (città e data) nel browser |
 | `flixbus` | endpoint pubblico del sito | media | non documentato, può cambiare |
 | `itabus` | endpoint pubblico del sito + codici stazione | media | non documentato; rete solo Italia/Europa |
 | `carsharing` | tabella tariffe + città coperte | alta (stima) | disponibilità veicolo da verificare |
