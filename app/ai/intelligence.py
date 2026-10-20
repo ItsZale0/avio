@@ -120,10 +120,23 @@ def _candidates_payload(candidates: list[Candidate]) -> list[dict[str, Any]]:
                 "link": leg.deeplink,
             }
             if leg.details.get("spezzatura"):
-                # Due biglietti: l'AI deve poterlo spiegare.
+                # Due biglietti: l'AI deve poterlo spiegare, con il prezzo
+                # di ogni tratta (e l'abbonamento applicato dove vale).
                 leg_info["spezzatura"] = True
                 leg_info["risparmio"] = leg.details.get("risparmio")
                 leg_info["prezzo_diretto"] = leg.details.get("prezzo_diretto")
+                leg_info["totale_con_abbonamenti"] = leg.details.get("totale_effettivo")
+                leg_info["biglietti"] = [
+                    {
+                        "da": t.get("da"),
+                        "a": t.get("a"),
+                        "prezzo": t.get("prezzo"),
+                        "prezzo_con_abbonamento": t.get("prezzo_effettivo"),
+                        "abbonamento": t.get("pass"),
+                    }
+                    for t in (leg.details.get("tratte") or [])
+                    if isinstance(t, dict)
+                ]
             legs.append(leg_info)
         duration = candidate.total_duration_min
         porta_a_porta = candidate.door_to_door_min
@@ -232,15 +245,26 @@ def _templated_explanation(candidate: Candidate, watch: dict[str, Any]) -> str:
     if leg.details.get("spezzatura"):
         # Il caso piu' interessante: due biglietti invece di uno.
         risparmio = leg.details.get("risparmio")
-        diretto = leg.details.get("prezzo_diretto")
+        diretto = leg.details.get("prezzo_diretto") or 0
         tappe = leg.details.get("tappe") or []
         percorso = " + ".join(
             f"{step.get('da')}→{step.get('a')}" for step in tappe if isinstance(step, dict)
         )
+        # Ogni biglietto col suo prezzo (e l'abbonamento dove vale): cosi'
+        # l'agente non deve indovinare da dove esce il risparmio.
+        dettagli = []
+        for tratta in leg.details.get("tratte") or []:
+            if not isinstance(tratta, dict):
+                continue
+            prezzo = float(tratta.get("prezzo_effettivo") or tratta.get("prezzo") or 0)
+            nota = f" ({tratta['pass']})" if tratta.get("pass") else ""
+            dettagli.append(f"{tratta.get('da')}→{tratta.get('a')} {prezzo:.2f}{nota}")
+        elenco = " + ".join(dettagli) or percorso
+        totale = float(leg.details.get("totale_effettivo") or candidate.total_price or 0)
         return (
-            f"Si compra con due biglietti: {percorso}. "
-            f"Totale {candidate.total_price:.2f} EUR invece di {diretto:.2f} EUR "
-            f"del biglietto unico: risparmi {risparmio:.2f} EUR. "
+            f"Si compra con due biglietti: {elenco} = {totale:.2f} EUR "
+            f"invece di {diretto:.2f} EUR del biglietto unico: risparmi "
+            f"{risparmio:.2f} EUR. "
             f"{quadro}, arrivo {human_rome(candidate.arrive_at, '%a %d %b, %H:%M')}.{coperto}"
         )
     return (

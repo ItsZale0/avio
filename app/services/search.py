@@ -223,6 +223,15 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
         late_minutes = int(prefs.get("flexible_days", 0) or 0) * 1440
         gathered = _dedupe(offers)
 
+        # Gli abbonamenti servono anche alla spezzatura (si compra un
+        # biglietto per tratta): si calcolano PRIMA di tagliare il viaggio.
+        from . import settings as app_settings
+        from .discounts import xgo_sconto
+
+        user_passes = passes_service.normalize_passes(
+            prefs.get("passes")
+        ) + passes_service.normalize_passes(app_settings.get("passes", "[]"))
+
         # Spezzatura: due biglietti invece di uno possono costare meno.
         # Si calcolano TUTTI i confronti (anche quelli che costano di piu'):
         # serve a mostrare quanto cambia davvero a spezzare il viaggio.
@@ -230,7 +239,11 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
         try:
             prefer_fast = bool(prefs.get("prefer_fast"))
             splits, confronti = await split_tickets.analyze_splits(
-                gathered, ctx, prefer_fast=prefer_fast
+                gathered,
+                ctx,
+                prefer_fast=prefer_fast,
+                passes=user_passes,
+                sconto_xgo=xgo_sconto(prefs),
             )
             if splits:
                 gathered = _dedupe(gathered + splits)
@@ -241,17 +254,33 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
                         for step in (details.get("tappe") or [])
                         if isinstance(step, dict)
                     )
+                    pezzi = " + ".join(
+                        f"{t.get('da')}→{t.get('a')} "
+                        f"{float(t.get('prezzo_effettivo', t.get('prezzo')) or 0):.2f} EUR"
+                        + (f" ({t.get('pass')})" if t.get("pass") else "")
+                        for t in (details.get("tratte") or [])
+                        if isinstance(t, dict)
+                    )
+                    effettivo = float(
+                        details.get("totale_effettivo") or split.price or 0
+                    )
+                    diretto_eff = float(
+                        details.get("diretto_effettivo")
+                        or details.get("prezzo_diretto")
+                        or 0
+                    )
                     hints.append(
-                        f"Spezzatura: 2 biglietti Trenitalia ({tratto}) per "
-                        f"{split.price:.2f} EUR invece di "
-                        f"{details.get('prezzo_diretto', 0):.2f} "
-                        f"(risparmi {details.get('risparmio', 0):.2f} EUR)."
+                        f"Spezzatura: 2 biglietti Trenitalia ({tratto}): "
+                        f"{pezzi} = {effettivo:.2f} EUR invece di "
+                        f"{diretto_eff:.2f} "
+                        f"(risparmi {max(0.0, diretto_eff - effettivo):.2f} EUR)."
                     )
             if confronti:
                 hints.append(
                     "Confronto tratte singole: "
                     + " | ".join(
-                        f"via {c['via']} {c['totale']:.2f} EUR "
+                        f"via {c['via']} "
+                        f"{float(c.get('totale_effettivo') or c['totale']):.2f} EUR "
                         f"({c['delta_prezzo']:+.2f} EUR, {c['delta_minuti']:+d} min)"
                         for c in confronti[:3]
                     )
@@ -270,13 +299,6 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
         # Abbonamenti: se la tratta e' coperta, il biglietto non lo paghi.
         # Il prezzo reale resta, ma il costo effettivo diventa 0 e cambia
         # il piano migliore.
-        # Gli abbonamenti sono dell'utente (Impostazioni) piu' quelli
-        # specifici della ricerca.
-        from . import settings as app_settings
-
-        user_passes = passes_service.normalize_passes(
-            prefs.get("passes")
-        ) + passes_service.normalize_passes(app_settings.get("passes", "[]"))
         if user_passes:
             gratis = 0
             ridotte = 0
@@ -288,6 +310,15 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
                     gratis += 1
                 else:
                     ridotte += 1
+            # La spezzatura si paga a biglietti separati: vale il totale
+            # dei singoli tratti (ognuno col suo pass), non la stima sul
+            # viaggio intero.
+            for offer in gathered:
+                dettagli = offer.details or {}
+                if dettagli.get("spezzatura") and dettagli.get("totale_effettivo") is not None:
+                    offer.net_cost = round(float(dettagli["totale_effettivo"]), 2)
+                    dettagli["net_cost"] = offer.net_cost
+                    offer.details = dettagli
             if gratis or ridotte:
                 dettaglio = []
                 if gratis:

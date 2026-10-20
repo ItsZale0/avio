@@ -32,6 +32,7 @@ from ..adapters.trenitalia import (
     query_starts,
 )
 from ..timeutil import ROME, iso, parse_dt
+from . import passes as passes_service
 
 log = logging.getLogger("carpool.split")
 
@@ -347,8 +348,74 @@ def _comparison(confronto: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _scontato(listino: float, sconto_xgo: float) -> float:
+    """Il prezzo del biglietto con lo sconto X-GO (se spetta)."""
+    if sconto_xgo and listino > 0:
+        return round(listino * (1 - sconto_xgo), 2)
+    return listino
+
+
+def applica_abbonamenti(
+    comparisons: list[dict[str, Any]],
+    passes: list[dict[str, Any]] | None,
+    sconto_xgo: float = 0.0,
+) -> None:
+    """Prezza ogni biglietto della spezzatura con abbonamenti e X-GO.
+
+    Spezzando si compra un titolo per tratta: il pass va applicato al
+    singolo biglietto (Flex solo dove e' valido), non alla somma. Cosi'
+    Bressanone→Bolzano viene 4,80 col Flex e non 8,00, mentre
+    Bolzano→Rovereto resta a prezzo intero perche' esce dall'Alto Adige.
+    """
+    if not comparisons:
+        return
+    if not passes and not sconto_xgo:
+        for confronto in comparisons:
+            confronto.setdefault("totale_effettivo", confronto.get("totale"))
+            confronto.setdefault("diretto_effettivo", confronto.get("diretto_prezzo"))
+        return
+
+    for confronto in comparisons:
+        totale_effettivo = 0.0
+        for tratta in confronto.get("tratte") or []:
+            listino = float(tratta.get("prezzo") or 0)
+            scontato = _scontato(listino, sconto_xgo)
+            if sconto_xgo and scontato < listino:
+                tratta["sconto_xgo"] = round(listino - scontato, 2)
+            costo, nome = passes_service.netto_tratta(
+                passes or [], tratta.get("da") or "", tratta.get("a") or "", scontato
+            )
+            tratta["prezzo_effettivo"] = costo
+            if nome:
+                tratta["pass"] = nome
+            totale_effettivo += costo
+
+        diretta = confronto.get("offer")
+        listino_diretto = float(getattr(diretta, "price", 0) or 0)
+        scontato_diretto = _scontato(listino_diretto, sconto_xgo)
+        diretto_eff, nome_diretto = passes_service.netto_tratta(
+            passes or [],
+            getattr(diretta, "pickup_name", "") or "",
+            getattr(diretta, "dropoff_name", "") or "",
+            scontato_diretto,
+        )
+        confronto["totale_effettivo"] = round(totale_effettivo, 2)
+        confronto["diretto_effettivo"] = diretto_eff
+        if nome_diretto:
+            confronto["diretto_pass"] = nome_diretto
+        confronto["delta_prezzo"] = round(
+            confronto["totale_effettivo"] - diretto_eff, 2
+        )
+        confronto["conveniente"] = confronto["delta_prezzo"] < -0.01
+
+
 async def analyze_splits(
-    offers: list[Offer], ctx: SearchContext, *, prefer_fast: bool = False
+    offers: list[Offer],
+    ctx: SearchContext,
+    *,
+    prefer_fast: bool = False,
+    passes: list[dict[str, Any]] | None = None,
+    sconto_xgo: float = 0.0,
 ) -> tuple[list[Offer], list[dict[str, Any]]]:
     """Spezza il viaggio e confronta ogni spezzatura col diretto.
 
@@ -357,6 +424,9 @@ async def analyze_splits(
       competono con le altre);
     - l'elenco dei confronti (anche di quelli che costano di piu'): serve a
       mostrare quanto cambia davvero, prezzo e tempo.
+
+    ``passes`` sono gli abbonamenti dell'utente: si applicano a ogni singolo
+    biglietto, perche' spezzando si compra un titolo per tratta.
     """
     candidates = [
         offer
@@ -409,6 +479,11 @@ async def analyze_splits(
             best_per_via[key] = confronto
     comparisons = list(best_per_via.values())
 
+    # Gli abbonamenti si applicano ai singoli biglietti: e' qui che la
+    # spezzatura cambia davvero prezzo (es. Flex sul tratto in Alto Adige:
+    # Bressanone-Bolzano 4,80 invece di 8,00).
+    applica_abbonamenti(comparisons, passes, sconto_xgo)
+
     # Le offerte: quelle che battono il diretto. Se l'utente preferisce
     # arrivare prima, entra anche la spezzatura piu' veloce (arriva prima
     # anche se costa qualcosa in piu'): e' un piano, non solo un dato.
@@ -450,6 +525,9 @@ async def analyze_splits(
                     "biglietti": 2,
                     "cambi": 0,
                     "treni": "2 biglietti regionali",
+                    "tratte": confronto["tratte"],
+                    "totale_effettivo": confronto.get("totale_effettivo"),
+                    "diretto_effettivo": confronto.get("diretto_effettivo"),
                     "tappe": [
                         tappa(
                             confronto["tratte"][0]["da"],

@@ -18,7 +18,7 @@ import re
 from datetime import date, datetime
 from typing import Any
 
-from ..geo import CITIES, haversine_km
+from ..geo import CITIES, haversine_km, normalize
 
 # --------------------------------------------------------------------------- #
 # Trenitalia: l'abbonamento regionale esiste in ogni regione (tariffe
@@ -645,19 +645,25 @@ def _area_points(pass_info: dict[str, Any]) -> list[tuple[float, float]]:
 
 
 def _station_coords(name: Any) -> tuple[float, float] | None:
-    """Le coordinate di una stazione, cercando fra le citta' note."""
+    """Le coordinate di una stazione, cercando fra le citta' note.
+
+    I nomi arrivano in tante forme: "Bolzano", "Bolzano/Bozen",
+    "Bressanone Brixen", "Verona Porta Nuova". Si normalizza e poi si
+    cerca il nome piu' lungo contenuto (le bilingui diventano "bolzano
+    bozen", che riconosce "bolzano").
+    """
     if not name:
         return None
-    testo = str(name).strip().lower()
+    testo = normalize(str(name)).replace("/", " ")
+    testo = " ".join(testo.split())
     if not testo:
         return None
     coords = CITIES.get(testo)
     if coords:
         return coords
-    # "Verona Porta Nuova" -> "verona", "Bassano Del Grappa" -> la piu' vicina
     migliore: tuple[int, tuple[float, float]] | None = None
     for chiave, punto in CITIES.items():
-        if testo.startswith(chiave + " ") or (" " + chiave) in testo:
+        if chiave in testo.split() or testo.startswith(chiave + " ") or (" " + chiave) in testo:
             if migliore is None or len(chiave) > migliore[0]:
                 migliore = (len(chiave), punto)
     if migliore:
@@ -689,6 +695,12 @@ def _route_points(offer: Any) -> list[tuple[float, float]]:
 # Quanti punti si campionano su ogni tratto del percorso.
 _CAMPIONI_TRATTO = 12
 
+# I binari non sono una linea retta: la distanza in linea d'aria va
+# corretta per avvicinarsi ai km tariffari veri. Bressanone-Bolzano:
+# 32,8 km in retta, 36,9 km di ferrovia (+12,5%), cioe' 4,80 EUR col
+# Flex a 0,13 EUR/km.
+FATTORE_ROTAIA = 1.13
+
 
 def _punto_dentro(
     lat: float, lon: float, punti_area: list[tuple[float, float]], raggio: float
@@ -706,13 +718,15 @@ def _segment_covered(
     secondo: tuple[float, float],
     punti_area: list[tuple[float, float]],
     raggio: float,
+    fattore: float = 1.0,
 ) -> tuple[float, float]:
     """Quanti km del tratto sono dentro l'area (e quanto e' lungo il tratto).
 
     Il tratto viene campionato: conta la parte che cade dentro l'area, non
     una stima dagli estremi (che su un tratto lungo sbaglia di parecchio).
+    Il fattore corregge la distanza in linea d'aria (rotaia, non retta).
     """
-    lunghezza = haversine_km(primo[0], primo[1], secondo[0], secondo[1])
+    lunghezza = haversine_km(primo[0], primo[1], secondo[0], secondo[1]) * fattore
     if not lunghezza:
         return 0.0, 0.0
     if not punti_area:
@@ -793,11 +807,13 @@ def _copertura_base(
         return None
 
     percorso = _route_points(offer)
+    # Solo i treni viaggiano su binari: per bus e passaggi la retta va bene.
+    fattore = FATTORE_ROTAIA if mode == "train" else 1.0
 
     if not tipo.get("parziale"):
         lunghezza = 0.0
         for primo, secondo in zip(percorso, percorso[1:]):
-            lunghezza += haversine_km(primo[0], primo[1], secondo[0], secondo[1])
+            lunghezza += haversine_km(primo[0], primo[1], secondo[0], secondo[1]) * fattore
         return lunghezza, lunghezza, "tutto il viaggio", True
 
     punti_area = _area_points(tipo)
@@ -814,7 +830,7 @@ def _copertura_base(
     coperto = 0.0
     totale = 0.0
     for primo, secondo in zip(percorso, percorso[1:]):
-        km_coperti, km_totali = _segment_covered(primo, secondo, punti_area, raggio)
+        km_coperti, km_totali = _segment_covered(primo, secondo, punti_area, raggio, fattore)
         coperto += km_coperti
         totale += km_totali
     if not totale:
@@ -915,6 +931,60 @@ def apply_passes(
     offer.details = details
     offer.net_cost = details["net_cost"]
     return offer
+
+
+def netto_tratta(
+    passes: list[dict[str, Any]],
+    da: str,
+    a: str,
+    prezzo: float,
+    quando: date | None = None,
+    *,
+    intera: bool = True,
+) -> tuple[float, str | None]:
+    """Costo di un biglietto singolo con gli abbonamenti: (costo, nome pass).
+
+    Serve alla spezzatura: ogni biglietto si paga a parte, quindi i km e il
+    pass vanno calcolati sul singolo tratto (Bressanone->Bolzano 4,80 col
+    Flex, Bolzano->Rovereto prezzo intero perche' esce dall'Alto Adige).
+
+    Con ``intera`` un abbonamento vale solo se copre tutto il tratto: su un
+    biglietto separato che esce dall'area non si puo' scontare "una parte",
+    sarebbe una promessa falsa.
+    """
+    valore = float(prezzo or 0)
+    coords_da = _station_coords(da)
+    coords_a = _station_coords(a)
+    if not passes or valore <= 0 or not coords_da or not coords_a:
+        return round(valore, 2), None
+
+    from types import SimpleNamespace
+
+    finta = SimpleNamespace(
+        mode="train",
+        operator="Trenitalia Regionale",
+        price=valore,
+        pickup_lat=coords_da[0],
+        pickup_lon=coords_da[1],
+        dropoff_lat=coords_a[0],
+        dropoff_lon=coords_a[1],
+        details={"treni": "Regionale", "tappe": []},
+        net_cost=None,
+    )
+    migliore = valore
+    nome_migliore: str | None = None
+    for info in passes:
+        quota, _ = coverage(info, finta, quando)
+        if quota <= 0.01:
+            continue
+        if intera and quota < 0.99:
+            continue
+        apply_passes([info], finta, quando)
+        costo = finta.net_cost if finta.net_cost is not None else valore
+        if costo < migliore - 0.005:
+            migliore = float(costo)
+            nome_migliore = info.get("nome") or pass_name(str(info.get("tipo")))
+    return round(migliore, 2), nome_migliore
 
 
 def has_urban_pass(passes: list[dict[str, Any]], when: date | None = None) -> bool:

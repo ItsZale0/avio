@@ -97,6 +97,22 @@ CITIES: dict[str, tuple[float, float]] = {
     "appiano": (46.4603, 11.3319),
     "san candido": (46.5836, 12.6567),
     "ponte gardena": (46.5858, 11.8106),
+    "fortezza": (46.7897, 11.6103),
+    "chiusa": (46.6406, 11.5667),
+    "santa cristina": (46.5597, 11.7181),
+    # Trentino: la linea del Brennero e le valli.
+    "rovereto": (45.8909, 11.0393),
+    "ala": (45.7576, 11.0016),
+    "mori": (45.8517, 10.9789),
+    "lavis": (46.1390, 11.1100),
+    "mezzocorona": (46.2167, 11.1167),
+    "pergine valsugana": (46.0667, 11.2333),
+    "borgo valsugana": (46.0500, 11.4500),
+    "cavalese": (46.2911, 11.4606),
+    "riva del garda": (45.8853, 10.8412),
+    "arco": (45.9177, 10.8867),
+    "cles": (46.3636, 11.0417),
+    "male": (46.3525, 10.9122),
 }
 
 

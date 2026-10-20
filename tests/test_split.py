@@ -150,6 +150,84 @@ class ComparisonTests(unittest.TestCase):
         self.assertAlmostEqual(somma, confronto["totale"], places=2)
 
 
+def make_brennero_direct(price=23.81):
+    """Bressanone -> Rovereto: regionale che esce dall'Alto Adige."""
+    return Offer(
+        source="trenitalia",
+        external_id="brennero",
+        mode="train",
+        operator="Regionale",
+        depart_at=datetime(2026, 10, 22, 7, 0, tzinfo=timezone.utc),
+        arrive_at=datetime(2026, 10, 22, 9, 30, tzinfo=timezone.utc),
+        price=price,
+        pickup_name="Bressanone/Brixen",
+        dropoff_name="Rovereto",
+        pickup_lat=46.7084,
+        pickup_lon=11.6556,
+        dropoff_lat=45.8909,
+        dropoff_lon=11.0393,
+        details={"tappe": [], "treni": "Regionale"},
+    )
+
+
+class PassiSullaSpezzaturaTests(unittest.TestCase):
+    """Con un abbonamento ogni biglietto della spezzatura si prezza da solo."""
+
+    FLEX = [{"tipo": "altoadigemobilita_flex"}]
+
+    def _confronto(self):
+        return {
+            "via": "Bolzano/Bozen",
+            "tratte": [
+                {"da": "Bressanone/Brixen", "a": "Bolzano/Bozen", "prezzo": 8.00},
+                {"da": "Bolzano/Bozen", "a": "Rovereto", "prezzo": 12.55},
+            ],
+            "totale": 20.55,
+            "diretto_prezzo": 23.81,
+            "delta_prezzo": -3.26,
+            "durata_min": 150,
+            "delta_minuti": 10,
+            "conveniente": True,
+            "offer": make_brennero_direct(),
+        }
+
+    def test_the_flex_is_applied_to_the_single_ticket(self):
+        confronto = self._confronto()
+        split_tickets.applica_abbonamenti([confronto], self.FLEX)  # type: ignore[list-item]
+        prima, seconda = confronto["tratte"]
+        # Bressanone-Bolzano col Flex: 37 km a 0,13 = 4,81, non 8,00.
+        self.assertAlmostEqual(prima["prezzo_effettivo"], 4.81, places=2)
+        self.assertIn("Flex", prima["pass"])
+        # Bolzano-Rovereto esce dall'Alto Adige: prezzo intero.
+        self.assertEqual(seconda["prezzo_effettivo"], 12.55)
+        self.assertNotIn("pass", seconda)
+        self.assertAlmostEqual(confronto["totale_effettivo"], 17.36, places=2)
+        # Il diretto non e' coperto per intero: resta a listino.
+        self.assertEqual(confronto["diretto_effettivo"], 23.81)
+        self.assertAlmostEqual(confronto["delta_prezzo"], -6.45, places=2)
+        self.assertTrue(confronto["conveniente"])
+
+    def test_xgo_and_flex_together_take_the_cheapest(self):
+        confronto = self._confronto()
+        split_tickets.applica_abbonamenti(  # type: ignore[list-item]
+            [confronto], self.FLEX, sconto_xgo=0.2
+        )
+        prima, seconda = confronto["tratte"]
+        # X-GO porta 8,00 a 6,40, ma il Flex (4,81) e' meglio.
+        self.assertAlmostEqual(prima["prezzo_effettivo"], 4.81, places=2)
+        self.assertEqual(prima["sconto_xgo"], 1.60)
+        # Seconda tratta: X-GO 20% (10,04), il Flex non la copre.
+        self.assertEqual(seconda["prezzo_effettivo"], 10.04)
+        self.assertAlmostEqual(confronto["totale_effettivo"], 14.85, places=2)
+
+    def test_without_passes_the_ticket_prices_are_kept(self):
+        confronto = self._confronto()
+        split_tickets.applica_abbonamenti([confronto], [])  # type: ignore[list-item]
+        self.assertAlmostEqual(confronto["totale_effettivo"], 20.55, places=2)
+        self.assertEqual(confronto["diretto_effettivo"], 23.81)
+        self.assertAlmostEqual(confronto["delta_prezzo"], -3.26, places=2)
+
+
 class SplitPointTests(unittest.TestCase):
     def test_hubs_on_the_way_come_first(self):
         ctx = make_ctx()

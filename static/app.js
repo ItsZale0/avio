@@ -892,14 +892,28 @@ function renderConfronti(confronti) {
         ? `+${euro(deltaPrezzo)}`
         : deltaPrezzo < 0 ? `-${euro(Math.abs(deltaPrezzo))}` : "uguale";
       const tratte = (c.tratte || [])
-        .map((t) => `${esc(t.da)}→${esc(t.a)} ${euro(t.prezzo)}`)
+        .map((t) => {
+          const listino = Number(t.prezzo || 0);
+          const effettivo =
+            t.prezzo_effettivo != null ? Number(t.prezzo_effettivo) : listino;
+          const nota = t.pass ? ` (${esc(t.pass)})` : "";
+          const prezzo =
+            Math.abs(effettivo - listino) > 0.005
+              ? `<s>${euro(listino)}</s> ${euro(effettivo)}${nota}`
+              : `${euro(listino)}${t.sconto_xgo ? " (X-GO)" : ""}`;
+          return `${esc(t.da)}→${esc(t.a)} ${prezzo}`;
+        })
         .join(" + ");
+      const totale =
+        c.totale_effettivo != null ? Number(c.totale_effettivo) : Number(c.totale || 0);
+      const diretto =
+        c.diretto_effettivo != null ? Number(c.diretto_effettivo) : Number(c.diretto_prezzo || 0);
       return `<div class="conf-row ${deltaPrezzo < -0.01 ? "ok" : "no"}">
         <span class="conf-via">via ${esc(c.via || "")}</span>
         <span class="conf-tratte">${tratte}</span>
         <span class="conf-delta">
-          <b>${euro(c.totale)}</b>
-          <span class="vs">diretto ${euro(c.diretto_prezzo)}</span>
+          <b>${euro(totale)}</b>
+          <span class="vs">diretto ${euro(diretto)}</span>
           <span class="pill ${deltaPrezzo < -0.01 ? "good" : deltaPrezzo > 0.01 ? "bad" : ""}">
             ${soldi} · ${tempo}
           </span>

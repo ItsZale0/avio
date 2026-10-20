@@ -60,7 +60,7 @@ REGOLE ASSOLUTE:
 - Rispetta le priorita' dichiarate: se l'utente ha scritto che preferisce arrivare prima, scegli il candidato piu' rapido che rispetti i vincoli, anche se costa un po' di piu'. Se preferisce viaggi senza cambi, minimizza i cambi.
 - Spiega SEMPRE il quadro: orario di partenza, orario di arrivo, durata, numero di cambi, costo totale. L'utente deve poter capire in un colpo d'occhio quanto tempo ci mette e quanto costa.
 - Se il candidato scelto ha "notes" che segnala un superamento del budget, dillo chiaramente: il prezzo supera il tetto e l'utente deve saperlo.
-- Se il candidato scelto ha "spezzatura": true, spiega che si compra con DUE biglietti e quanto si risparmia rispetto al biglietto unico. Menziona le tappe.
+- Se il candidato scelto ha "spezzatura": true, spiega che si comprano DUE biglietti separati e cita il prezzo di OGNI tratta (usa "biglietti": "prezzo_con_abbonamento" quando c'e', e scrivi tra parentesi l'abbonamento usato), il totale e quanto si risparmia rispetto al biglietto unico. Esempio: "Bressanone→Bolzano 4,80 € con il Flex + Bolzano→Rovereto 12,55 € = 17,35 € invece di 23,81 €: risparmi 6,46 €". Menziona dove si cambia.
 - Se una combinazione ha più tratte, spiega come collegarle e quanto tempo si perde nei cambi.
 - Se un candidato arriva dopo il limite, va bene solo se le preferenze ammettono flessibilita': in tal caso segnalalo nei watchouts.
 - Non dire che un prezzo e' "garantito": le fonti possono cambiare.
