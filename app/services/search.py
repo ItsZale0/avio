@@ -275,15 +275,25 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
             prefs.get("passes")
         ) + passes_service.normalize_passes(app_settings.get("passes", "[]"))
         if user_passes:
-            covered = 0
+            gratis = 0
+            ridotte = 0
             for offer in gathered:
                 passes_service.apply_passes(user_passes, offer)
-                if offer.net_cost is not None:
-                    covered += 1
-            if covered:
+                if offer.net_cost is None:
+                    continue
+                if offer.net_cost <= 0.01:
+                    gratis += 1
+                else:
+                    ridotte += 1
+            if gratis or ridotte:
+                dettaglio = []
+                if gratis:
+                    dettaglio.append(f"{gratis} offerte gratis")
+                if ridotte:
+                    dettaglio.append(f"{ridotte} offerte con costo ridotto")
                 hints.append(
                     f"Abbonamenti attivi: {passes_service.summary(user_passes)}. "
-                    f"{covered} offerte coperte: biglietto a 0 EUR."
+                    f"{' e '.join(dettaglio)}."
                 )
 
         offers = _filter_offers(gathered, ctx, late_minutes=late_minutes)

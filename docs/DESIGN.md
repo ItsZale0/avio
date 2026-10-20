@@ -219,7 +219,9 @@ ufficiali 2026), non un generico "abbonamento regionale":
 
 | abbonamento | copre |
 |---|---|
-| altoadigemobilita (250 €/anno, 39 €/mese, U26 153 €/21 €, U19 max 21 €) | tutti i mezzi di sudtirolmobil: treni regionali delle 4 linee (Brennero-Bolzano-Trento, Val Venosta, Merano-Bolzano, Val Pusteria), autobus urbani ed extraurbani, impianti di risalita, trenino del Renon, funicolare della Mendola |
+| altoadigemobilita (250 €/anno, 39 €/mese, U26 153 €/21 €, U19 21 €, 65+ 21/77/153 €) | tutti i mezzi di sudtirolmobil: treni regionali delle 4 linee (Brennero-Bolzano-Trento, Val Venosta, Merano-Bolzano, Val Pusteria), autobus urbani ed extraurbani, impianti di risalita, trenino del Renon, funicolare della Mendola |
+| altoadigemobilita **Flex** (0,13 €/km, poi 0,08/0,03/0,02/0; max 650 €/anno e 22 €/giorno; minimo 10 km tariffari) | tutta la rete dell'Alto Adige, ma **a tariffa chilometrica**: non è gratis, si paga il km percorso |
+| altoadigemobilita **FlexFamily** (ex Euregio Family Pass, 0,11 €/km, max 540 €/anno, tessera prepagata) | idem, con tariffa ridotta per le famiglie |
 | Euregio Ticket (750 €/anno) | Trentino, Alto Adige, Tirolo: treni regionali, autobus urbani e regionali, funivie; in Tirolo tutta la rete VVT |
 | abbonamento provinciale Trentino | tutta la rete provinciale: autobus Trentino Trasporti, Trento-Male, Valsugana, Brennero (Borghetto-Ora), funivia Trento-Sardagna |
 | Guest Card Trentino / Val di Sole | gratis sul trenino Trento-Male e sui bus del Trentino |
@@ -244,6 +246,24 @@ Il prezzo di listino non viene mai cancellato: accanto al costo effettivo
 resta sempre quanto costerebbe senza abbonamento, con la percentuale
 coperta. Il "trenitalia_regionale" generico deduce la regione dal punto di
 partenza (quello di casa).
+
+**Il Flex non è gratis.** Gli abbonamenti a tariffa fissa coprono la tratta e
+basta; quelli a **tariffa chilometrica** (altoadigemobilita Flex) coprono la
+tratta ma si paga **il km**: il motore calcola i km coperti, applica il
+minimo di 10 km tariffari a viaggio e il tetto di 22 €/giorno, e restituisce
+il costo vero invece di azzerarlo. Gli scaglioni sono annuali e l'app non sa
+quanti km hai già percorso quest'anno: usa il primo (0,13 €/km), il più
+caro, quindi la stima non è mai ottimista.
+
+```
+treno Merano -> Bolzano, altoadigemobilita Flex
+  24 km tariffati a 0,13 EUR/km  ->  3,18 EUR invece di 5,90 EUR
+```
+
+La copertura geografica è calcolata **campionando** il percorso (12 punti per
+tratto) invece di stimarla dagli estremi: su una tratta lunga la stima dagli
+estremi sbagliava di parecchio (la distanza dal Trentino a Merano non è la
+distanza percorsa per uscire dall'Alto Adige).
 
 ### Gli sconti X-GO: le condizioni vere
 

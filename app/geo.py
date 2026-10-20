@@ -86,6 +86,17 @@ CITIES: dict[str, tuple[float, float]] = {
     "arezzo": (43.4633, 11.8796),
     "cortina d'ampezzo": (46.5405, 12.1357),
     "cortina": (46.5405, 12.1357),
+    # Alto Adige: i centri della provincia serviti dai pass altoadigemobilita.
+    "bressanone": (46.7084, 11.6556),
+    "merano": (46.6727, 11.1590),
+    "brunico": (46.7975, 12.0839),
+    "silandro": (46.6283, 10.7672),
+    "egna": (46.3140, 11.4050),
+    "vipiteno": (46.9404, 11.2881),
+    "laives": (46.3667, 11.3750),
+    "appiano": (46.4603, 11.3319),
+    "san candido": (46.5836, 12.6567),
+    "ponte gardena": (46.5858, 11.8106),
 }
 
 

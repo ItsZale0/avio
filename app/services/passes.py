@@ -181,9 +181,90 @@ _INTEGRATI: dict[str, dict[str, Any]] = {
             "(Brennero-Bolzano-Trento, Val Venosta, Merano-Bolzano, Val Pusteria), "
             "autobus urbani ed extraurbani, impianti di risalita, trenino del "
             "Renon, funicolare della Mendola. Fix365 250 EUR/anno, Fix30 "
-            "39 EUR/mese, U26 153 EUR/anno o 21 EUR/mese, U19 max 21 EUR/anno."
+            "39 EUR/mese, U26 153 EUR/anno o 21 EUR/mese, U19 21 EUR/anno "
+            "(gratis con Fix365), 65+ 21, 77 o 153 EUR/anno. Se invece "
+            "paghi a km, il pass e' l'altoadigemobilita Flex."
         ),
         "fonte": "https://www.suedtirolmobil.info/it/ticket/altoadigemobilita-pass-la-connessione-di-cui-hai-bisogno",
+    },
+    "altoadigemobilita_flex": {
+        "nome": "altoadigemobilita Flex (tariffa chilometrica)",
+        "area": [
+            "bolzano",
+            "merano",
+            "bressanone",
+            "brunico",
+            "cortina d'ampezzo",
+            "silandro",
+            "egna",
+            "vipiteno",
+            "laives",
+            "san candido",
+        ],
+        "raggio_km": 20,
+        "copre": {"train", "bus", "tram", "transit"},
+        "solo_regionali": True,
+        "parziale": True,
+        "chiavi": ["flex", "altoadigemobilita flex"],
+        "tariffa_km": {
+            "fasce": [
+                (1000, 0.13),
+                (2000, 0.08),
+                (10000, 0.03),
+                (20000, 0.02),
+                (None, 0.0),
+            ],
+            "min_km": 10,
+            "tetto_giornaliero": 22.0,
+        },
+        "nota": (
+            "Pass annuale a tariffa chilometrica: 0,13 EUR/km nella prima "
+            "fascia, poi 0,08, 0,03, 0,02 e infine 0 EUR/km. Massimo 650 "
+            "EUR/anno e massimo 22 EUR al giorno. Minimo 10 km tariffari a "
+            "viaggio (5 km per gli autobus fuori da Bolzano e Merano). "
+            "Valido su treni, autobus e funivie dell'Alto Adige: per il "
+            "Trentino e il Tirolo serve l'Euregio Ticket."
+        ),
+        "fonte": "https://www.suedtirolmobil.info/it/ticket/altoadigemobilita-pass-la-connessione-di-cui-hai-bisogno",
+    },
+    "altoadigemobilita_flexfamily": {
+        "nome": "altoadigemobilita FlexFamily (famiglie, tariffa chilometrica)",
+        "area": [
+            "bolzano",
+            "merano",
+            "bressanone",
+            "brunico",
+            "cortina d'ampezzo",
+            "silandro",
+            "egna",
+            "vipiteno",
+            "laives",
+            "san candido",
+        ],
+        "raggio_km": 20,
+        "copre": {"train", "bus", "tram", "transit"},
+        "solo_regionali": True,
+        "parziale": True,
+        "chiavi": ["flexfamily", "family pass"],
+        "tariffa_km": {
+            "fasce": [
+                (1000, 0.11),
+                (2000, 0.07),
+                (10000, 0.02),
+                (20000, 0.02),
+                (None, 0.0),
+            ],
+            "min_km": 10,
+            "tetto_giornaliero": 22.0,
+        },
+        "nota": (
+            "Pass annuale personale per famiglie (ex Euregio Family Pass) a "
+            "tariffa chilometrica ridotta: 0,11 EUR/km nella prima fascia, "
+            "poi 0,07, 0,02, 0,02 e 0. Massimo 540 EUR/anno e 22 EUR al "
+            "giorno. Tessera prepagata: ricarica minima 20 EUR, credito "
+            "minimo 10 EUR."
+        ),
+        "fonte": "https://www.suedtirolmobil.info/it/ticket/trovaticket/altoadigemobilita-flexfamily-pass",
     },
     "euregio_ticket": {
         "nome": "Euregio Ticket (Trentino, Alto Adige, Tirolo)",
@@ -404,6 +485,18 @@ def trova_per_testo(testo: str) -> str | None:
     if not testo:
         return None
     basso = " ".join(testo.lower().split())
+    # 0) le parole chiave esplicite: il segnale piu' forte in assoluto
+    #    ("ho il pass flex" -> altoadigemobilita Flex, non l'abbonamento
+    #    generico altoadigemobilita).
+    migliore_chiave: tuple[int, str] | None = None
+    for chiave, dati in PASS_TYPES.items():
+        for parola in dati.get("chiavi") or []:
+            parola = parola.lower()
+            if re.search(r"(?<![a-z0-9])" + re.escape(parola) + r"(?![a-z0-9])", basso):
+                if migliore_chiave is None or len(parola) > migliore_chiave[0]:
+                    migliore_chiave = (len(parola), chiave)
+    if migliore_chiave:
+        return migliore_chiave[1]
     # 1) le parole distintive del nome: il segnale piu' forte
     #    ("abbonamento urbano di Venezia" -> quello di Venezia, non quello
     #    generico).
@@ -533,29 +626,22 @@ def _is_regional_train(offer: Any) -> bool:
     return False
 
 
+# I centri dell'area di un abbonamento non cambiano mai: si calcolano una
+# volta sola (la copertura viene ricalcolata per ogni offerta).
+_AREA_CACHE: dict[str, list[tuple[float, float]]] = {}
+
+
 def _area_points(pass_info: dict[str, Any]) -> list[tuple[float, float]]:
+    tipo_id = str(pass_info.get("tipo") or "")
+    if tipo_id in _AREA_CACHE:
+        return _AREA_CACHE[tipo_id]
     points: list[tuple[float, float]] = []
     for name in pass_info.get("area") or []:
         coords = CITIES.get(str(name).lower())
         if coords:
             points.append((coords[0], coords[1]))
+    _AREA_CACHE[tipo_id] = points
     return points
-
-
-def _distance_to_area(
-    lat: float | None, lon: float | None, points: list[tuple[float, float]], radius: float
-) -> float | None:
-    """Distanza dal punto all'area coperta (0 se dentro)."""
-    if lat is None or lon is None or not points:
-        return None
-    best = None
-    for plat, plon in points:
-        dist = haversine_km(lat, lon, plat, plon)
-        if best is None or dist < best:
-            best = dist
-    if best is None:
-        return None
-    return max(0.0, best - radius)
 
 
 def _station_coords(name: Any) -> tuple[float, float] | None:
@@ -600,28 +686,46 @@ def _route_points(offer: Any) -> list[tuple[float, float]]:
     return unici
 
 
+# Quanti punti si campionano su ogni tratto del percorso.
+_CAMPIONI_TRATTO = 12
+
+
+def _punto_dentro(
+    lat: float, lon: float, punti_area: list[tuple[float, float]], raggio: float
+) -> bool:
+    """Il punto e' dentro l'area (distanza da uno dei centri <= raggio)?"""
+    for plat, plon in punti_area:
+        dist = haversine_km(lat, lon, plat, plon)
+        if dist is not None and dist <= raggio:
+            return True
+    return False
+
+
 def _segment_covered(
     primo: tuple[float, float],
     secondo: tuple[float, float],
     punti_area: list[tuple[float, float]],
     raggio: float,
 ) -> tuple[float, float]:
-    """Quanti km del tratto sono dentro l'area (e quanto e' lungo il tratto)."""
+    """Quanti km del tratto sono dentro l'area (e quanto e' lungo il tratto).
+
+    Il tratto viene campionato: conta la parte che cade dentro l'area, non
+    una stima dagli estremi (che su un tratto lungo sbaglia di parecchio).
+    """
     lunghezza = haversine_km(primo[0], primo[1], secondo[0], secondo[1])
     if not lunghezza:
         return 0.0, 0.0
-    fuori_primo = _distance_to_area(primo[0], primo[1], punti_area, raggio)
-    fuori_secondo = _distance_to_area(secondo[0], secondo[1], punti_area, raggio)
-    if fuori_primo is None or fuori_secondo is None:
+    if not punti_area:
         return 0.0, lunghezza
-    if fuori_primo == 0 and fuori_secondo == 0:
-        return lunghezza, lunghezza
-    if fuori_primo == 0:
-        return max(0.0, lunghezza - fuori_secondo), lunghezza
-    if fuori_secondo == 0:
-        return max(0.0, lunghezza - fuori_primo), lunghezza
-    # Il tratto non tocca l'area: niente coperto (stima prudente).
-    return 0.0, lunghezza
+    dentro = 0
+    for i in range(_CAMPIONI_TRATTO + 1):
+        t = i / _CAMPIONI_TRATTO
+        lat = primo[0] + (secondo[0] - primo[0]) * t
+        lon = primo[1] + (secondo[1] - primo[1]) * t
+        if _punto_dentro(lat, lon, punti_area, raggio):
+            dentro += 1
+    quota = dentro / (_CAMPIONI_TRATTO + 1)
+    return lunghezza * quota, lunghezza
 
 
 def regione_di(lat: float | None, lon: float | None) -> str | None:
@@ -666,28 +770,35 @@ def _regione_del_viaggio(offer: Any) -> list[tuple[float, float]]:
     return []
 
 
-def coverage(
+def _copertura_base(
     pass_info: dict[str, Any], offer: Any, when: date | None = None
-) -> tuple[float, str]:
-    """Quota del viaggio coperta dall'abbonamento (0-1) e la zona.
+) -> tuple[float, float, str, bool] | None:
+    """Quanto del viaggio copre l'abbonamento, misurato in km.
 
-    Per gli abbonamenti regionali la copertura e' parziale: si somma, tratto
-    per tratto, la parte di viaggio che cade dentro l'area dell'abbonamento.
-    Un treno che entra in Trentino a meta' percorso e' coperto solo da li'.
+    Ritorna (km coperti, km totali, zona, copertura completa) oppure None se
+    l'abbonamento non copre niente. Per gli abbonamenti regionali la copertura
+    e' parziale: si somma, tratto per tratto, la parte di viaggio che cade
+    dentro l'area dell'abbonamento. Un treno che entra in Trentino a meta'
+    percorso e' coperto solo da li'.
     """
     if _is_expired(pass_info, when):
-        return 0.0, ""
+        return None
     tipo = PASS_TYPES.get(str(pass_info.get("tipo") or ""))
     if not tipo:
-        return 0.0, ""
+        return None
     mode = str(getattr(offer, "mode", "") or "")
     if mode not in tipo["copre"]:
-        return 0.0, ""
+        return None
     if tipo.get("solo_regionali") and mode == "train" and not _is_regional_train(offer):
-        return 0.0, ""
+        return None
+
+    percorso = _route_points(offer)
 
     if not tipo.get("parziale"):
-        return 1.0, "tutto il viaggio"
+        lunghezza = 0.0
+        for primo, secondo in zip(percorso, percorso[1:]):
+            lunghezza += haversine_km(primo[0], primo[1], secondo[0], secondo[1])
+        return lunghezza, lunghezza, "tutto il viaggio", True
 
     punti_area = _area_points(tipo)
     if not punti_area and str(pass_info.get("tipo")) == "trenitalia_regionale":
@@ -695,13 +806,11 @@ def coverage(
         # parte il viaggio.
         punti_area = _regione_del_viaggio(offer)
     if not punti_area:
-        return 0.0, ""
+        return None
+    if len(percorso) < 2:
+        return None
 
     raggio = float(tipo.get("raggio_km") or 40)
-    percorso = _route_points(offer)
-    if len(percorso) < 2:
-        return 0.0, ""
-
     coperto = 0.0
     totale = 0.0
     for primo, secondo in zip(percorso, percorso[1:]):
@@ -709,11 +818,45 @@ def coverage(
         coperto += km_coperti
         totale += km_totali
     if not totale:
+        return None
+    return coperto, totale, "parte del viaggio coperta", False
+
+
+def coverage(
+    pass_info: dict[str, Any], offer: Any, when: date | None = None
+) -> tuple[float, str]:
+    """Quota del viaggio coperta dall'abbonamento (0-1) e la zona."""
+    base = _copertura_base(pass_info, offer, when)
+    if base is None:
         return 0.0, ""
-    quota = min(1.0, coperto / totale)
+    km_coperti, km_totali, zona, completo = base
+    if completo:
+        return 1.0, zona
+    quota = min(1.0, km_coperti / km_totali)
     if quota <= 0.01:
         return 0.0, ""
-    return quota, "parte del viaggio coperta"
+    return quota, zona
+
+
+def _costo_tariffa_km(
+    tariffa: dict[str, Any], km_coperti: float
+) -> tuple[float, float, str]:
+    """Costo in euro di un pass a tariffa chilometrica.
+
+    Ritorna (costo, km tariffati, descrizione). Gli scaglioni sono annuali e
+    l'app non sa quanti km hai gia' percorso quest'anno: usa il primo
+    scaglione, il piu' caro, quindi la stima non e' mai ottimista.
+    """
+    fasce = tariffa.get("fasce") or []
+    prezzo_km = float(fasce[0][1]) if fasce else 0.0
+    min_km = float(tariffa.get("min_km") or 0)
+    tetto = float(tariffa.get("tetto_giornaliero") or 0)
+    km_tariffati = max(min_km, km_coperti)
+    costo = km_tariffati * prezzo_km
+    if tetto:
+        costo = min(costo, tetto)
+    descrizione = f"{prezzo_km:.2f} EUR/km (primo scaglione)"
+    return costo, km_tariffati, descrizione
 
 
 def pass_covers(pass_info: dict[str, Any], offer: Any, when: date | None = None) -> bool:
@@ -730,16 +873,20 @@ def apply_passes(
         depart = getattr(offer, "depart_at", None)
         if isinstance(depart, datetime):
             when = depart.date()
-    migliore: tuple[float, dict[str, Any], str] | None = None
+    migliore: tuple[float, dict[str, Any], str, float] | None = None
     for pass_info in passes:
-        quota, zona = coverage(pass_info, offer, when)
+        base = _copertura_base(pass_info, offer, when)
+        if base is None:
+            continue
+        km_coperti, km_totali, zona, completo = base
+        quota = 1.0 if completo else (min(1.0, km_coperti / km_totali) if km_totali else 0.0)
         if quota <= 0.01:
             continue
         if migliore is None or quota > migliore[0]:
-            migliore = (quota, pass_info, zona)
+            migliore = (quota, pass_info, zona, km_coperti)
     if migliore is None:
         return offer
-    quota, pass_info, zona = migliore
+    quota, pass_info, zona, km_coperti = migliore
     tipo = PASS_TYPES.get(str(pass_info.get("tipo")), {})
     details = dict(getattr(offer, "details", None) or {})
     details["pass"] = pass_info.get("nome") or pass_name(str(pass_info.get("tipo")))
@@ -752,7 +899,19 @@ def apply_passes(
         details["pass_note_parziale"] = (
             f"copre solo il {round(quota * 100)}% del viaggio"
         )
-    details["net_cost"] = round((offer.price or 0.0) * (1 - quota), 2)
+    tariffa = tipo.get("tariffa_km")
+    if tariffa:
+        # Pass a tariffa chilometrica: la parte coperta non e' gratis, si
+        # paga il chilometro. La parte scoperta si paga come sempre.
+        costo_km, km_tariffati, descrizione = _costo_tariffa_km(tariffa, km_coperti)
+        parte_scoperta = (offer.price or 0.0) * (1 - quota)
+        # Non si paga mai piu' del biglietto.
+        details["net_cost"] = round(min(offer.price or 0.0, parte_scoperta + costo_km), 2)
+        details["pass_tariffa"] = descrizione
+        details["pass_km"] = round(km_tariffati)
+        details["pass_costo_km"] = round(costo_km, 2)
+    else:
+        details["net_cost"] = round((offer.price or 0.0) * (1 - quota), 2)
     offer.details = details
     offer.net_cost = details["net_cost"]
     return offer

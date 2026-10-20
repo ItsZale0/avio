@@ -1169,20 +1169,36 @@ function offerCard(offer, suppressNew = false) {
     );
   }
   if (offer.details?.pass) {
-    const quota = offer.details.pass_quota;
-    const quanto = quota != null && quota < 100 ? ` al ${quota}%` : "";
-    const parz = offer.details.pass_note_parziale
-      ? ` · ${offer.details.pass_note_parziale}`
-      : "";
-    detailBits.push(
-      `🎟️ coperto${quanto} da ${esc(offer.details.pass)}${parz}: non lo paghi`
-    );
+    const tariffa = offer.details.pass_tariffa;
+    if (tariffa) {
+      // Pass a tariffa chilometrica: non e' gratis, si paga il km.
+      detailBits.push(
+        `🎟️ ${esc(offer.details.pass)}: ${esc(tariffa)}, ` +
+        `${offer.details.pass_km} km tariffati (~${euro(offer.details.pass_costo_km)})`
+      );
+    } else {
+      const quota = offer.details.pass_quota;
+      const quanto = quota != null && quota < 100 ? ` al ${quota}%` : "";
+      const parz = offer.details.pass_note_parziale
+        ? ` · ${offer.details.pass_note_parziale}`
+        : "";
+      detailBits.push(
+        `🎟️ coperto${quanto} da ${esc(offer.details.pass)}${parz}: non lo paghi`
+      );
+    }
   }
 
+  // Con un pass a tariffa chilometrica si paga il km: il prezzo vero e'
+  // quello con l'abbonamento, quello del biglietto resta come riferimento.
+  const nettoKm = offer.details?.pass_tariffa ? offer.details.net_cost : null;
   const priceHtml = offer.price == null
     ? (offer.details?.orario_gtfs
         ? `<div class="price" style="font-size:14px;color:var(--muted)">solo orario<small>prezzo da tariffa ufficiale</small></div>`
         : `<div class="price" style="font-size:15px;color:var(--muted)">da verificare</div>`)
+    : nettoKm != null && nettoKm < offer.price
+    ? `<div class="price"><span class="was">${euro(offer.price)}</span>${euro(nettoKm)}
+        <small>con il tuo pass, il km</small>
+      </div>`
     : `<div class="price">${offer.prev_price && offer.prev_price > offer.price
         ? `<span class="was">${euro(offer.prev_price)}</span>` : ""}${euro(offer.price)}
         ${offer.price_is_estimate ? "<small>stima, non prezzo finale</small>" : ""}

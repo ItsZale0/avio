@@ -196,6 +196,20 @@ def _templated_explanation(candidate: Candidate, watch: dict[str, Any]) -> str:
             f"({candidate.net_total:.2f} EUR effettivi invece di "
             f"{candidate.total_price:.2f} EUR)."
         )
+    else:
+        # Pass a tariffa chilometrica (altoadigemobilita Flex): non azzera
+        # il biglietto, ma si paga solo il km.
+        for leg in candidate.legs:
+            dettagli = getattr(leg, "details", None) or {}
+            if not dettagli.get("pass_tariffa"):
+                continue
+            coperto = (
+                f" Con {dettagli.get('pass')} paghi il chilometro "
+                f"({dettagli.get('pass_km')} km, "
+                f"{dettagli.get('pass_costo_km', 0):.2f} EUR) invece del "
+                f"biglietto."
+            )
+            break
 
     if candidate.kind in ("combo", "triple"):
         parts = []
@@ -319,6 +333,11 @@ def _pass_question(prefs: dict[str, Any]) -> list[dict]:
                     "id": "altoadigemobilita",
                     "label": "altoadigemobilita (Alto Adige)",
                     "prefs": {"add_pass": "altoadigemobilita"},
+                },
+                {
+                    "id": "altoadigemobilita_flex",
+                    "label": "altoadigemobilita Flex (Alto Adige, a tariffa a km)",
+                    "prefs": {"add_pass": "altoadigemobilita_flex"},
                 },
                 {
                     "id": "euregio_ticket",

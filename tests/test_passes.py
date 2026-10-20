@@ -54,7 +54,13 @@ def make_train(price=20.0, treni="Regionale", external_id="t1", depart=DEPART):
         dropoff_lat=44.5054,
         dropoff_lon=11.3426,
         duration_min=240,
-        details={"cambi": 0, "treni": treni, "tappe": []},
+        # Le tappe contano: il treno esce dalla Lombardia a Piacenza, e senza
+        # quella tappa la copertura viene stimata sul segmento intero.
+        details={
+            "cambi": 0,
+            "treni": treni,
+            "tappe": [{"da": "Milano Centrale", "a": "Piacenza Centrale"}],
+        },
     )
 
 

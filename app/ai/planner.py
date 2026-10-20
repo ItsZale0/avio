@@ -89,7 +89,14 @@ class Candidate:
 
     @property
     def covered(self) -> bool:
-        return bool(self.passes) and self.net_total < self.total_price - 0.01
+        if not self.passes:
+            return False
+        # Un pass a tariffa chilometrica (altoadigemobilita Flex) non
+        # azzera: si paga il km percorso.
+        for leg in self.legs:
+            if (getattr(leg, "details", None) or {}).get("pass_tariffa"):
+                return False
+        return self.net_total < self.total_price - 0.01
 
     @property
     def changes(self) -> int:
