@@ -389,17 +389,20 @@ async function loadRuntimeConfig() {
   // Il puntatore piu' fresco non basta: il tunnel puo' essere caduto e
   // l'URL vecchio restare scritto nel file. Si tiene il primo che
   // risponde davvero, cosi' il link GitHub porta sempre a quello online.
-  let scelto = unici[0];
+  let vivo = null;
   for (const item of unici) {
     if (await backendVivo(item.base)) {
-      scelto = item;
+      vivo = item;
       break;
     }
   }
+  const scelto = vivo || unici[0];
   API_FALLBACKS = [scelto.base, ...unici.map((i) => i.base).filter((b) => b !== scelto.base)];
   API_BASE = scelto.base;
   showApiHint();
-  passaAlTunnel();
+  // Si passa al tunnel solo se ha risposto: su un indirizzo morto si
+  // resterebbe bloccati, meglio la pagina di GitHub che riprova da sola.
+  if (vivo) passaAlTunnel();
 }
 
 /* L'API risponde? (un tunnel "vivo" ma appeso non risponde: si scarta).
