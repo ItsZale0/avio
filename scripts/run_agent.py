@@ -31,12 +31,42 @@ LOG_DIR = DATA_DIR / "logs"
 PID_FILE = DATA_DIR / "agent.pid"
 STOP_FILE = DATA_DIR / "agent.stop"
 
+# Le impostazioni nel file .env valgono anche per il supervisore.
+if str(BASE) not in sys.path:
+    sys.path.insert(0, str(BASE))
+try:
+    from app.config import load_dotenv
+
+    load_dotenv()
+except Exception:  # noqa: BLE001 - senza .env si va con i valori di sotto
+    pass
+
 PORT = int(os.getenv("PORT", "8787"))
+# Dove il server ascolta. Di default solo sul PC (127.0.0.1): con HOST=0.0.0.0
+# l'app si raggiunge anche dagli altri dispositivi della rete (telefono,
+# tablet) via http://<ip-del-pc>:<porta>. Serve una password attiva.
+HOST = os.getenv("HOST", "127.0.0.1")
 RESTART_DELAY = 5  # secondi fra un riavvio e l'altro
 
 
 def _now() -> str:
     return datetime.now().strftime("%H:%M:%S")
+
+
+def _comando_agente(python: str) -> list[str]:
+    """Il comando che avvia il server (ascolta su HOST:PORT)."""
+    return [
+        python,
+        "-m",
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        HOST,
+        "--port",
+        str(PORT),
+        "--log-level",
+        "warning",
+    ]
 
 
 def _log(stream_name: str, message: str) -> None:
@@ -102,21 +132,7 @@ def main() -> int:
     children: dict[str, subprocess.Popen] = {}
 
     def start_all() -> None:
-        children["agente"] = _start(
-            "agente",
-            [
-                python,
-                "-m",
-                "uvicorn",
-                "app.main:app",
-                "--host",
-                "127.0.0.1",
-                "--port",
-                str(PORT),
-                "--log-level",
-                "warning",
-            ],
-        )
+        children["agente"] = _start("agente", _comando_agente(python))
         children["tunnel"] = _start(
             "tunnel", [python, "-u", "scripts/tunnel.py", "--port", str(PORT)]
         )
@@ -131,21 +147,7 @@ def main() -> int:
                 # Il figlio e' morto: lo rilancio.
                 _log("supervisore", f"{name} terminato (codice {process.returncode}): rilancio")
                 if name == "agente":
-                    children[name] = _start(
-                        "agente",
-                        [
-                            python,
-                            "-m",
-                            "uvicorn",
-                            "app.main:app",
-                            "--host",
-                            "127.0.0.1",
-                            "--port",
-                            str(PORT),
-                            "--log-level",
-                            "warning",
-                        ],
-                    )
+                    children[name] = _start("agente", _comando_agente(python))
                 else:
                     children[name] = _start(
                         "tunnel", [python, "-u", "scripts/tunnel.py", "--port", str(PORT)]

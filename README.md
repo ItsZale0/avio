@@ -18,6 +18,20 @@ Al primo avvio crea `.venv`, installa le dipendenze e apre il server su:
 
 **http://127.0.0.1:8787**
 
+### Dal telefono, senza tunnel: l'IP di rete
+
+Nel `.env` c'è `HOST`: con `HOST=0.0.0.0` il server ascolta su tutta la rete,
+cosi dal telefono (stesso Wi-Fi) si apre direttamente:
+
+```
+http://<ip-del-pc>:8787
+```
+
+L'IP si vede con `ipconfig` (Wi-Fi) oppure con
+`python scripts\agent_status.py`. Con `HOST=127.0.0.1` (predefinito) l'app
+resta raggiungibile solo dal PC. Attenzione: l'app è protetta da password, ma
+chi è sulla stessa rete può raggiungere la porta.
+
 Lo script avvia anche il **tunnel Cloudflare**, che rende l'app raggiungibile
 dal telefono. Il tunnel "quick" assegna un URL nuovo a ogni avvio: per questo
 `scripts/tunnel.py` aggiorna da solo il `.env`, la variabile GitHub
