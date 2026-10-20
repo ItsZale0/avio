@@ -269,6 +269,26 @@ Il treno escluso dalla promozione resta comunque in lista, con la ragione
 nasconderlo. Il prezzo scontato è marcato come **stima** e mostra il
 listino accanto.
 
+### BlaBlaCar: lettura dei dati reali
+
+L'API pubblica e' stata dismessa e il sito e' protetto, ma la pagina di
+ricerca contiene gia' la risposta JSON del backend, sepolta in
+`window["__INFRASTRUCTURE__cache"]` (la cache di infrastruttura).
+
+`app/services/blablacar_browser.py` apre la pagina con un browser vero
+(Chrome di sistema via Playwright, contesto non persistente: con un profilo
+nuovo il filtro anti-bot mostra la pagina di verifica), lascia che la verifica
+si risolva, accetta la banner dei cookie e legge la cache. I risultati
+valgono 15 minuti in memoria, cosi' il browser non si riapre a ogni giro.
+
+`app/adapters/blablacar.py` ricava per ogni viaggio: prezzo reale (dal
+tokenizzato), orario di partenza e arrivo, punto di ritrovo esatto con le
+coordinate, e la scarsita' ("ultimi posti disponibili"). Se il punto di
+ritrovo non e' noto (i passaggi in auto lo sceglie l'autista), la carta lo
+dice.
+
+Nessuna stima: senza browser l'adapter non propone nulla.
+
 ### Il tempo, i cambi e le priorità
 
 Il punteggio (`app/scoring.py`) pesa sei fattori, non solo il prezzo:

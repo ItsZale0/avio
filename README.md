@@ -142,20 +142,27 @@ Senza punti esatti l'app **te lo chiede** (domanda "Dove vuoi essere preso
 esattamente?") e la risposta libera vale: scrivi "Piazza Vittoria" e il
 punto viene salvato e geolocalizzato.
 
-### BlaBlaCar, senza API
+### BlaBlaCar: i dati veri, letti dal sito
 
-L'API pubblica di BlaBlaCar e' stata dismessa e il sito e' protetto: qui non
-si inventano prezzi. Quello che fa l'app:
+L'API pubblica di BlaBlaCar e' stata dismessa e il sito e' protetto da un
+filtro anti-bot. Ma la pagina di ricerca contiene gia' la risposta JSON del
+backend: l'app la apre con un **browser vero** (Chrome di sistema, via
+Playwright), lascia che il filtro si risolva da solo e legge i dati.
 
-- **stima dichiarata** del passaggio (~0,10 EUR/km a posto, minimo 2 EUR) con
-  la distanza stradale stimata: la carta porta sempre il badge *Stima* e
-  l'AI lo dice ("prezzo stimato, non garantito");
-- **tempo di viaggio** realistico (70 km/h + 20 min per l'incontro) e
-  **porta a porta** calcolato dal tuo punto di ritrovo;
-- **link reale** con citta' e data: un tocco e vedi i viaggi veri.
+Per ogni viaggio l'app prende il **prezzo reale**, l'orario di partenza e
+arrivo, il **punto di ritrovo esatto** ("Autostazione San Donato", "Assago
+M2") con le coordinate, e se restano pochi posti. Nessuna stima: se il
+browser non e' disponibile l'adapter non propone nulla e lascia il link.
 
-Il punto di ritrovo del passaggio lo sceglie l'autista: se ti allontani dal
-punto che hai indicato, i minuti a piedi crescono e vanno aggiunti a mano.
+E con il punto di ritrovo esatto l'app fa la cosa che solo un'agenzia fa:
+calcola i minuti a piedi per arrivarci davvero e confronta il totale
+porta a porta.
+
+```
+BlaBlaCar Bus  11,48 EUR  03:15 -> 11:50  punto: Autostazione Lampugnano
+BlaBlaCar Bus  29,99 EUR  00:30 -> 08:50  punto: Autostazione San Donato
+BlaBlaCar (passaggio in auto)  26,19 EUR  01:50 -> 07:50
+```
 
 ### Rispondi a parole
 

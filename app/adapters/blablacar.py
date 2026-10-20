@@ -1,138 +1,253 @@
-"""BlaBlaCar - integrazione "nativa" senza API pubblica.
+"""BlaBlaCar - passaggi in auto e autobus, con i DATI VERI.
 
-L'API pubblica di BlaBlaCar e' stata dismessa e il sito e' protetto da un
-filtro anti-bot: non si possono leggere i passaggi pubblicamente. Quindi
-qui NON si inventano offerte ne' si fingono prezzi reali.
+BlaBlaCar non ha piu' un'API pubblica e il sito e' protetto da un filtro
+anti-bot. I dati si ottengono aprendo la pagina di ricerca con un browser
+vero (vedi `app/services/blablacar_browser.py`): la pagina contiene gia' la
+risposta JSON del backend, con prezzi, orari e punti di ritrovo reali.
 
-Quello che si fa e' utile comunque:
+Quello che l'app ricava per ogni viaggio:
+- il prezzo vero (non una stima);
+- l'orario di partenza e di arrivo;
+- il punto di ritrovo esatto ("Autostazione San Donato"), con le coordinate
+  -> l'app calcola i minuti a piedi per arrivarci davvero;
+- se il posto e' tra gli ultimi.
 
-1. si stima il costo del passaggio con la regola che usa il mercato
-   (~0,10 EUR per km a posto, minimo 2 EUR) e il tempo di viaggio con la
-   velocita' media: la stima e' **marcata come stima** (price_is_estimate),
-   mai come prezzo garantito;
-2. si calcola il tempo porta a porta partendo dal punto di ritrovo che
-   l'utente ha indicato: e' la parte che il sito non puo' dirti, e spesso
-   e' quella che conta (il punto esatto lo sceglie l'autista);
-3. si lascia il link di ricerca reale, con citta', data e punto di ritrovo:
-    un tocco e si vedono i viaggi veri.
-
-La regola dei prezzi e' una stima di mercato, non un dato della fonte: per
-questo l'offerta porta sempre la scritta "stima" e il link al sito.
+Nessuna stima, nessun prezzo inventato: se il browser non e' disponibile
+l'adapter non propone nulla e lascia il link di ricerca.
 """
 
 from __future__ import annotations
 
-from datetime import timedelta
+import asyncio
+import logging
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any
 
-from ..geo import haversine_km
-from ..timeutil import parse_dt
+from ..timeutil import ROME
 from .base import Adapter, AdapterResult, Offer, SearchContext
 
-# Prezzo indicativo per km a posto (il conducente decide, la media di
-# mercato e' questa) e minimo sotto cui non si scende.
-PREZZO_PER_KM = 0.10
-PREZZO_MINIMO = 2.0
-# Velocita' media in auto: 70 km/h.
-KM_ORARI = 70.0
-# La strada e' piu' lunga della linea d'aria (in Italia, di norma, ~30% in piu').
-FATTORE_STRADA = 1.3
-# Tempo da mettere per trovare l'autista e farsi trovare al punto di ritrovo.
-MARGINE_INCONTRO_MIN = 20
+log = logging.getLogger("carpool.blablacar")
+
+BASE = Path(__file__).resolve().parent.parent.parent
+PROFILO = BASE / "data" / "blablacar-profile"
+
+# La ricerca mostra i viaggi in ordine di partenza: la prima pagina basta.
+MAX_VIAGGI = 12
+
+
+def _prezzo(prezzo_grezzo: Any) -> float | None:
+    """Il prezzo vero, letto dal tokenizzato ("29", ",99", " EUR")."""
+    if not isinstance(prezzo_grezzo, dict):
+        return None
+    parti = prezzo_grezzo.get("tokenizedPrice")
+    if not isinstance(parti, list) or not parti:
+        return None
+    testo = ""
+    for parte in parti:
+        if not isinstance(parte, dict):
+            continue
+        valore = str(parte.get("value") or "").strip()
+        if parte.get("type") == "CURRENCY":
+            continue
+        testo += valore
+    testo = testo.replace(".", "").replace(",", ".").replace(" ", "")
+    try:
+        return round(float(testo), 2)
+    except (TypeError, ValueError):
+        return None
+
+
+def _orario(testo: str | None) -> tuple[int, int] | None:
+    """'00:30' -> (ora, minuto)."""
+    if not testo or ":" not in testo:
+        return None
+    ora, _, minuto = testo.partition(":")
+    try:
+        return int(ora), int(minuto)
+    except (TypeError, ValueError):
+        return None
+
+
+def _momento(giorno, ora_e_minuto: tuple[int, int] | None) -> datetime | None:
+    """Un datetime (Rome) nel giorno della ricerca."""
+    if giorno is None or ora_e_minuto is None:
+        return None
+    ora, minuto = ora_e_minuto
+    try:
+        return datetime(
+            giorno.year, giorno.month, giorno.day, ora, minuto, tzinfo=ROME
+        )
+    except ValueError:
+        return None
 
 
 class BlaBlaCarAdapter(Adapter):
     id = "blablacar"
-    label = "BlaBlaCar (passaggi in auto)"
+    label = "BlaBlaCar (dati reali)"
     description = (
-        "Passaggi in auto. Senza API pubblica il prezzo e' una stima di "
-        "mercato: la ricerca reale si apre con un tocco sul link."
+        "Passaggi in auto e autobus BlaBlaCar con prezzi, orari e punti di "
+        "ritrovo reali (la ricerca viene letta dal sito con un browser)."
     )
-    modes = ("rideshare",)
+    modes = ("rideshare", "bus")
+
+    def search_url(self, ctx: SearchContext) -> str:
+        """L'URL della ricerca sul sito."""
+        from urllib.parse import quote
+
+        partenza = ctx.depart_after or ctx.arrive_by
+        giorno = partenza.astimezone(ROME).strftime("%Y-%m-%d")
+        return (
+            "https://www.blablacar.it/search"
+            f"?fn={quote(ctx.from_place or '')}"
+            f"&tn={quote(ctx.to_place or '')}"
+            f"&db={giorno}"
+            f"&seats={max(1, ctx.passengers)}"
+        )
 
     async def search(self, ctx: SearchContext) -> AdapterResult:
-        hints: list[str] = []
-        arrive_by = ctx.arrive_by
-        if arrive_by is None:
+        from ..services import blablacar_browser
+
+        if not blablacar_browser.browser_disponibile():
             return AdapterResult(
-                hints=["BlaBlaCar: manca l'orario di arrivo, niente da stimare."]
+                hints=[
+                    "BlaBlaCar: per leggere i viaggi serve un browser. "
+                    "Installa Playwright (pip install playwright) e Chrome: "
+                    "la ricerca si apre con un tocco nella scheda «Link utili»."
+                ]
             )
 
-        # La distanza: fra i due punti indicati (o le citta').
-        distance = ctx.distance_km
-        if not distance or distance <= 0:
-            hints.append(
-                "BlaBlaCar: non riesco a calcolare la distanza, apro la ricerca."
+        url = self.search_url(ctx)
+        try:
+            dati = await asyncio.to_thread(
+                blablacar_browser.scarica_ricerca, url, PROFILO, 45
             )
-            return AdapterResult(hints=hints)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("BlaBlaCar non raggiungibile: %s", exc)
+            return AdapterResult(
+                hints=[
+                    "BlaBlaCar: non sono riuscito a leggere i viaggi "
+                    f"({type(exc).__name__}). La ricerca si apre con un tocco "
+                    "nella scheda «Link utili»."
+                ]
+            )
 
-        # La strada e' piu' lunga della linea d'aria: in Italia, di norma, va
-        # un 30% circa in piu'. Serve per stimare tempi e prezzi credibili.
-        strada = distance * FATTORE_STRADA
+        if not dati:
+            return AdapterResult(
+                hints=[
+                    "BlaBlaCar: nessun dato nella pagina (la ricerca potrebbe "
+                    "essere scambiata o bloccata). Prova il link diretto."
+                ]
+            )
 
-        # Prezzo stimato: la regola del mercato, non un dato della fonte.
-        price = round(max(PREZZO_MINIMO, strada * PREZZO_PER_KM), 2)
-
-        # Tempo di viaggio + il margine per trovarsi all'incontro.
-        drive_min = int(strada / KM_ORARI * 60) + MARGINE_INCONTRO_MIN
-        depart_at = arrive_by - timedelta(minutes=drive_min)
-
-        # Il punto di ritrovo: quello indicato dall'utente, se c'e'. Il
-        # passaggio parte da li', quindi il cammino e' quello del punto
-        # richiesto (l'autista sceglie il posto: se si allontana, il tempo
-        # a piedi cresce e va aggiunto a mano).
-        pickup_lat, pickup_lon = ctx.origin_coords or (ctx.from_lat, ctx.from_lon)
-        dropoff_lat, dropoff_lon = ctx.destination_coords or (ctx.to_lat, ctx.to_lon)
-
-        offer = Offer(
-            source=self.id,
-            external_id=f"stima:{ctx.from_place}:{ctx.to_place}:{arrive_by.date().isoformat()}",
-            mode="rideshare",
-            operator="BlaBlaCar (passaggio in auto)",
-            depart_at=depart_at,
-            arrive_at=arrive_by,
-            price=price,
-            pickup_name=ctx.from_place,
-            pickup_lat=pickup_lat,
-            pickup_lon=pickup_lon,
-            dropoff_name=ctx.to_place,
-            dropoff_lat=dropoff_lat,
-            dropoff_lon=dropoff_lon,
-            duration_min=drive_min - MARGINE_INCONTRO_MIN,
-            price_is_estimate=True,
-            deeplink=_search_link(ctx),
-            details={
-                "fonte": "BlaBlaCar (stima di mercato)",
-                "stima": True,
-                "distanza_km": round(distance, 1),
-                "distanza_stradale_km": round(strada, 1),
-                "prezzo_stimato": price,
-                "nota": (
-                    "Prezzo stimato con la regola del mercato (~0,10 EUR/km a "
-                    "posto): il conducente lo decide. Il punto di ritrovo lo "
-                    "sceglie l'autista, quindi la stima e' valida se ti fai "
-                    "trovare nel punto indicato."
-                ),
-                "margine_incontro_min": MARGINE_INCONTRO_MIN,
-                "cambi": 0,
-                "tappe": [],
-            },
-        )
+        offerte = self._offerte(dati, ctx, url)
+        if not offerte:
+            return AdapterResult(
+                hints=[
+                    "BlaBlaCar: nessun viaggio per questa tratta e questa data."
+                ]
+            )
         return AdapterResult(
-            offers=[offer],
+            offers=offerte,
             hints=[
-                "BlaBlaCar: prezzo e orari stimati (l'API non e' piu' "
-                "disponibile): apri il link per i viaggi veri."
+                f"BlaBlaCar: {len(offerte)} viaggi reali letti dal sito "
+                "(prezzi e orari veri)."
             ],
         )
 
+    # ------------------------------------------------------------------ #
+    def _offerte(
+        self, dati: dict[str, Any], ctx: SearchContext, url: str
+    ) -> list[Offer]:
+        # La cache avvolge la risposta in {"value": {...}, "expiresAt": ...}
+        if isinstance(dati.get("value"), dict):
+            dati = dati["value"]
+        try:
+            contenuto = (dati.get("resultsContent") or {}).get("searchItems") or []
+        except AttributeError:
+            contenuto = []
+        giorno = None
+        if ctx.depart_after or ctx.arrive_by:
+            giorno = (ctx.depart_after or ctx.arrive_by).astimezone(ROME).date()
 
-def _search_link(ctx: SearchContext) -> str:
-    """Il link di ricerca reale, con citta' e data."""
-    from urllib.parse import quote
+        offerte: list[Offer] = []
+        for item in contenuto:
+            if not isinstance(item, dict) or item.get("type") != "TRIP":
+                continue
+            if len(offerte) >= MAX_VIAGGI:
+                break
+            offerta = self._offerta(item, giorno, url)
+            if offerta is not None:
+                offerte.append(offerta)
+        return offerte
 
-    arrive = parse_dt(ctx.arrive_by) if ctx.arrive_by else None
-    day = arrive.strftime("%Y-%m-%d") if arrive else ""
-    return (
-        f"https://www.blablacar.it/search?fn={quote(ctx.from_place or '')}"
-        f"&tn={quote(ctx.to_place or '')}&db={day}"
-    )
+    def _offerta(
+        self, item: dict[str, Any], giorno, url: str
+    ) -> Offer | None:
+        prezzo = _prezzo(item.get("price"))
+        if prezzo is None or prezzo <= 0:
+            return None
+        itinerario = (
+            (item.get("travelDetails") or {}).get("itinerary") or {}
+        )
+        partenza = itinerario.get("departure") or {}
+        arrivo = itinerario.get("arrival") or {}
+        ora_partenza = _momento(giorno, _orario(partenza.get("time")))
+        ora_arrivo = _momento(giorno, _orario(arrivo.get("time")))
+        if ora_partenza is None:
+            return None
+        if ora_arrivo is None:
+            ora_arrivo = ora_partenza
+        # Se l'arrivo e' il giorno dopo (viaggio notturno), si aggiusta.
+        if ora_arrivo < ora_partenza:
+            ora_arrivo += timedelta(days=1)
+
+        multi = item.get("multimodalId") or {}
+        fonte = str(multi.get("source") or "")
+        e_partenza = (
+            "BlaBlaCar Bus"
+            if fonte == "PRO_PARTNER"
+            else "BlaBlaCar (passaggio in auto)"
+        )
+        dettagli: dict[str, Any] = {
+            "fonte": "BlaBlaCar (dati reali dal sito)",
+            "multimodal_id": str(multi.get("id") or ""),
+            "supply": fonte,
+            "cambi": 0,
+        }
+        if item.get("scarcity"):
+            dettagli["scarcita"] = str(item.get("scarcity"))
+        # Il punto di ritrovo vero (quello scelto dall'autista/operatore).
+        punto_partenza = partenza.get("secondaryLocation")
+        punto_arrivo = arrivo.get("secondaryLocation")
+        if punto_partenza:
+            dettagli["punto_partenza"] = punto_partenza
+        if punto_arrivo:
+            dettagli["punto_arrivo"] = punto_arrivo
+        if not punto_partenza:
+            dettagli["nota_punto"] = (
+                "Il punto di ritrovo esatto si vede aprendo il viaggio: "
+                "per i passaggi in auto lo sceglie l'autista."
+            )
+
+        coordinate_partenza = partenza.get("coordinates") or {}
+        coordinate_arrivo = arrivo.get("coordinates") or {}
+
+        return Offer(
+            source=self.id,
+            external_id=str(item.get("id") or multi.get("id") or ""),
+            mode="rideshare" if fonte != "PRO_PARTNER" else "bus",
+            operator=e_partenza,
+            depart_at=ora_partenza,
+            arrive_at=ora_arrivo,
+            price=prezzo,
+            pickup_name=str(partenza.get("primaryLocation") or ctx.from_place or ""),
+            pickup_lat=coordinate_partenza.get("latitude"),
+            pickup_lon=coordinate_partenza.get("longitude"),
+            dropoff_name=str(arrivo.get("primaryLocation") or ctx.to_place or ""),
+            dropoff_lat=coordinate_arrivo.get("latitude"),
+            dropoff_lon=coordinate_arrivo.get("longitude"),
+            duration_min=int((ora_arrivo - ora_partenza).total_seconds() // 60),
+            deeplink=url,
+            details=dettagli,
+        )
