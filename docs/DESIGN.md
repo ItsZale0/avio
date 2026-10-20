@@ -451,20 +451,17 @@ Le richieste preflight `OPTIONS` passano sempre. Ogni handler chiama
 ## 11. Sicurezza e privacy
 
 - Bind predefinito su `127.0.0.1`: nessuna esposizione di rete.
-- **Accesso multi-utente**: nome utente + password (bcrypt, 12 round) e sessione
-  in cookie `HttpOnly` (`SameSite=None; Secure` su HTTPS, per reggere il
-  frontend su un dominio diverso; `Lax` in locale). Nel database finisce solo
-  l'hash SHA-256 del token di sessione, mai il token.
-- **Separazione dei dati**: `watches.user_id` collega ogni ricerca al suo
-  proprietario;Offerte, avvisi, piani, domande e cronologia ereditano la
-  separazione via `ON DELETE CASCADE`. Ogni endpoint filtra per l'utente
-  corrente, e le impostazioni personali (Telegram, SMTP, fascia di silenzio)
-  vivono in `user_settings`, separate dalle comuni.
-- Ruoli: il **primo account** è amministratore; gli altri si registrano ma
-  restano in attesa di approvazione. Solo l'amministratore tocca le impostazioni
-  comuni (chiave Groq, modelli, orari GTFS) e l'elenco degli account.
-- Notifiche: Telegram e push sono inviati al solo proprietario della ricerca
-  (`push_subscriptions.user_id`, `users.telegram_chat_id`).
+- **Accesso con una sola password** (facoltativa): se e' impostata, il sito la
+  chiede. La password si conserva come **hash bcrypt** (`access_password` in
+  `settings`), mai in chiaro. Una **chiave segreta** (`access_key`, hash
+  SHA-256) permette di entrare mettendola nell'URL (`?key=...`): comoda sul
+  telefono, ma finisce nella cronologia del browser.
+- La sessione e' un token casuale in cookie `HttpOnly` (`SameSite=None; Secure`
+  su HTTPS, per reggere il frontend su un dominio diverso dal backend). Nel
+  database finisce solo lo **hash SHA-256** del token di sessione, mai il token.
+- **Un solo proprietario**: le ricerche hanno un `user_id` ma non serve un
+  account per persona. Le impostazioni personali (Telegram, SMTP, fascia di
+  silenzio) vivono in `user_settings`, separate dalle comuni.
 - Nessun dato inviato a terzi oltre alle query necessarie (Nominatim, fonti,
   Telegram/SMTP, **Groq** per le richieste AI).
 - L'AI riceve, per pianificare, la richiesta di viaggio e le offerte raccolte

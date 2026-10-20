@@ -38,25 +38,23 @@ scrive i log in `data/logs/`.
 
 Poi:
 
-1. **Crea il tuo account**: al primo avvio compare il form di registrazione.
-   Il primo account è **amministratore**; gli altri restano in attesa di
-   approvazione e l'admin li abilita da *Impostazioni → Utenti*.
-   > Se preferisci **nessun accesso** (l'app si apre direttamente, senza
-   > password), l'utente viene già creato in automatico: basta disattivare
-   > l'accesso con `python -m app.cli auth off`.
+1. **Accesso**: di default l'app si apre direttamente. Per metterci una
+   password: *Impostazioni → Accesso al sito → Password d'accesso*.
+   Da quel momento il sito chiede **solo la password** (niente nome utente).
+   > C'è anche la **chiave segreta**: *Impostazioni → Chiave segreta →
+   > Genera chiave*. Mettila nell'URL (`https://.../?key=XXXX`) e l'app si
+   > apre con un tocco — perfetto per il telefono, dove il segreto finisce
+   > nella cronologia. La chiave si vede una volta sola (nel database c'è
+   > solo un hash SHA-256).
 2. **+ Nuova ricerca** → inserisci partenza, arrivo, “entro quando”, budget, raggio.
    (Oppure scrivi il viaggio in una frase e premi **✨ Compila con l'AI**.)
 3. Scegli le fonti e i canali di avviso.
 4. L'agente fa subito il primo giro e poi ricontrolla ogni ora (configurabile).
 
-Ogni utente vede **solo le proprie** ricerche, offerte, avvisi e notifiche
-(Telegram e push). Le impostazioni personali (Telegram, SMTP, fascia di
-silenzio) sono per utente; quelle comuni (chiave Groq, orari GTFS) restano
-dell'amministratore.
-
-> **Accesso disattivato (predefinito)**: l'app si apre direttamente e le
-> ricerche appartengono al proprietario unico. Per richiedere una password:
-> `python -m app.cli auth on`.
+Le ricerche, le offerte e le notifiche appartengono a un solo proprietario:
+non c'è bisogno di account separati. Le impostazioni personali (Telegram,
+SMTP, fascia di silenzio) sono separate da quelle comuni (chiave Groq, orari
+GTFS).
 
 Da riga di comando:
 
@@ -344,9 +342,10 @@ python scripts\agent_status.py
 wscript.exe avvia-agente.vbs
 python scripts\stop_agent.py
 
-# accesso con password: on = richiesto, off = libero
-python -m app.cli auth on
-python -m app.cli auth off
+# accesso con password: set = imposta, clear = toglie, key = genera la chiave
+python -m app.cli access status
+python -m app.cli access set --password "la-tua-password"
+python -m app.cli access key
 
 # avvio con ricarica automatica (sviluppo)
 python -m uvicorn app.main:app --reload --port 8787
@@ -372,11 +371,9 @@ python scripts/make_icons.py
 - I prezzi possono cambiare tra un controllo e l'altro: **verifica sempre nell'app/sito**
   prima di prenotare.
 - Il carsharing è una **stima** basata su tariffe indicative, non una prenotazione.
-- L'accesso con nome utente e password è **disattivato per impostazione
-  predefinita** (`python -m app.cli auth off`): l'app si apre direttamente e le
-  ricerche appartengono al proprietario unico. Per riattivarlo:
-  `python -m app.cli auth on` (bcrypt + sessione in cookie `HttpOnly`, ogni
-  utente vede solo le proprie ricerche e notifiche).
+- L'accesso è **una sola password** (facoltativa): se la imposti, il sito la
+  chiede. Nel database c'è solo l'hash bcrypt, mai il testo in chiaro. La
+  **chiave segreta** (per entrare con un tocco) è salvata come hash SHA-256.
 - **L'URL del tunnel è la protezione**: chi lo conosce può usare l'app.
   Per un URL stabile e non indovinabile serve un dominio tuo (tunnel con nome
   su Cloudflare) o **Cloudflare Access** davanti.
