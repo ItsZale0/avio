@@ -24,6 +24,27 @@ dal telefono. Il tunnel "quick" assegna un URL nuovo a ogni avvio: per questo
 `CARPOOL_API_BASE` e rilancia il deploy di GitHub Pages. Per farlo serve un
 token GitHub con scope `repo` in `GITHUB_TOKEN` (`setx GITHUB_TOKEN "ghp_..."`).
 
+### Il link unico: GitHub Pages
+
+L'indirizzo da usare, da qualunque dispositivo e da qualunque rete, e':
+
+**<https://itszale0.github.io/carpool-intelligence/>**
+
+L'interfaccia vive su GitHub Pages, l'API dietro il tunnel. Non serve
+ricordare l'URL del tunnel ne' l'IP del PC: a ogni avvio dell'agente il
+tunnel cambia indirizzo, e la dashboard lo segue da sola.
+
+Il meccanismo e' a due puntatori, per non restare mai fermi:
+
+| file | chi lo aggiorna | quando e' fresco |
+|---|---|---|
+| `config.json` (su Pages) | il deploy automatico | subito (fetch senza cache) |
+| `backend.json` (sul branch) | lo script del tunnel, a ogni avvio | entro ~5 min (cache CDN) |
+
+Il frontend legge entrambi, sceglie il piu' recente e, se il backend non
+risponde, prova l'altro: se il tunnel e' stato riavviato, la pagina si
+riprende da sola in un secondo.
+
 **Per farlo girare in background senza finestre di terminale:**
 
 ```powershell

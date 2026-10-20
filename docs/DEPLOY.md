@@ -35,20 +35,39 @@ python scripts\stop_agent.py     # ferma tutto
 avvio (vedi sezione 1): al login l'agente parte da solo, in silenzio.
 
 Il tunnel "quick" assegna un URL nuovo a ogni avvio. Per questo
-`scripts/tunnel.py`, appena avviato, fa tre cose da solo:
+`scripts/tunnel.py`, appena avviato, fa quattro cose da solo:
 
 1. scrive l'URL pubblico in `.env` (`CARPOOL_PUBLIC_URL`);
-2. aggiorna la variabile GitHub `CARPOOL_API_BASE`, cosi' la dashboard su
+2. scrive `backend.json` nel repo e lo pubblica: e' il puntatore **fresco**
+   che il frontend legge direttamente dal branch, senza aspettare il deploy;
+3. aggiorna la variabile GitHub `CARPOOL_API_BASE`, cosi' la dashboard su
    GitHub Pages punta al tunnel giusto;
-3. rilancia il deploy di GitHub Pages, che rigenera `config.json`.
+4. rilancia il deploy di GitHub Pages, che rigenera `config.json`.
 
 Serve un token GitHub con scope `repo` nella variabile d'ambiente
-`GITHUB_TOKEN` (senza, i passi 2-3 vengono saltati e basta riavviare il
+`GITHUB_TOKEN` (senza, i passi 2-4 vengono saltati e basta riavviare il
 deploy a mano dalla tab *Actions*).
 
 ```powershell
 setx GITHUB_TOKEN "ghp_..."
 ```
+
+### Il link che dai agli altri
+
+L'unico indirizzo da usare e' **<https://itszale0.github.io/carpool-intelligence/>**:
+l'interfaccia e' su GitHub Pages, l'API dietro il tunnel. Non serve
+ricordare l'IP del PC ne' l'URL del tunnel.
+
+Il frontend conosce due puntatori e li usa entrambi:
+
+| file | chi lo aggiorna | freschezza |
+|---|---|---|
+| `config.json` (su Pages) | deploy automatico | immediata (fetch senza cache) |
+| `backend.json` (sul branch) | `scripts/tunnel.py` a ogni avvio | entro ~5 min (cache CDN di GitHub) |
+
+Sceglie quello con il timestamp piu' recente e, se la chiamata all'API
+fallisce, prova l'altro: dopo un riavvio dell'agente la dashboard si
+riprende da sola.
 
 ### Il supervisore
 
