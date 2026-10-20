@@ -513,7 +513,6 @@ async function logout() {
 /* ------------------------------------------------------------------ */
 document.addEventListener("DOMContentLoaded", async () => {
   bindEvents();
-  await caricaCatalogoPass();
   registerServiceWorker();
   await loadRuntimeConfig();
   try {
@@ -548,6 +547,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 async function bootApp() {
   hideAuthScreen();
   try {
+    // Il catalogo degli abbonamenti si carica qui: al primo avvio la pagina
+    // e' ancora chiusa e la richiesta verrebbe respinta (401), lasciando il
+    // selettore degli abbonamenti vuoto anche dopo il login.
+    await caricaCatalogoPass();
     const status = await loadStatus();
     state.sources = status.sources || [];
     state.user = status.user || state.user;
