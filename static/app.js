@@ -1713,6 +1713,25 @@ async function openSettings() {
     $("#sTelegramChat").value = s.telegram_chat_id || "";
     if ($("#sNgrokToken")) $("#sNgrokToken").value = s.ngrok_authtoken || "";
     if ($("#sNgrokDomain")) $("#sNgrokDomain").value = s.ngrok_domain || "";
+    // Gli abbonamenti globali dell'utente.
+    let globalPasses = [];
+    try {
+      globalPasses = JSON.parse(s.passes || "[]");
+    } catch (_) {
+      globalPasses = [];
+    }
+    if (globalPasses && !Array.isArray(globalPasses)) globalPasses = [];
+    const selezionati = globalPasses.map((p) => (typeof p === "string" ? p : p.tipo));
+    const box = $("#globalPassesBox");
+    if (box) {
+      box.innerHTML = PASS_TYPES.map((pass) => {
+        const checked = selezionati.includes(pass.id) ? "checked" : "";
+        return `<label class="chip" title="${esc(pass.hint)}">
+          <input type="checkbox" name="globalpass" value="${esc(pass.id)}" ${checked} />
+          ${esc(pass.label)}
+        </label>`;
+      }).join("");
+    }
     $("#sSmtpHost").value = s.smtp_host || "";
     $("#sSmtpPort").value = s.smtp_port || "587";
     $("#sSmtpUser").value = s.smtp_user || "";
@@ -1822,6 +1841,10 @@ function settingsPayload() {
     groq_api_key: $("#sGroqKey").value.trim(),
     ngrok_authtoken: $("#sNgrokToken").value.trim(),
     ngrok_domain: $("#sNgrokDomain").value.trim(),
+    // Gli abbonamenti globali: una lista JSON di {tipo}.
+    passes: JSON.stringify(
+      $$("#globalPassesBox input[name=globalpass]:checked").map((i) => ({ tipo: i.value }))
+    ),
     // Stringa vuota = torna al modello predefinito dell'app.
     ai_model_smart: $("#sAiSmart").value,
     ai_model_fast: $("#sAiFast").value,

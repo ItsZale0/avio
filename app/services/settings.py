@@ -34,6 +34,8 @@ GLOBAL_KEYS = {
     "sources_migrated_gtfs",
     "ngrok_authtoken",
     "ngrok_domain",
+    # Gli abbonamenti dell'utente: valgono per tutte le ricerche.
+    "passes",
 }
 
 # Impostazioni personali: valgono per il singolo utente.
@@ -79,6 +81,8 @@ DEFAULTS: dict[str, str] = {
     "access_key": "",
     # Token ngrok: serve per il tunnel pubblico stabile (lavora sulla 443).
     "ngrok_authtoken": "",
+    # Lista JSON degli abbonamenti in corso.
+    "passes": "[]",
     # Dominio ngrok riservato (facoltativo): rende l'URL stabile per sempre.
     "ngrok_domain": "",
 }

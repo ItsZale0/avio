@@ -241,7 +241,13 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
         # Abbonamenti: se la tratta e' coperta, il biglietto non lo paghi.
         # Il prezzo reale resta, ma il costo effettivo diventa 0 e cambia
         # il piano migliore.
-        user_passes = passes_service.normalize_passes(prefs.get("passes"))
+        # Gli abbonamenti sono dell'utente (Impostazioni) piu' quelli
+        # specifici della ricerca.
+        from . import settings as app_settings
+
+        user_passes = passes_service.normalize_passes(
+            prefs.get("passes")
+        ) + passes_service.normalize_passes(app_settings.get("passes", "[]"))
         if user_passes:
             covered = 0
             for offer in gathered:
