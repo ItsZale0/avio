@@ -937,9 +937,11 @@ function renderPlan() {
         <div class="noplan-actions">
           <button class="btn ghost" id="btnNoPlanEdit">Modifica i filtri</button>
           <button class="btn ghost" id="btnNoPlanRun">Cerca ora</button>
+          <button class="btn ghost" id="btnNoPlanChat">💬 Chiedi all'agente</button>
         </div>`;
       $("#btnNoPlanEdit")?.addEventListener("click", () => openWatchModal(state.watch));
       $("#btnNoPlanRun")?.addEventListener("click", runNow);
+      $("#btnNoPlanChat")?.addEventListener("click", apriChat);
     } else {
       vuoto.classList.add("hidden");
       vuoto.innerHTML = "";
