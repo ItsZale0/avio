@@ -171,11 +171,27 @@ async function loadRuntimeConfig() {
       const config = await response.json();
       if (config && typeof config.apiBase === "string" && config.apiBase) {
         API_BASE = config.apiBase.replace(/\/$/, "");
+        showApiHint();
         return;
       }
       return;
     } catch (_) { /* prova il successivo */ }
   }
+}
+
+/* Se la pagina e' su un dominio diverso dall'API, il browser potrebbe
+   bloccare il cookie di sessione: si mostra l'indirizzo diretto del backend,
+   dove frontend e API sono sulla stessa origine e tutto funziona. */
+function showApiHint() {
+  const hint = $("#loginApiHint");
+  if (!hint) return;
+  if (!API_BASE || API_BASE === location.origin) {
+    hint.textContent = "";
+    return;
+  }
+  hint.innerHTML =
+    "Se non riesci a entrare, apri l'app direttamente qui: " +
+    `<a href="${esc(API_BASE)}" target="_blank" rel="noopener">${esc(API_BASE)}</a>`;
 }
 
 /* Se l'API non risponde, il tunnel potrebbe essere stato riavviato con un
@@ -242,6 +258,21 @@ async function submitLogin(event) {
     });
     hint.textContent = "";
     $("#aLoginPass").value = "";
+
+    // Il login puo' riuscire ma il cookie non essere salvato: succede
+    // quando il browser blocca i cookie di terze parti (frontend su un
+    // dominio, API su un altro). Si verifica e si avvisa.
+    const check = await fetch(API_BASE + "/api/auth/me", { credentials: "include" });
+    if (check.status === 401) {
+      hint.textContent =
+        "Accesso riuscito, ma il browser non ha salvato la sessione. " +
+        "Probabilmente blocca i cookie di terze parti: apri l'app direttamente " +
+        "all'indirizzo del backend (quello del tunnel) invece che da GitHub Pages.";
+      hint.className = "field-hint err";
+      showAuthScreen();
+      return;
+    }
+
     await bootApp();
   } catch (error) {
     hint.textContent = error.message;
