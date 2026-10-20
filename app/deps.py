@@ -18,8 +18,8 @@ from . import auth
 
 # Endpoint che devono restare raggiungibili senza sessione.
 PUBLIC_PATHS = {
-    "/api/auth/login",
-    "/api/auth/register",
+    # Lo sblocco: e' proprio lui a creare la sessione.
+    "/api/auth/unlock",
     "/api/auth/status",
     "/api/auth/logout",
     "/api/status",
@@ -52,10 +52,15 @@ def is_secure_request(request: Request) -> bool:
     return forwarded == "https"
 
 def auth_enabled() -> bool:
-    """True se l'app chiede l'accesso. Di default no: si entra direttamente."""
-    from .services import settings as app_settings
+    """True se l'app chiede la password.
 
-    return app_settings.get("auth_enabled", "0") == "1"
+    La semplice presenza di una password d'accesso basta: non c'e' un
+    interruttore separato da ricordarsi. Senza password l'app si apre
+    direttamente.
+    """
+    from . import access
+
+    return access.is_locked()
 
 
 def current_user(request: Request) -> dict[str, Any] | None:
@@ -67,7 +72,7 @@ def require_user(request: Request) -> dict[str, Any]:
     """Utente obbligatorio.
 
     Con l'accesso disattivato (impostazione predefinita) restituisce il
-    proprietario implicite, cosi' l'app funziona senza login.
+    proprietario implicito, cosi' l'app funziona senza login.
     """
     user = current_user(request)
     if user:
@@ -76,7 +81,7 @@ def require_user(request: Request) -> dict[str, Any]:
         owner = auth.implicit_owner()
         if owner:
             return owner
-    raise HTTPException(status_code=401, detail="Devi effettuare l'accesso")
+    raise HTTPException(status_code=401, detail="Accesso richiesto")
 
 
 def require_admin(request: Request) -> dict[str, Any]:

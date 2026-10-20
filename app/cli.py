@@ -67,6 +67,12 @@ def main(argv: list[str] | None = None) -> int:
     auth_parser = sub.add_parser("auth", help="attiva o disattiva l'accesso con password")
     auth_parser.add_argument("state", choices=("on", "off"), help="on = chiede il login, off = libero")
 
+    access_parser = sub.add_parser("access", help="password d'accesso e chiave segreta")
+    access_parser.add_argument(
+        "action", choices=("set", "clear", "key", "status"), help="cosa fare"
+    )
+    access_parser.add_argument("--password", help="password (se non e' indicata viene chiesta)")
+
     sub.add_parser("gtfs-list", help="mostra i feed GTFS e lo stato dell'import")
 
     gtfs_parser = sub.add_parser("gtfs-update", help="scarica e importa gli orari GTFS")
@@ -126,6 +132,36 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  python -m app.cli user-add {owner['username'] --password \"NUOVA\"")
         else:
             print("Accesso con password DISATTIVATO: l'app si apre direttamente.")
+        return 0
+
+    if args.command == "access":
+        from . import access
+
+        db.init_db()
+        if args.action == "status":
+            print(f"Password impostata: {'si' if access.has_password() else 'no'}")
+            print(f"Chiave segreta attiva: {'si' if access.has_key() else 'no'}")
+            return 0
+        if args.action == "clear":
+            access.set_password("")
+            access.clear_key()
+            print("Password e chiave rimosse: l'app si apre senza accesso.")
+            return 0
+        if args.action == "key":
+            key = access.new_key()
+            print("Chiave segreta (si vede solo adesso):")
+            print(f"  {key}")
+            print("\nUsala nell'URL:  https://<indirizzo>/?key=" + key)
+            return 0
+        # action == "set"
+        password = args.password or getpass.getpass("Password d'accesso: ")
+        try:
+            access.set_password(password)
+        except ValueError as exc:
+            print(f"Errore: {exc}", file=sys.stderr)
+            return 1
+        access.revoke_all_sessions()
+        print("Password d'accesso impostata.")
         return 0
 
     if args.command == "gtfs-list":

@@ -23,6 +23,9 @@ const state = {
   showZones: true,
   // True se l'app non chiede l'accesso: niente schermata di login.
   authDisabled: false,
+  // Ce' una chiave segreta attiva? Serve per le impostazioni.
+  hasKey: false,
+  locked: false,
 };
 
 // Base dell'API: vuota quando frontend e backend sono sullo stesso host.
@@ -255,6 +258,9 @@ function closeModal(id) { $("#" + id).classList.add("hidden"); }
 /* ------------------------------------------------------------------ */
 /* Accesso                                                             */
 /* ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ */
+/* Accesso: una password, o una chiave segreta nell'URL                 */
+/* ------------------------------------------------------------------ */
 function showAuthScreen() {
   const screen = $("#authScreen");
   if (screen) screen.classList.remove("hidden");
@@ -270,87 +276,49 @@ function hideAuthScreen() {
   document.querySelector(".topbar")?.classList.remove("hidden");
 }
 
-function switchAuthTab(which) {
-  const isLogin = which === "login";
-  $("#loginForm").classList.toggle("hidden", !isLogin);
-  $("#registerForm").classList.toggle("hidden", isLogin);
-  $$(".auth-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.authTab === which));
-  $("#loginHint").textContent = "";
-  $("#registerHint").textContent = "";
-}
-
 async function submitLogin(event) {
   event.preventDefault();
   const hint = $("#loginHint");
   const button = $("#btnLogin");
-  const username = $("#aLoginUser").value.trim();
+  const password = $("#aLoginPass").value;
   button.disabled = true;
+  hint.textContent = "";
   try {
-    await api("/api/auth/login", {
+    await api("/api/auth/unlock", {
       method: "POST",
-      body: JSON.stringify({
-        username: username,
-        password: $("#aLoginPass").value,
-      }),
+      body: JSON.stringify({ password }),
     });
-    hint.textContent = "";
     $("#aLoginPass").value = "";
-    sessionStorage.removeItem("ch_last_user");
-
-    // Il login puo' riuscire ma il cookie non essere salvato: succede
-    // quando il browser blocca i cookie di terze parti (frontend su un
-    // dominio, API su un altro). Si verifica e si avvisa.
-    const check = await fetch(API_BASE + "/api/auth/me", { credentials: "include" });
-    if (check.status === 401) {
-      hint.textContent =
-        "Accesso riuscito, ma il browser non ha salvato la sessione. " +
-        "Probabilmente blocca i cookie di terze parti: apri l'app direttamente " +
-        "all'indirizzo del backend (quello del tunnel) invece che da GitHub Pages.";
-      hint.className = "field-hint err";
-      showAuthScreen();
-      return;
+    // La chiave nell'URL non serve piu': si pulisce dalla barra.
+    if (location.search.includes("key=")) {
+      const url = new URL(location.href);
+      url.searchParams.delete("key");
+      history.replaceState({}, "", url);
     }
-
     await bootApp();
   } catch (error) {
     hint.textContent = error.message;
     hint.className = "field-hint err";
-    // Se e' un problema di rete il tunnel potrebbe essere stato riavviato:
-    // si tiene il nome utente per non farlo riscrivere.
-    if (/raggiungibile|non risponde|fetch/i.test(error.message)) {
-      sessionStorage.setItem("ch_last_user", username);
-    }
   } finally {
     button.disabled = false;
   }
 }
 
-async function submitRegister(event) {
-  event.preventDefault();
-  const hint = $("#registerHint");
-  const button = $("#btnRegister");
-  button.disabled = true;
+/* Se l'URL contiene la chiave segreta, si sblocca da soli. */
+async function tryKeyFromUrl() {
+  const key = new URL(location.href).searchParams.get("key");
+  if (!key) return false;
   try {
-    const result = await api("/api/auth/register", {
+    await api("/api/auth/unlock", {
       method: "POST",
-      body: JSON.stringify({
-        username: $("#aRegUser").value.trim(),
-        password: $("#aRegPass").value,
-        display_name: $("#aRegName").value.trim() || null,
-      }),
+      body: JSON.stringify({ password: key }),
     });
-    $("#aRegPass").value = "";
-    if (result.status === "pending") {
-      hint.textContent = result.message || "Account creato, in attesa di approvazione.";
-      switchAuthTab("login");
-    } else {
-      hint.textContent = "";
-      await bootApp();
-    }
-  } catch (error) {
-    hint.textContent = error.message;
-  } finally {
-    button.disabled = false;
+    const url = new URL(location.href);
+    url.searchParams.delete("key");
+    history.replaceState({}, "", url);
+    return true;
+  } catch (_) {
+    return false;
   }
 }
 
@@ -362,7 +330,6 @@ async function logout() {
   state.selectedId = null;
   state.watch = null;
   showAuthScreen();
-  switchAuthTab("login");
 }
 
 /* ------------------------------------------------------------------ */
@@ -372,30 +339,28 @@ document.addEventListener("DOMContentLoaded", async () => {
   bindEvents();
   registerServiceWorker();
   await loadRuntimeConfig();
-  // Il nome utente dell'ultimo tentativo: se il tunnel si riavvia non
-  // bisogna riscriverlo.
-  const lastUser = sessionStorage.getItem("ch_last_user");
-  if (lastUser) $("#aLoginUser").value = lastUser;
   try {
+    // Se l'URL ha la chiave segreta, si sblocca senza digitare nulla.
+    if (await tryKeyFromUrl()) {
+      await bootApp();
+      return;
+    }
     const authState = await api("/api/auth/status");
-    if (authState.auth_enabled === false) {
-      // Accesso non richiesto: si entra direttamente, senza schermata.
+    if (!authState.locked) {
+      // Nessuna password impostata: l'app si apre direttamente.
       state.authDisabled = true;
       state.user = authState.user || null;
       await bootApp();
       return;
     }
-    if (!authState.authenticated) {
+    if (!authState.unlocked) {
       showAuthScreen();
-      // Se non c'e' nessun account, il form di registrazione e' quello giusto.
-      switchAuthTab(authState.needs_setup ? "register" : "login");
       return;
     }
     state.user = authState.user;
     await bootApp();
   } catch (error) {
     showAuthScreen();
-    switchAuthTab("login");
     const hint = $("#loginHint");
     hint.textContent =
       "Server non raggiungibile: il tunnel potrebbe essere stato riavviato. " +
@@ -411,6 +376,12 @@ async function bootApp() {
     const status = await loadStatus();
     state.sources = status.sources || [];
     state.user = status.user || state.user;
+    // Lo stato dell'accesso serve per mostrare la sezione "Chiave segreta".
+    try {
+      const access = await api("/api/auth/status");
+      state.hasKey = !!access.has_key;
+      state.locked = !!access.locked;
+    } catch (_) { /* senza stato accesso: si prosegue */ }
     await Promise.all([loadWatches(), loadSettings()]);
     if (state.watches.length) {
       await selectWatch(state.watches[0].id);
@@ -430,10 +401,6 @@ async function bootApp() {
 function bindEvents() {
   // Accesso
   $("#loginForm").addEventListener("submit", submitLogin);
-  $("#registerForm").addEventListener("submit", submitRegister);
-  $$(".auth-tab").forEach((tab) =>
-    tab.addEventListener("click", () => switchAuthTab(tab.dataset.authTab))
-  );
 
   $("#btnNew").addEventListener("click", () => openWatchModal(null));
   $("#btnEmptyNew").addEventListener("click", () => openWatchModal(null));
@@ -473,8 +440,10 @@ function bindEvents() {
   $("#btnPushEnable").addEventListener("click", enablePush);
   $("#btnPushDisable").addEventListener("click", disablePush);
   $("#btnPushTest").addEventListener("click", testPush);
-  $("#btnChangePassword").addEventListener("click", changePassword);
-  $("#btnCreateUser").addEventListener("click", createUser);
+  $("#btnSetAccess").addEventListener("click", setAccessPassword);
+  $("#btnClearAccess").addEventListener("click", clearAccessPassword);
+  $("#btnNewKey").addEventListener("click", generateKey);
+  $("#btnDelKey").addEventListener("click", deleteKey);
   $("#btnTelegramLink").addEventListener("click", telegramLink);
   $("#btnTelegramConfirm").addEventListener("click", telegramConfirm);
 
@@ -1399,8 +1368,7 @@ async function openSettings() {
     });
     $$(".admin-only").forEach((el) => el.classList.toggle("hidden", !isAdmin));
 
-    renderAccountInfo();
-    if (isAdmin) loadAdminUsers();
+    renderAccessInfo();
 
     $("#sTelegramToken").value = s.telegram_token || "";
     $("#sTelegramChat").value = s.telegram_chat_id || "";
@@ -1533,103 +1501,84 @@ async function submitSettings(event) {
   }
 }
 
-/* ---------- account e utenti ---------- */
-function renderAccountInfo() {
+/* ---------- accesso: password e chiave segreta ---------- */
+function renderAccessInfo() {
   const user = state.user || {};
-  const role = user.is_admin ? "amministratore" : "utente";
   const telegram = user.telegram_chat_id ? "collegata" : "non collegata";
-  $("#accountInfo").textContent =
-    `${user.display_name || user.username || "—"} (${user.username || "?"}) · ${role} · Telegram ${telegram}`;
+  const access = $("#accessInfo");
+  if (access) {
+    access.textContent =
+      `Sei dentro come ${user.display_name || user.username || "proprietario"}` +
+      ` · Telegram ${telegram}`;
+  }
+  const key = $("#keyInfo");
+  if (key) {
+    key.textContent = state.hasKey
+      ? "C'e' una chiave segreta: mettila nell'URL per entrare con un tocco."
+      : "Nessuna chiave. Generane una per entrare con un tocco.";
+  }
 }
 
-async function changePassword() {
-  const hint = $("#passwordResult");
-  const current = $("#sCurrentPassword").value;
-  const next = $("#sNewPassword").value;
-  if (!current || !next) {
-    hint.textContent = "Compila la password attuale e la nuova.";
+async function setAccessPassword() {
+  const hint = $("#accessResult");
+  const password = $("#sAccessPassword").value;
+  if (!password) {
+    hint.textContent = "Scrivi la nuova password.";
     return;
   }
   try {
-    const result = await api("/api/auth/password", {
+    const result = await api("/api/auth/access", {
       method: "POST",
-      body: JSON.stringify({ current_password: current, new_password: next }),
+      body: JSON.stringify({ password }),
     });
-    hint.textContent = result.message || "Password aggiornata.";
-    $("#sCurrentPassword").value = "";
-    $("#sNewPassword").value = "";
+    hint.textContent = result.message || "Password impostata.";
+    $("#sAccessPassword").value = "";
+    state.hasKey = state.hasKey ?? false;
+    renderAccessInfo();
   } catch (error) {
     hint.textContent = error.message;
   }
 }
 
-async function loadAdminUsers() {
-  const box = $("#adminUsersList");
-  const hint = $("#adminHint");
+async function clearAccessPassword() {
+  const hint = $("#accessResult");
   try {
-    const data = await api("/api/auth/users");
-    if (!data.users.length) {
-      box.textContent = "Nessun account.";
-      return;
-    }
-    box.innerHTML = data.users
-      .map((u) => {
-        const label = esc(u.display_name || u.username);
-        const badge =
-          u.status === "active" ? "attivo" : u.status === "pending" ? "in attesa" : "disabilitato";
-        const role = u.is_admin ? " · admin" : "";
-        const action =
-          u.status === "active"
-            ? `<button type="button" class="btn ghost tiny" data-disable="${u.id}">Disabilita</button>`
-            : `<button type="button" class="btn ghost tiny" data-approve="${u.id}">Approva</button>`;
-        return `<div class="user-row"><span>${label} <small>${esc(u.username)}${role}</small></span>
-                <span class="pill ${u.status}">${badge}</span>${action}</div>`;
-      })
-      .join("");
-    hint.textContent = data.pending
-      ? `${data.pending} account in attesa di approvazione.`
-      : "Nessuna approvazione in sospeso.";
-
-    box.querySelectorAll("[data-approve]").forEach((button) =>
-      button.addEventListener("click", () => setUserStatus(Number(button.dataset.approve), "active"))
-    );
-    box.querySelectorAll("[data-disable]").forEach((button) =>
-      button.addEventListener("click", () => setUserStatus(Number(button.dataset.disable), "disabled"))
-    );
+    const result = await api("/api/auth/access", {
+      method: "POST",
+      body: JSON.stringify({ password: "" }),
+    });
+    hint.textContent = result.message || "Password rimossa.";
+    renderAccessInfo();
   } catch (error) {
-    box.textContent = "";
     hint.textContent = error.message;
   }
 }
 
-async function setUserStatus(userId, status) {
+async function generateKey() {
+  const hint = $("#accessResult");
   try {
-    await api(`/api/auth/users/${userId}`, { method: "PATCH", body: JSON.stringify({ status }) });
-    toast(status === "active" ? "Account approvato" : "Account disabilitato");
-    loadAdminUsers();
+    const result = await api("/api/auth/key", { method: "POST" });
+    $("#keyValue").value = result.key;
+    $("#keyBox").classList.remove("hidden");
+    hint.textContent = result.message || "Chiave generata.";
+    state.hasKey = true;
+    renderAccessInfo();
   } catch (error) {
-    toast(error.message, "error");
+    hint.textContent = error.message;
   }
 }
 
-async function createUser() {
-  const username = $("#sNewUser").value.trim();
-  const password = $("#sNewUserPass").value;
-  if (!username || !password) {
-    $("#adminHint").textContent = "Compila nome utente e password.";
-    return;
-  }
+async function deleteKey() {
+  const hint = $("#accessResult");
   try {
-    await api("/api/auth/users", {
-      method: "POST",
-      body: JSON.stringify({ username, password }),
-    });
-    $("#sNewUser").value = "";
-    $("#sNewUserPass").value = "";
-    $("#adminHint").textContent = "Account creato.";
-    loadAdminUsers();
+    const result = await api("/api/auth/key", { method: "DELETE" });
+    $("#keyBox").classList.add("hidden");
+    $("#keyValue").value = "";
+    hint.textContent = result.message || "Chiave rimossa.";
+    state.hasKey = false;
+    renderAccessInfo();
   } catch (error) {
-    $("#adminHint").textContent = error.message;
+    hint.textContent = error.message;
   }
 }
 
@@ -1660,7 +1609,7 @@ async function telegramConfirm() {
     });
     hint.textContent = "Chat collegata.";
     if (state.user) state.user.telegram_chat_id = result.telegram_chat_id;
-    renderAccountInfo();
+    renderAccessInfo();
   } catch (error) {
     hint.textContent = error.message;
   }

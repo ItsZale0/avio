@@ -8,7 +8,14 @@ from datetime import datetime, time
 from .. import db
 from ..timeutil import ROME
 
-SECRET_KEYS = {"telegram_token", "smtp_password", "groq_api_key", "vapid_private_key"}
+SECRET_KEYS = {
+    "telegram_token",
+    "smtp_password",
+    "groq_api_key",
+    "vapid_private_key",
+    "access_password",
+    "access_key",
+}
 MASK = "••••••••"
 
 # Impostazioni condivise da tutta l'istanza: servono a tutti (una sola chiave
@@ -64,8 +71,9 @@ DEFAULTS: dict[str, str] = {
     "vapid_private_key": "",
     "vapid_public_key": "",
     "telegram_offset": "0",
-    # "0" = l'app si apre direttamente, senza accesso. "1" = login richiesto.
-    "auth_enabled": "0",
+    # Hash bcrypt della password d'accesso e hash SHA-256 della chiave segreta.
+    "access_password": "",
+    "access_key": "",
 }
 
 

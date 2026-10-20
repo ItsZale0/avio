@@ -13,26 +13,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import __version__, auth, db, deps, geo, notify, store
+from . import __version__, access, auth, db, deps, geo, notify, store
 from . import gtfs as gtfs_service
 from .adapters import sources_meta
 from .ai import intelligence
 from .ai.groq import ai_enabled, client_from_settings, log_call
 from .config import APP_NAME, CORS_ORIGINS, HOST, PORT, WEB_DIR
 from .schemas import (
-    AdminPasswordResetIn,
-    AdminUserCreateIn,
+    AccessIn,
     AnswerIn,
-    LoginIn,
     OfferOut,
     ParseRequest,
-    PasswordChangeIn,
     PushSubscribeIn,
     PushUnsubscribeIn,
-    RegisterIn,
     RunOut,
     SettingsIn,
-    UserStatusIn,
+    UnlockIn,
     WatchIn,
     WatchOut,
     WatchUpdate,
@@ -134,97 +130,35 @@ async def _resolve_places(payload: WatchIn) -> dict:
 
 
 # --------------------------------------------------------------------------- #
-# Autenticazione
+# Accesso: una password (o una chiave segreta nell'URL)
 # --------------------------------------------------------------------------- #
 @app.get("/api/auth/status")
 async def auth_status(request: Request):
-    """Stato della sessione: serve al frontend per sapere se mostrare il login."""
-    enabled = deps.auth_enabled()
+    """Stato dell'accesso: serve al frontend per sapere se chiedere la password."""
+    locked = deps.auth_enabled()
     user = deps.current_user(request)
-    if not enabled:
-        # Accesso disattivato: il frontend entra direttamente.
-        owner = auth.implicit_owner()
-        return {
-            "authenticated": True,
-            "auth_enabled": False,
-            "user": auth.public_user(owner) if owner else None,
-            "needs_setup": auth.count_users() == 0,
-            "registration_open": True,
-        }
+    owner = auth.implicit_owner()
     return {
-        "authenticated": bool(user),
-        "auth_enabled": True,
-        "user": auth.public_user(user) if user else None,
-        "needs_setup": auth.count_users() == 0,
-        "registration_open": auth.count_users(auth.STATUS_ACTIVE) > 0,
+        "authenticated": bool(user) or not locked,
+        "locked": locked,
+        "unlocked": bool(user),
+        "has_password": access.has_password(),
+        "has_key": access.has_key(),
+        "user": auth.public_user(user or owner) if (user or owner) else None,
     }
 
 
-@app.post("/api/auth/register")
-async def register(payload: RegisterIn, request: Request, response: Response):
-    """Crea un account.
-
-    Il primo utente e' l'amministratore ed e' attivo subito. Gli altri
-    restano in attesa di approvazione.
-    """
-    username = auth.normalize_username(payload.username)
-    try:
-        existing = auth.get_user_by_username(username)
-    except Exception:
-        existing = None
-    if existing:
-        raise HTTPException(status_code=409, detail="Nome utente gia' in uso")
-
-    first = auth.count_users() == 0
-    try:
-        user = auth.create_user(
-            payload.username,
-            payload.password,
-            display_name=payload.display_name,
-            is_admin=first,
-            status=auth.STATUS_ACTIVE if first else auth.STATUS_PENDING,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    if not user:
-        raise HTTPException(status_code=500, detail="Registrazione non riuscita")
-
-    if first:
-        # Il primo account eredita le ricerche e le impostazioni gia' presenti
-        # nel database (la migrazione le assegna a lui).
-        db.init_db()
-
-    if user["status"] != auth.STATUS_ACTIVE:
-        return {
-            "ok": True,
-            "status": user["status"],
-            "user": auth.public_user(user),
-            "message": "Account creato. Un amministratore deve approvarlo prima di poter entrare.",
-        }
-
-    token, _ = auth.create_session(int(user["id"]), request.headers.get("user-agent"))
-    auth.touch_login(int(user["id"]))
-    deps.set_session_cookie(response, token, secure=deps.is_secure_request(request))
-    return {"ok": True, "status": user["status"], "user": auth.public_user(user)}
-
-
-@app.post("/api/auth/login")
-async def login(payload: LoginIn, request: Request, response: Response):
-    """Accesso con nome utente e password."""
-    user = auth.get_user_by_username(payload.username)
-    if not user or not auth.verify_password(payload.password, user.get("password_hash")):
-        # Messaggio identico in ogni caso: non riveliamo se l'utente esiste.
-        raise HTTPException(status_code=401, detail="Nome utente o password non corretti")
-    if user["status"] == auth.STATUS_PENDING:
-        raise HTTPException(status_code=403, detail="Account in attesa di approvazione")
-    if user["status"] != auth.STATUS_ACTIVE:
-        raise HTTPException(status_code=403, detail="Account disabilitato")
-
-    token, _ = auth.create_session(int(user["id"]), request.headers.get("user-agent"))
-    auth.touch_login(int(user["id"]))
-    deps.set_session_cookie(response, token, secure=deps.is_secure_request(request))
-    return {"ok": True, "user": auth.public_user(user)}
+@app.post("/api/auth/unlock")
+async def unlock(payload: UnlockIn, request: Request, response: Response):
+    """Sblocca l'app con la password (o con la chiave segreta)."""
+    token, error = access.unlock(
+        payload.password, user_agent=request.headers.get("user-agent")
+    )
+    if error:
+        raise HTTPException(status_code=401, detail=error)
+    if token:
+        deps.set_session_cookie(response, token, secure=deps.is_secure_request(request))
+    return {"ok": True}
 
 
 @app.post("/api/auth/logout")
@@ -243,17 +177,54 @@ async def me(request: Request):
     return {"user": auth.public_user(user)}
 
 
-@app.post("/api/auth/password")
-async def change_password(payload: PasswordChangeIn, request: Request):
-    """Cambia la propria password e chiude le altre sessioni."""
-    user = deps.require_user(request)
-    if not auth.verify_password(payload.current_password, user.get("password_hash")):
-        raise HTTPException(status_code=400, detail="Password attuale non corretta")
+@app.post("/api/auth/access")
+async def set_access(request: Request, payload: AccessIn):
+    """Imposta o toglie la password d'accesso.
+
+    - `password` non vuota: imposta la nuova password e chiude le sessioni;
+    - `password` vuota: toglie la password, l'app si riapre liberamente.
+    """
+    deps.require_user(request)
     try:
-        auth.set_password(int(user["id"]), payload.new_password)
+        changed = access.set_password(payload.password)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"ok": True, "message": "Password aggiornata. Esci e rientra per ricaricare la sessione."}
+    if changed:
+        return {
+            "ok": True,
+            "locked": True,
+            "message": "Password impostata. Alla prossima apertura ti verra' chiesta.",
+        }
+    return {
+        "ok": True,
+        "locked": False,
+        "message": "Password rimossa: l'app si apre senza accesso.",
+    }
+
+
+@app.post("/api/auth/key")
+async def rotate_key(request: Request):
+    """Genera una chiave segreta nuova.
+
+    La chiave si vede una volta sola (nel database c'e' solo l'hash):
+    usala nell'URL per entrare con un tocco, es.
+    `https://.../?key=XXXX`.
+    """
+    deps.require_user(request)
+    key = access.new_key()
+    return {
+        "ok": True,
+        "key": key,
+        "message": "Copia la chiave: si vede solo adesso.",
+    }
+
+
+@app.delete("/api/auth/key")
+async def delete_key(request: Request):
+    """Toglie la chiave segreta."""
+    deps.require_user(request)
+    access.clear_key()
+    return {"ok": True, "message": "Chiave segreta rimossa."}
 
 
 @app.get("/api/auth/users")
@@ -264,53 +235,6 @@ async def list_users(request: Request):
         "users": [auth.public_user(u) for u in auth.list_users()],
         "pending": auth.count_users(auth.STATUS_PENDING),
     }
-
-
-@app.post("/api/auth/users")
-async def admin_create_user(payload: AdminUserCreateIn, request: Request):
-    """Crea un account attivo. Riservato agli amministratori."""
-    deps.require_admin(request)
-    try:
-        user = auth.create_user(
-            payload.username,
-            payload.password,
-            display_name=payload.display_name,
-            is_admin=payload.is_admin,
-            status=auth.STATUS_ACTIVE,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"ok": True, "user": auth.public_user(user) if user else None}
-
-
-@app.patch("/api/auth/users/{user_id}")
-async def admin_set_status(user_id: int, payload: UserStatusIn, request: Request):
-    """Approva o disabilita un account. Riservato agli amministratori."""
-    deps.require_admin(request)
-    if int(user_id) == int(deps.require_user(request)["id"]) and payload.status != auth.STATUS_ACTIVE:
-        raise HTTPException(status_code=400, detail="Non puoi disabilitare te stesso")
-    try:
-        user = auth.set_user_status(user_id, payload.status)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if not user:
-        raise HTTPException(status_code=404, detail="Utente non trovato")
-    return {"ok": True, "user": auth.public_user(user)}
-
-
-@app.post("/api/auth/users/{user_id}/password")
-async def admin_reset_password(
-    user_id: int, payload: AdminPasswordResetIn, request: Request
-):
-    """Imposta una nuova password per un utente. Riservato agli amministratori."""
-    deps.require_admin(request)
-    try:
-        ok = auth.set_password(user_id, payload.password)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if not ok:
-        raise HTTPException(status_code=404, detail="Utente non trovato")
-    return {"ok": True}
 
 
 @app.post("/api/auth/telegram/link")

@@ -222,45 +222,15 @@ class RunOut(BaseModel):
 
 
 # --------------------------------------------------------------------------- #
-# Autenticazione
+# Accesso
 # --------------------------------------------------------------------------- #
-class RegisterIn(BaseModel):
-    username: str = Field(..., min_length=3, max_length=40)
-    password: str = Field(..., min_length=8, max_length=200)
-    display_name: str | None = Field(None, max_length=80)
+class UnlockIn(BaseModel):
+    """Password d'accesso (o chiave segreta)."""
+
+    password: str = Field(..., min_length=1, max_length=300)
 
 
-class LoginIn(BaseModel):
-    username: str = Field(..., min_length=1, max_length=40)
-    password: str = Field(..., min_length=1, max_length=200)
+class AccessIn(BaseModel):
+    """Nuova password d'accesso. Stringa vuota = toglie la password."""
 
-
-class PasswordChangeIn(BaseModel):
-    current_password: str = Field(..., min_length=1, max_length=200)
-    new_password: str = Field(..., min_length=8, max_length=200)
-
-
-class UserStatusIn(BaseModel):
-    status: str = Field(..., pattern="^(active|pending|disabled)$")
-
-
-class AdminUserCreateIn(BaseModel):
-    username: str = Field(..., min_length=3, max_length=40)
-    password: str = Field(..., min_length=8, max_length=200)
-    display_name: str | None = Field(None, max_length=80)
-    is_admin: bool = False
-
-
-class AdminPasswordResetIn(BaseModel):
-    password: str = Field(..., min_length=8, max_length=200)
-
-
-class UserOut(BaseModel):
-    id: int
-    username: str
-    display_name: str | None = None
-    is_admin: bool = False
-    status: str = "active"
-    telegram_chat_id: str | None = None
-    created_at: str | None = None
-    last_login_at: str | None = None
+    password: str = Field("", max_length=300)
