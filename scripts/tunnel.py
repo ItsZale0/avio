@@ -337,10 +337,12 @@ def start_ngrok(port: int) -> tuple[subprocess.Popen, str | None]:
     command = [
         binary, "http", str(port),
         "--log", "stdout", "--log-format", "logfmt",
-        # ngrok v3.4+ blocca le richieste con Host sconosciuto: senza questo
-        # il browser si vede la pagina di avviso invece dell'app.
-        "--host-header", "rewrite",
     ]
+    # La policy riscrive l'header Host: senza, ngrok mostra la pagina di
+    # avviso invece dell'app. (Il flag --host-header non e' piu' supportato.)
+    policy = BASE / "ngrok-policy.yml"
+    if policy.exists():
+        command += ["--policy-file", str(policy)]
     domain = ngrok_domain()
     if domain:
         # Dominio riservato: l'indirizzo pubblico non cambia mai.

@@ -99,7 +99,11 @@ def _check_tunnel(public: str) -> str:
             )
         return f"non risponde (HTTP {exc.code})"
     except Exception as exc:  # noqa: BLE001
-        return f"non raggiungibile ({type(exc).__name__})"
+        return (
+            f"non raggiungibile da questa rete ({type(exc).__name__}): "
+            "il tunnel c'e', ma questa rete lo blocca (filtro del router "
+            "o ISP). Da un'altra rete funziona."
+        )
 
 
 def main() -> int:
