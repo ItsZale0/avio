@@ -260,7 +260,11 @@ def find_ngrok() -> str | None:
 
 
 def ngrok_token() -> str:
-    """Il token ngrok dalla variabile d'ambiente o dal file .env."""
+    """Il token ngrok: variabile d'ambiente, .env, database o config di ngrok.
+
+    Cosi' l'utente puo' salvarlo dove preferisce (anche dalla web, in
+    Impostazioni) e non deve toccare i file a mano.
+    """
     token = (os.getenv("NGROK_AUTHTOKEN") or "").strip()
     if token:
         return token
@@ -268,8 +272,54 @@ def ngrok_token() -> str:
     if env_path.exists():
         for line in env_path.read_text(encoding="utf-8").splitlines():
             if line.startswith("NGROK_AUTHTOKEN="):
-                return line.split("=", 1)[1].strip()
+                token = line.split("=", 1)[1].strip()
+                if token:
+                    return token
+    # Salvato nelle impostazioni dell'app (tabella "settings").
+    try:
+        sys.path.insert(0, str(BASE))
+        from app.services import settings as app_settings
+
+        token = (app_settings.get("ngrok_authtoken") or "").strip()
+        if token:
+            return token
+    except Exception:  # noqa: BLE001
+        pass
+    # Infine: la configurazione di ngrok stesso (ngrok config add-authtoken).
+    for candidate in (
+        Path(os.path.expandvars(r"%LOCALAPPDATA%\ngrok\ngrok.yml")),
+        Path.home() / ".config" / "ngrok" / "ngrok.yml",
+    ):
+        try:
+            if not candidate.exists():
+                continue
+            for line in candidate.read_text(encoding="utf-8", errors="replace").splitlines():
+                if "authtoken" in line and ":" in line:
+                    value = line.split(":", 1)[1].strip().strip('"').strip("'")
+                    if value:
+                        return value
+        except OSError:
+            continue
     return ""
+
+
+def ngrok_domain() -> str:
+    """Il dominio ngrok riservato (facoltativo): rende l'URL stabile."""
+    domain = (os.getenv("NGROK_DOMAIN") or "").strip()
+    if domain:
+        return domain
+    env_path = BASE / ".env"
+    if env_path.exists():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("NGROK_DOMAIN="):
+                return line.split("=", 1)[1].strip()
+    try:
+        sys.path.insert(0, str(BASE))
+        from app.services import settings as app_settings
+
+        return (app_settings.get("ngrok_domain") or "").strip()
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def start_ngrok(port: int) -> tuple[subprocess.Popen, str | None]:
@@ -285,6 +335,10 @@ def start_ngrok(port: int) -> tuple[subprocess.Popen, str | None]:
     if not token:
         raise RuntimeError("manca NGROK_AUTHTOKEN")
     command = [binary, "http", str(port), "--log", "stdout", "--log-format", "logfmt"]
+    domain = ngrok_domain()
+    if domain:
+        # Dominio riservato: l'indirizzo pubblico non cambia mai.
+        command += ["--domain", domain]
     env = dict(os.environ)
     env["NGROK_AUTHTOKEN"] = token
     process = subprocess.Popen(

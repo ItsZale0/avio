@@ -147,6 +147,8 @@ class SettingsIn(BaseModel):
     ai_model_smart: str | None = None
     ai_model_fast: str | None = None
     gtfs_enabled: str | None = None
+    ngrok_authtoken: str | None = None
+    ngrok_domain: str | None = None
 
 
 class PushKeys(BaseModel):

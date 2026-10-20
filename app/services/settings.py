@@ -15,6 +15,7 @@ SECRET_KEYS = {
     "vapid_private_key",
     "access_password",
     "access_key",
+    "ngrok_authtoken",
 }
 MASK = "••••••••"
 
@@ -31,6 +32,8 @@ GLOBAL_KEYS = {
     "vapid_public_key",
     "telegram_offset",
     "sources_migrated_gtfs",
+    "ngrok_authtoken",
+    "ngrok_domain",
 }
 
 # Impostazioni personali: valgono per il singolo utente.
@@ -74,6 +77,10 @@ DEFAULTS: dict[str, str] = {
     # Hash bcrypt della password d'accesso e hash SHA-256 della chiave segreta.
     "access_password": "",
     "access_key": "",
+    # Token ngrok: serve per il tunnel pubblico stabile (lavora sulla 443).
+    "ngrok_authtoken": "",
+    # Dominio ngrok riservato (facoltativo): rende l'URL stabile per sempre.
+    "ngrok_domain": "",
 }
 
 
@@ -95,6 +102,7 @@ def _env_defaults() -> dict[str, str]:
         "ai_model_smart": "AI_MODEL_SMART",
         "ai_model_fast": "AI_MODEL_FAST",
         "gtfs_enabled": "GTFS_ENABLED",
+        "ngrok_authtoken": "NGROK_AUTHTOKEN",
     }
     values = dict(DEFAULTS)
     for key, env_name in mapping.items():

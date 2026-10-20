@@ -1612,6 +1612,8 @@ async function openSettings() {
 
     $("#sTelegramToken").value = s.telegram_token || "";
     $("#sTelegramChat").value = s.telegram_chat_id || "";
+    if ($("#sNgrokToken")) $("#sNgrokToken").value = s.ngrok_authtoken || "";
+    if ($("#sNgrokDomain")) $("#sNgrokDomain").value = s.ngrok_domain || "";
     $("#sSmtpHost").value = s.smtp_host || "";
     $("#sSmtpPort").value = s.smtp_port || "587";
     $("#sSmtpUser").value = s.smtp_user || "";
@@ -1719,6 +1721,8 @@ function settingsPayload() {
   return {
     ...personal,
     groq_api_key: $("#sGroqKey").value.trim(),
+    ngrok_authtoken: $("#sNgrokToken").value.trim(),
+    ngrok_domain: $("#sNgrokDomain").value.trim(),
     // Stringa vuota = torna al modello predefinito dell'app.
     ai_model_smart: $("#sAiSmart").value,
     ai_model_fast: $("#sAiFast").value,
