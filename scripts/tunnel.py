@@ -401,23 +401,34 @@ def start_ngrok(port: int) -> tuple[subprocess.Popen, str | None]:
     token = ngrok_token()
     if not token:
         raise RuntimeError("manca NGROK_AUTHTOKEN")
-    command = [
+    base = [
         binary, "http", str(port),
         "--log", "stdout", "--log-format", "logfmt",
     ]
-    # La policy riscrive l'header Host: senza, ngrok mostra la pagina di
-    # avviso invece dell'app. (Il flag --host-header non e' piu' supportato.)
+    # La policy riscrive l'header Host: senza, l'app vede un Host diverso
+    # dal suo e alcune richieste non tornano. (Il flag --host-header non e'
+    # piu' supportato.)
     policy = BASE / "ngrok-policy.yml"
     if policy.exists():
-        command += ["--policy-file", str(policy)]
+        base += ["--policy-file", str(policy)]
+    env = dict(os.environ)
+    env["NGROK_AUTHTOKEN"] = token
+
     domain = ngrok_domain()
     if domain:
         # Dominio riservato: l'indirizzo pubblico non cambia mai.
         host = domain.replace("https://", "").replace("http://", "").strip("/")
-        command += ["--url", f"https://{host}"]
-    env = dict(os.environ)
-    env["NGROK_AUTHTOKEN"] = token
-    return _spawn(command, r"url=(\S+)", env=env)
+        process, url = _spawn(base + ["--url", f"https://{host}"], r"url=(\S+)", env=env)
+        if url:
+            return process, url
+        print(
+            f"  Il dominio ngrok '{host}' non e' utilizzabile (non riservato "
+            "sul tuo account?): uso un indirizzo casuale.",
+            file=sys.stderr,
+        )
+        if process.poll() is None:
+            _terminate_tree(process)
+    return _spawn(base, r"url=(\S+)", env=env)
 
 
 def start_cloudflared(port: int) -> tuple[subprocess.Popen, str | None]:
