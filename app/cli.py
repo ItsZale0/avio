@@ -64,8 +64,8 @@ def main(argv: list[str] | None = None) -> int:
     user_parser.add_argument("--password", help="password (chiede l'interattivamente se omessa)")
     user_parser.add_argument("--admin", action="store_true", help="ruolo amministratore")
 
-    auth_parser = sub.add_parser("auth", help="attiva o disattiva l'accesso con password")
-    auth_parser.add_argument("state", choices=("on", "off"), help="on = chiede il login, off = libero")
+    auth_parser = sub.add_parser("auth", help="alias di 'access' (deprecated)")
+    auth_parser.add_argument("state", choices=("on", "off"), help="on = chiede la password")
 
     access_parser = sub.add_parser("access", help="password d'accesso e chiave segreta")
     access_parser.add_argument(
@@ -118,20 +118,22 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "auth":
-        from .services import settings as app_settings
+        # Alias comodo: 'auth on' imposta la password, 'auth off' la toglie.
+        from . import access
 
         db.init_db()
-        enabled = "1" if args.state == "on" else "0"
-        app_settings.update({"auth_enabled": enabled})
-        if enabled:
-            owner = auth.implicit_owner()
-            if not owner:
-                owner = auth.ensure_owner()
-            print(f"Accesso con password ATTIVATO. Account: {owner['username']}")
-            print("Se hai dimenticato la password:")
-            print(f"  python -m app.cli user-add {owner['username'] --password \"NUOVA\"")
+        if args.state == "off":
+            access.set_password("")
+            access.clear_key()
+            print("Accesso disattivato: l'app si apre direttamente.")
         else:
-            print("Accesso con password DISATTIVATO: l'app si apre direttamente.")
+            password = getpass.getpass("Password d'accesso: ")
+            try:
+                access.set_password(password)
+            except ValueError as exc:
+                print(f"Errore: {exc}", file=sys.stderr)
+                return 1
+            print("Password d'accesso impostata.")
         return 0
 
     if args.command == "access":
