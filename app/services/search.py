@@ -22,11 +22,29 @@ _lock = asyncio.Lock()
 BASE_URL = f"http://{HOST}:{PORT}"
 
 
+def _prefs_of(watch: dict[str, Any]) -> dict[str, Any]:
+    """Le preferenze della ricerca unite a quelle globali dell'utente.
+
+    L'agevolazione X-GO (giovane/senior) e' un dato dell'utente, non della
+    ricerca: si imposta una volta sola nelle impostazioni.
+    """
+    prefs = dict(intelligence.prefs_of(watch))
+    try:
+        from . import settings as app_settings
+
+        xgo = (app_settings.get("xgo") or "").strip()
+        if xgo and not prefs.get("xgo"):
+            prefs["xgo"] = xgo
+    except Exception:  # noqa: BLE001
+        pass
+    return prefs
+
+
 def build_context(watch: dict[str, Any]) -> SearchContext:
     arrive_by = parse_dt(watch["arrive_by"])
     if not arrive_by:
         raise ValueError("arrive_by mancante")
-    prefs = intelligence.prefs_of(watch)
+    prefs = _prefs_of(watch)
     return SearchContext(
         watch_id=watch["id"],
         from_place=watch["from_place"],
@@ -198,16 +216,7 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
             if error:
                 errors.append(error)
 
-        prefs = intelligence.prefs_of(watch)
-        # L'agevolazione X-GO e' un dato dell'utente, non della ricerca.
-        try:
-            from . import settings as app_settings
-
-            xgo = (app_settings.get("xgo") or "").strip()
-            if xgo and not prefs.get("xgo"):
-                prefs = {**prefs, "xgo": xgo}
-        except Exception:  # noqa: BLE001
-            pass
+        prefs = _prefs_of(watch)
         late_minutes = int(prefs.get("flexible_days", 0) or 0) * 1440
         gathered = _dedupe(offers)
 
