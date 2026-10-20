@@ -156,5 +156,62 @@ class ChatPersistenceTests(unittest.TestCase):
         self.assertIn("partenza dopo 2026-10-22 09:00", etichette[1])
 
 
+class WindowWarningTests(unittest.TestCase):
+    """Partenza dopo l'arrivo: la ricerca resterebbe vuota, meglio dirlo."""
+
+    def setUp(self):
+        from app import db
+
+        db.init_db()
+
+    def _watch(self, partenza: str, arrivo: str) -> int:
+        from app import db
+
+        with db.db() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO watches(id, user_id, name, from_place, to_place, "
+                "arrive_by, depart_after, max_price, radius_km, passengers, sources, notify, "
+                "interval_min, active, created_at, prefs) VALUES(997, 3, 'test finestra', "
+                "'Thiene', 'Trento', ?, ?, 14, 5, 1, '[]', '[]', 60, 1, "
+                "'2026-10-20T10:00:00', '{}')",
+                (arrivo, partenza),
+            )
+        self.addCleanup(self._cleanup)
+        return 997
+
+    def _cleanup(self):
+        from app import db
+
+        with db.db() as conn:
+            conn.execute("DELETE FROM watches WHERE id = 997")
+
+    def test_la_finestra_vuota_viene_segnalata(self):
+        self._watch("2026-10-22T10:30:00+02:00", "2026-10-22T09:00:00+02:00")
+        avviso = chat._avviso_finestra(997, 3)
+        self.assertIn("finestra e' vuota", avviso)
+        self.assertIn("10:30", avviso)
+
+    def test_una_finestra_valida_non_produce_avvisi(self):
+        self._watch("2026-10-22T07:00:00+02:00", "2026-10-22T11:00:00+02:00")
+        self.assertEqual(chat._avviso_finestra(997, 3), "")
+
+    def test_senza_orari_non_si_dice_niente(self):
+        self._watch("", "")
+        self.assertEqual(chat._avviso_finestra(997, 3), "")
+
+
+class TimeDisplayTests(unittest.TestCase):
+    """L'agente deve leggere l'ora italiana, non l'UTC del database."""
+
+    def test_utc_diventa_ora_italiana(self):
+        self.assertEqual(chat._fmt("2026-10-22T09:00:00+00:00"), "2026-10-22 11:00")
+
+    def test_un_orario_senza_fuso_e_gia_locale(self):
+        self.assertEqual(chat._fmt("2026-10-22T09:00"), "2026-10-22 09:00")
+
+    def test_vuoto(self):
+        self.assertEqual(chat._fmt(None), "-")
+
+
 if __name__ == "__main__":
     unittest.main()

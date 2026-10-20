@@ -11,6 +11,7 @@ risponde, la ricerca continua senza questa fonte.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 
 import httpx
@@ -18,6 +19,8 @@ import httpx
 from ..config import USER_AGENT
 from ..geo import haversine_km
 from .base import Adapter, AdapterResult, Offer, SearchContext
+
+log = logging.getLogger("carpool.transit")
 
 MIRRORS = [
     "https://overpass-api.de/api/interpreter",
@@ -65,6 +68,49 @@ def _to_stops(elements: list[dict], lat: float, lon: float) -> list[dict]:
     return stops[:5]
 
 
+def _gtfs_stops(lat: float, lon: float, radius_km: float = 1.6, limit: int = 5) -> list[dict]:
+    """Fermate vicine dal GTFS gia' scaricato, senza passare da Overpass.
+
+    Overpass e' un servizio pubblico e a volte e' irraggiungibile (o lento):
+    i feed GTFS locali hanno le stesse fermate con le coordinate, quindi la
+    funzione non si perde. Se non c'e' nessun feed importato, lista vuota.
+    """
+    try:
+        from ..gtfs import db as gtfs_db
+        from ..gtfs.engine import nearby_stops
+
+        if not gtfs_db.has_data():
+            return []
+        feeds = gtfs_db.imported_feed_ids()
+        if not feeds:
+            return []
+        with gtfs_db.db() as conn:
+            righe = nearby_stops(conn, feeds, lat, lon, radius_km, limit=limit)
+    except Exception as exc:  # noqa: BLE001
+        log.debug("fermate GTFS non disponibili: %s", exc)
+        return []
+
+    fermate: list[dict] = []
+    for row in righe:
+        stop_lat, stop_lon = row.get("lat"), row.get("lon")
+        if stop_lat is None or stop_lon is None:
+            continue
+        fermate.append(
+            {
+                "id": f"gtfs:{row.get('feed')}:{row.get('stop_id')}",
+                "name": row.get("name") or str(row.get("stop_id")),
+                "kind": "fermata",
+                "lat": stop_lat,
+                "lon": stop_lon,
+                "distance_km": row.get("distance_km")
+                if row.get("distance_km") is not None
+                else haversine_km(lat, lon, stop_lat, stop_lon),
+            }
+        )
+    fermate.sort(key=lambda f: f["distance_km"])
+    return fermate[:limit]
+
+
 async def _nearby_stops(lat: float, lon: float) -> tuple[bool, list[dict]]:
     """Restituisce (servizio_raggiungibile, fermate)."""
     global _fail_until
@@ -75,7 +121,9 @@ async def _nearby_stops(lat: float, lon: float) -> tuple[bool, list[dict]]:
         return True, cached[1]
 
     if time.time() < _fail_until:
-        return False, []
+        # Overpass e' gia' caduto da poco: si va direttamente al GTFS locale.
+        locali = _gtfs_stops(lat, lon)
+        return bool(locali), locali
 
     query = _query(lat, lon)
     headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
@@ -104,6 +152,11 @@ async def _nearby_stops(lat: float, lon: float) -> tuple[bool, list[dict]]:
                 task.cancel()
 
     _fail_until = time.time() + FAIL_COOLDOWN
+    # Ripiego locale: le fermate dei feed GTFS hanno le stesse coordinate.
+    locali = _gtfs_stops(lat, lon)
+    if locali:
+        _cache[key] = (time.time(), locali)
+        return True, locali
     return False, []
 
 
@@ -124,7 +177,10 @@ class TransitAdapter(Adapter):
         if (not ok_a and not ok_b) or not origin_stops or not dest_stops:
             if not ok_a and not ok_b:
                 return AdapterResult(
-                    hints=["Fermate vicine: OpenStreetMap non raggiungibile in questo momento."]
+                    hints=[
+                        "Fermate vicine: OpenStreetMap non raggiungibile e nessuna "
+                        "fermata nei feed GTFS per queste coordinate."
+                    ]
                 )
             return AdapterResult()
 

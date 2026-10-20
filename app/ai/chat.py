@@ -63,6 +63,7 @@ Regole:
   {chiavi}
   - "budget_raise": numero (il nuovo tetto in euro)
   - "set_depart_after" / "set_arrive_by": orario locale "YYYY-MM-DDTHH:MM"
+  - per TOGLIERE un limite usa la stringa vuota: "set_depart_after": ""
   - "prefer_modes": lista di "treno", "bus", "passaggio"
   - "add_pass": identificatore dell'abbonamento (se lo conosci: {passes})
   - "set_from_point" / "set_to_point": il punto esatto ("Stazione di Trento")
@@ -75,12 +76,19 @@ Rispondi SEMPRE e SOLO con un oggetto JSON valido, senza testo attorno:
 
 
 def _fmt(quando: Any) -> str:
+    """Data e ora in ora italiana: il modello deve leggere l'ora del telefono,
+    non l'UTC salvato nel database."""
     if not quando:
         return "-"
     try:
-        return str(quando)[:16].replace("T", " ")
+        from ..timeutil import parse_dt
+
+        dt = parse_dt(quando)
+        if dt:
+            return dt.astimezone(ROME).strftime("%Y-%m-%d %H:%M")
     except Exception:  # noqa: BLE001
-        return str(quando)[:16]
+        pass
+    return str(quando)[:16].replace("T", " ")
 
 
 def _contesto(watch: dict[str, Any]) -> dict[str, Any]:
@@ -234,6 +242,30 @@ def _risposta_senza_ai(watch: dict[str, Any], testo: str) -> dict[str, Any]:
     return {"reply": reply, "prefs": {}, "rerun": False}
 
 
+def _avviso_finestra(watch_id: int, user_id: int | None) -> str:
+    """Se partenza e arrivo si sovrappongono, dillo subito.
+
+    E' il caso classico: \"parto dopo le 8\" su una tratta da 2h30 con arrivo
+    entro le 10. Senza avviso la ricerca resta vuota e sembra rotta.
+    """
+    from ..timeutil import parse_dt
+
+    watch = get_watch(watch_id, user_id=user_id) or {}
+    partenza = parse_dt(watch.get("depart_after"))
+    arrivo = parse_dt(watch.get("arrive_by"))
+    if not partenza or not arrivo:
+        return ""
+    if partenza >= arrivo:
+        return (
+            "\n\n⚠️ Attenzione: con la partenza alle "
+            f"{partenza.strftime('%H:%M')} e l'arrivo entro le "
+            f"{arrivo.strftime('%H:%M')} la finestra e' vuota: nessun viaggio "
+            "puo' stare in piedi. Dimmi di spostare l'orario (o di togliere "
+            "il limite di partenza) e sistemo."
+        )
+    return ""
+
+
 def _etichette(cambi: dict[str, Any]) -> list[str]:
     """Le modifiche in parole, come le legge l'utente nella chat."""
     etichette: list[str] = []
@@ -325,6 +357,8 @@ async def answer(
 
     reply = risultato.get("reply") or ""
     etichette = _etichette(applicato)
+    if applicato:
+        reply += _avviso_finestra(watch_id, user_id)
     add_chat_message(watch_id, "agente", reply, etichette, user_id=user_id)
 
     return {
