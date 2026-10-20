@@ -196,6 +196,49 @@ biglietti, risparmi X €") e la card mostra i due ticket con i rispettivi
 orari. Il trucco esiste anche fra operatori diversi: il planner mette già in
 concorrenza le tratte di fonti diverse (Trenitalia + bus, auto + treno).
 
+### Il tempo, i cambi e le priorità
+
+Il punteggio (`app/scoring.py`) pesa sei fattori, non solo il prezzo:
+
+| fattore | peso base | con "preferisco arrivare prima" |
+|---|---|---|
+| prezzo | 0,40 | 0,28 |
+| durata del viaggio | 0,16 | 0,30 |
+| numero di cambi | 0,10 | 0,12 |
+| arrivo anticipato (cuscinetto) | 0,14 | 0,14 |
+| distanza dai punti richiesti | 0,10 | 0,08 |
+| affidabilità | 0,10 | 0,08 |
+
+- La **durata** è confrontata con il viaggio completo più rapido trovato
+  (non con una tratta di accesso: un treno di 3 ore non è "lento" rispetto
+  a un'auto di 12 minuti).
+- I **cambi** sono dedotti dai dati della fonte (`details["cambi"]`) o dal
+  numero di tappe.
+- Con `prefs["prefer_fast"]` il tempo pesa quanto il prezzo: il piano
+  diventa il più rapido, non il più economico.
+- Il **profilo** di ogni piano ("economico", "veloce", "comodo") permette di
+  presentare alternative con caratteri diversi invece di tre prezzi vicini.
+
+### Gli abbonamenti: il viaggio che hai già pagato
+
+`app/services/passes.py` gestisce gli abbonamenti dichiarati dall'utente:
+
+- un abbonamento **regionale** copre solo i regionali (non Frecce o Intercity);
+  un abbonamento annuale copre tutti i treni;
+- se la scadenza è nota e il viaggio è dopo, l'abbonamento non copre;
+- la tratta coperta ha **costo effettivo 0**, ma il prezzo del biglietto
+  resta visibile: sono due informazioni diverse;
+- il carnet "consuma" un biglietto: la nota lo dice;
+- un abbonamento urbano azzera anche lo spostamento per raggiungere il
+  punto di ritrovo.
+
+Flusso: `prefs["passes"]` → `apply_passes()` mette `net_cost = 0` sulle
+offerte coperte → il filtro budget, lo scoring, il planner e l'AI lavorano
+tutti sul **costo effettivo** (`effective_cost`), non sul prezzo nominale.
+
+L'agente chiede gli abbonamenti con la domanda `abbonamenti` (o con
+risposta libera: "ho l'abbonamento annuale Trenitalia" → `trenitalia_tutti`).
+
 - **Router a due modelli**: `llama-3.3-70b-versatile` per pianificare/parsare,
   `llama-3.1-8b-instant` per compiti brevi. Nomi configurabili; se un modello
   non esiste il client prova automaticamente gli altri (`GroqClient._model_order`).

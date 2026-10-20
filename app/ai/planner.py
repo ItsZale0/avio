@@ -14,6 +14,8 @@ from datetime import datetime, timedelta
 
 from ..adapters.base import Offer, SearchContext
 from ..geo import haversine_km
+from ..scoring import _changes_count as _changes_of
+from ..services.passes import has_urban_pass, normalize_passes
 
 # Modalita' che possono fare da "prima tratta" (per raggiungere una stazione).
 ACCESS_MODES = {"carsharing", "rideshare", "transit", "bus", "tram"}
@@ -29,6 +31,9 @@ SECOND_MODES = MAIN_MODES | LAST_MODES
 MAX_COMBOS = 40
 MAX_TRIPLES = 20
 MAX_SINGLES = 60
+# Quante tratte "veloci" tenere in aggiunta quando l'utente preferisce
+# arrivare prima (il trade-off prezzo/tempo va mostrato).
+MAX_FAST_SINGLES = 15
 # Quante tratte tenere per lato quando si cercano i viaggi a tre tratte.
 MAX_SIDE_LEGS = 40
 
@@ -48,14 +53,39 @@ class Candidate:
     notes: list[str] = field(default_factory=list)
     # Tratte senza prezzo (es. orari GTFS): il totale e' parziale, va verificato.
     unpriced_legs: int = 0
+    # Costo reale dei biglietti quando un abbonamento copre la tratta: 0.
+    # None = nessun abbonamento, il costo e' il prezzo normale.
+    net_total_price: float | None = None
+    # Pass che coprono il viaggio (nomi).
+    passes: list[str] = field(default_factory=list)
 
     @property
     def partial(self) -> bool:
         return self.unpriced_legs > 0
 
     @property
+    def net_total(self) -> float:
+        """Costo dei biglietti con gli abbonamenti (uguale al prezzo se non coperti)."""
+        if self.net_total_price is None:
+            return self.total_price
+        return self.net_total_price
+
+    @property
     def effective_cost(self) -> float:
-        return round(self.total_price + self.access_cost, 2)
+        """Quanto si spende davvero: biglietti (con abbonamenti) + spostamento."""
+        return round(self.net_total + self.access_cost, 2)
+
+    @property
+    def covered(self) -> bool:
+        return bool(self.passes) and self.net_total < self.total_price - 0.01
+
+    @property
+    def changes(self) -> int:
+        """Cambi totali del viaggio (quelli dentro le tratte + i cambi di mezzo)."""
+        internal = sum(_changes_of(leg) for leg in self.legs)
+        # Ogni tratta dopo la prima e' un cambio di mezzo: si conta gia' il
+        # passaggio fra una tratta e l'altra, quindi non si aggiunge.
+        return internal
 
     def label(self) -> str:
         names = []
@@ -103,9 +133,13 @@ class Candidate:
             "kind": self.kind,
             "title": self.label(),
             "total_price": round(self.total_price, 2),
+            "net_total_price": round(self.net_total, 2),
+            "covered": self.covered,
+            "passes": list(self.passes),
             "access_cost": round(self.access_cost, 2),
             "effective_cost": self.effective_cost,
             "total_duration_min": self.total_duration_min,
+            "changes": self.changes,
             "depart_at": self.depart_at.isoformat() if self.depart_at else None,
             "arrive_at": self.arrive_at.isoformat() if self.arrive_at else None,
             "estimated": self.estimated,
@@ -117,9 +151,31 @@ class Candidate:
         }
 
 
+def _net_leg_cost(leg: Offer) -> float:
+    """Costo della tratta con gli abbonamenti (0 se coperta)."""
+    if leg.net_cost is not None:
+        return leg.net_cost
+    return leg.price or 0.0
+
+
+def _net_info(legs: list[Offer]) -> tuple[float, list[str]]:
+    """Totale con abbonamenti e elenco dei pass che coprono il viaggio."""
+    totale = round(sum(_net_leg_cost(leg) for leg in legs), 2)
+    pass_nomi: list[str] = []
+    for leg in legs:
+        nome = (leg.details or {}).get("pass")
+        if nome and nome not in pass_nomi:
+            pass_nomi.append(str(nome))
+    return totale, pass_nomi
+
+
 def _access_cost(offer: Offer, ctx: SearchContext) -> float:
     distance = offer.pickup_distance_km(ctx)
     if distance is None or distance <= 1.2:
+        return 0.0
+    # Con un abbonamento urbano puoi prendere il bus: lo spostamento e' gratis.
+    user_passes = normalize_passes((ctx.prefs or {}).get("passes"))
+    if user_passes and has_urban_pass(user_passes) and distance <= 5:
         return 0.0
     return round(min(2.0, distance * 0.9) if distance <= 5 else max(6.0, distance * 1.1), 2)
 
@@ -274,22 +330,28 @@ def _build_triples(
                     notes.append(f"cambio a {leg1.dropoff_name} (~{transfer12:.1f} km)")
                 if transfer23 is not None:
                     notes.append(f"cambio a {leg2.dropoff_name} (~{transfer23:.1f} km)")
-                found.append(
-                    Candidate(
-                        id="",
-                        kind="triple",
-                        legs=legs,
-                        total_price=round(sum(leg.price for leg in priced_legs), 2),
-                        total_duration_min=_duration(leg1.depart_at, leg3.arrive_at),
-                        depart_at=leg1.depart_at,
-                        arrive_at=leg3.arrive_at,
-                        estimated=any(leg.price_is_estimate for leg in priced_legs),
-                        access_cost=_access_cost(leg1, ctx),
-                        transfer_km=transfer12,
-                        notes=notes,
-                        unpriced_legs=len(legs) - len(priced_legs),
-                    )
+                candidate = Candidate(
+                    id="",
+                    kind="triple",
+                    legs=legs,
+                    total_price=round(sum(leg.price for leg in priced_legs), 2),
+                    total_duration_min=_duration(leg1.depart_at, leg3.arrive_at),
+                    depart_at=leg1.depart_at,
+                    arrive_at=leg3.arrive_at,
+                    estimated=any(leg.price_is_estimate for leg in priced_legs),
+                    access_cost=_access_cost(leg1, ctx),
+                    transfer_km=transfer12,
+                    notes=notes,
+                    unpriced_legs=len(legs) - len(priced_legs),
                 )
+                net_total, pass_nomi = _net_info(legs)
+                candidate.net_total_price = net_total
+                candidate.passes = pass_nomi
+                if candidate.covered:
+                    candidate.notes.append(
+                        f"Coperto da {', '.join(pass_nomi)}: i biglietti non li paghi."
+                    )
+                found.append(candidate)
         if len(found) >= MAX_TRIPLES * 5:
             break
     found.sort(key=lambda c: (c.unpriced_legs, c.total_price, c.total_duration_min or 10**6))
@@ -326,7 +388,17 @@ def build_candidates(
     # il tetto, con la nota "sopra budget".
     over_budget: dict[tuple, Candidate] = {}
 
+    prefer_fast = bool((ctx.prefs or {}).get("prefer_fast"))
     singles = sorted(priced, key=lambda o: (o.price or 0) + _access_cost(o, ctx))[:MAX_SINGLES]
+    if prefer_fast:
+        # Un travel agent tiene in serbo anche le piu' rapide: il trade-off
+        # "5 euro in piu' ma 4 ore meno" va mostrato, non nascosto.
+        fast = sorted(
+            (o for o in priced if o.duration_min),
+            key=lambda o: (o.duration_min, o.price or 0),
+        )[:MAX_FAST_SINGLES]
+        seen = {o.fingerprint for o in singles}
+        singles += [o for o in fast if o.fingerprint not in seen]
     for offer in singles:
         if offer.arrive_at and offer.arrive_at > latest:
             continue
@@ -346,7 +418,14 @@ def build_candidates(
             estimated=offer.price_is_estimate,
             access_cost=_access_cost(offer, ctx),
         )
-        if ctx.max_price is not None and candidate.total_price > ctx.max_price:
+        net_total, pass_nomi = _net_info([offer])
+        candidate.net_total_price = net_total
+        candidate.passes = pass_nomi
+        if candidate.covered:
+            candidate.notes.append(
+                f"Coperto da {', '.join(pass_nomi)}: il biglietto non lo paghi."
+            )
+        if ctx.max_price is not None and candidate.net_total > ctx.max_price:
             over_budget[("single", offer.fingerprint)] = candidate
             continue
         candidates[("single", offer.fingerprint)] = candidate
@@ -406,7 +485,14 @@ def build_candidates(
                     else [],
                     unpriced_legs=2 - len(priced_legs),
                 )
-                if ctx.max_price is not None and total > ctx.max_price:
+                net_total, pass_nomi = _net_info([leg1, leg2])
+                candidate.net_total_price = net_total
+                candidate.passes = pass_nomi
+                if candidate.covered:
+                    candidate.notes.append(
+                        f"Coperto da {', '.join(pass_nomi)}: i biglietti non li paghi."
+                    )
+                if ctx.max_price is not None and candidate.net_total > ctx.max_price:
                     over_budget[("combo", leg1.fingerprint, leg2.fingerprint)] = candidate
                     continue
                 candidates[("combo", leg1.fingerprint, leg2.fingerprint)] = candidate
@@ -420,7 +506,7 @@ def build_candidates(
             max_wait_min=max_wait_min,
         ):
             key = ("triple", *(leg.fingerprint for leg in candidate.legs))
-            if ctx.max_price is not None and candidate.total_price > ctx.max_price:
+            if ctx.max_price is not None and candidate.net_total > ctx.max_price:
                 over_budget[key] = candidate
                 continue
             candidates.setdefault(key, candidate)
@@ -435,7 +521,10 @@ def build_candidates(
     # Prima i piani con tutti i prezzi (ordinati per costo effettivo), poi quelli
     # con tratte senza prezzo: il loro totale e' solo la somma dei prezzi noti.
     def _multi_sort(items: list[Candidate]) -> list[Candidate]:
-        return sorted(items, key=lambda c: (c.unpriced_legs, c.total_price, c.total_duration_min or 10**6))
+        return sorted(
+            items,
+            key=lambda c: (c.unpriced_legs, c.effective_cost, c.total_duration_min or 10**6),
+        )
 
     singles_list = [c for c in all_candidates if c.kind == "single"]
     combos = _multi_sort([c for c in all_candidates if c.kind == "combo"])
@@ -444,7 +533,11 @@ def build_candidates(
     complete = singles_list + [c for c in combos if not c.partial][:MAX_COMBOS] + [
         c for c in triples if not c.partial
     ][:MAX_TRIPLES]
-    complete.sort(key=lambda c: (c.effective_cost, c.total_duration_min or 10**6))
+    if prefer_fast:
+        # "Preferisco arrivare prima": prima la durata, poi il prezzo.
+        complete.sort(key=lambda c: (c.total_duration_min or 10**6, c.effective_cost))
+    else:
+        complete.sort(key=lambda c: (c.effective_cost, c.total_duration_min or 10**6))
 
     partial = [c for c in combos if c.partial][:MAX_COMBOS] + [
         c for c in triples if c.partial

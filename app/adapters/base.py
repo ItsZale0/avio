@@ -31,6 +31,9 @@ class SearchContext:
     max_price: float | None = None
     # True se l'utente accetta di arrivare la sera prima (una notte in hotel).
     allow_day_before: bool = False
+    # Preferenze apprese (orari, comodita', priorita'): servono al ranking
+    # e all'AI per ragionare come un travel agent.
+    prefs: dict[str, Any] = field(default_factory=dict)
 
     @property
     def distance_km(self) -> float | None:
@@ -103,6 +106,9 @@ class Offer:
     deeplink: str | None = None
     currency: str = "EUR"
     price_is_estimate: bool = False
+    # Costo effettivo quando un abbonamento copre la tratta (0 euro).
+    # Il prezzo reale resta invariato: sono due cose diverse.
+    net_cost: float | None = None
     details: dict[str, Any] = field(default_factory=dict)
 
     @property

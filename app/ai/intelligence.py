@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from ..adapters.base import Offer, SearchContext
+from ..services import passes as passes_service
 from ..timeutil import human_rome, now_rome
 from . import prompts
 from .groq import ChatResult, ai_enabled, client_from_settings, log_call
@@ -58,12 +59,50 @@ def _constraints_text(watch: dict[str, Any], prefs: dict[str, Any]) -> str:
     if watch.get("max_price"):
         parts.append(f"Budget: {watch['max_price']:.2f} EUR")
     parts.append(f"Passeggeri: {watch.get('passengers', 1)}")
+    # Le priorita' dell'utente: un travel agent ragiona su questo, non solo
+    # sul prezzo piu' basso.
+    if prefs.get("prefer_fast"):
+        parts.append(
+            "Priorita' dell'utente: ARRIVARE PRIMA. Se un viaggio piu' veloce "
+            "costa qualcosa in piu', sceglilo. Minimizza i cambi."
+        )
+    if prefs.get("no_changes"):
+        parts.append("Priorita' dell'utente: VIAGGIARE SENZA CAMBI.")
+    if prefs.get("max_walk_km"):
+        parts.append(f"Massimo {prefs['max_walk_km']} km a piedi per il cambio.")
+    if prefs.get("luggage"):
+        parts.append(f"Bagagli: {prefs['luggage']}")
+    if prefs.get("prefer_modes"):
+        modes = prefs.get("prefer_modes")
+        if isinstance(modes, list) and modes:
+            parts.append("Mezzi preferiti: " + ", ".join(str(m) for m in modes))
+    pass_summary = passes_service.summary(
+        passes_service.normalize_passes(prefs.get("passes"))
+    )
+    if pass_summary:
+        parts.append(
+            f"Abbonamenti in corso: {pass_summary}. Le tratte coperte costano 0 euro "
+            "(il prezzo del biglietto resta, ma non lo paghi)."
+        )
     if prefs:
         parts.append("Preferenze apprese: " + json.dumps(prefs, ensure_ascii=False))
     return "\n".join(parts)
 
 
+def _human_duration(minutes: int | None) -> str | None:
+    if not minutes:
+        return None
+    hours, rest = divmod(int(minutes), 60)
+    return f"{hours}h {rest:02d}m" if hours else f"{rest} min"
+
+
 def _candidates_payload(candidates: list[Candidate]) -> list[dict[str, Any]]:
+    # Riferimenti per far capire all'AI il trade-off: il prezzo minimo e la
+    # durata minima tra i candidati.
+    cheapest = min((c.effective_cost for c in candidates), default=None)
+    fastest = min(
+        (c.total_duration_min for c in candidates if c.total_duration_min), default=None
+    )
     payload = []
     for candidate in candidates[:MAX_CANDIDATES_IN_PROMPT]:
         legs = []
@@ -85,19 +124,37 @@ def _candidates_payload(candidates: list[Candidate]) -> list[dict[str, Any]]:
                 leg_info["risparmio"] = leg.details.get("risparmio")
                 leg_info["prezzo_diretto"] = leg.details.get("prezzo_diretto")
             legs.append(leg_info)
+        duration = candidate.total_duration_min
         payload.append(
             {
                 "id": candidate.id,
                 "kind": candidate.kind,
                 "total_price": round(candidate.total_price, 2),
+                "net_total_price": round(candidate.net_total, 2),
+                "covered": candidate.covered,
+                "passes": list(candidate.passes),
                 "effective_cost": candidate.effective_cost,
+                "depart_local": human_rome(candidate.depart_at, "%d/%m %H:%M")
+                if candidate.depart_at
+                else None,
                 "arrive_local": human_rome(candidate.arrive_at, "%d/%m %H:%M")
                 if candidate.arrive_at
                 else None,
-                "duration_min": candidate.total_duration_min,
+                "duration_min": duration,
+                "duration": _human_duration(duration),
+                "changes": candidate.changes,
+                "legs_count": len(candidate.legs),
                 "partial": candidate.partial,
                 "transfer_km": round(candidate.transfer_km, 1)
                 if candidate.transfer_km is not None
+                else None,
+                # Confronto: quanto costa in piu' rispetto al piu' economico e
+                # quanto si guadagna in tempo rispetto al piu' veloce.
+                "extra_cost_vs_cheapest": round(candidate.effective_cost - cheapest, 2)
+                if cheapest is not None
+                else None,
+                "faster_than_slowest_min": (fastest - duration)
+                if (fastest is not None and duration is not None)
                 else None,
                 "legs": legs,
             }
@@ -106,11 +163,33 @@ def _candidates_payload(candidates: list[Candidate]) -> list[dict[str, Any]]:
 
 
 def _templated_explanation(candidate: Candidate, watch: dict[str, Any]) -> str:
+    """Spiegazione deterministica: cosa costa, quanto tempo ci mette, quanti cambi."""
     partial = (
         " Il totale è parziale: una tratta non ha prezzo, verifica la tariffa ufficiale."
         if candidate.partial
         else ""
     )
+    durata = _human_duration(candidate.total_duration_min)
+    quantita = []
+    if durata:
+        quantita.append(f"durata {durata}")
+    if candidate.changes:
+        quantita.append(
+            f"{candidate.changes} cambi" if candidate.changes > 1 else "1 cambio"
+        )
+    else:
+        quantita.append("nessun cambio")
+    quadro = ", ".join(quantita)
+    # Se e' coperto da un abbonamento, e' la notte piu' importante.
+    coperto = ""
+    if candidate.covered:
+        nomi = ", ".join(candidate.passes)
+        coperto = (
+            f" Il viaggio e' coperto da {nomi}: non paghi il biglietto "
+            f"({candidate.net_total:.2f} EUR effettivi invece di "
+            f"{candidate.total_price:.2f} EUR)."
+        )
+
     if candidate.kind in ("combo", "triple"):
         parts = []
         for index, leg in enumerate(candidate.legs):
@@ -124,9 +203,9 @@ def _templated_explanation(candidate: Candidate, watch: dict[str, Any]) -> str:
                 f"({human_rome(leg.depart_at, '%H:%M')} → {human_rome(leg.arrive_at, '%H:%M')}, {price})"
             )
         return (
-            f"Più economico trovato: {''.join(parts)}. "
-            f"Totale {candidate.total_price:.2f} EUR, "
-            f"arrivo {human_rome(candidate.arrive_at, '%a %d %b, %H:%M')}.{partial}"
+            f"Opzione più economica: {''.join(parts)}. "
+            f"Totale {candidate.total_price:.2f} EUR ({quadro}), "
+            f"arrivo {human_rome(candidate.arrive_at, '%a %d %b, %H:%M')}.{coperto}{partial}"
         )
     leg = candidate.legs[0]
     if leg.details.get("spezzatura"):
@@ -141,13 +220,13 @@ def _templated_explanation(candidate: Candidate, watch: dict[str, Any]) -> str:
             f"Si compra con due biglietti: {percorso}. "
             f"Totale {candidate.total_price:.2f} EUR invece di {diretto:.2f} EUR "
             f"del biglietto unico: risparmi {risparmio:.2f} EUR. "
-            f"Arrivo {human_rome(candidate.arrive_at, '%a %d %b, %H:%M')}."
+            f"{quadro}, arrivo {human_rome(candidate.arrive_at, '%a %d %b, %H:%M')}.{coperto}"
         )
     return (
-        f"Più economico trovato: {leg.operator or leg.source} "
+        f"Opzione più economica: {leg.operator or leg.source} "
         f"({human_rome(leg.depart_at, '%H:%M')} → {human_rome(leg.arrive_at, '%H:%M')}) "
-        f"a {candidate.total_price:.2f} EUR. "
-        f"Arrivo {human_rome(candidate.arrive_at, '%a %d %b, %H:%M')}."
+        f"a {candidate.total_price:.2f} EUR. {quadro}, "
+        f"arrivo {human_rome(candidate.arrive_at, '%a %d %b, %H:%M')}.{coperto}"
     )
 
 
@@ -159,6 +238,26 @@ def _transfer_note(previous: Offer, following: Offer) -> str:
     return f"cambio a {previous.dropoff_name} (~{km:.1f} km),"
 
 
+def _profile_of(candidate: Candidate, all_candidates: list[Candidate]) -> str:
+    """Etichetta il profilo di un piano: economico, veloce, comodo."""
+    others = [c for c in all_candidates if c.id != candidate.id]
+    if not others:
+        return "proposta"
+    cheapest = min(c.effective_cost for c in others)
+    fastest = min((c.total_duration_min or 10**6) for c in others)
+    # Solo il piu' economico in assoluto e' "economico": se i costi sono pari
+    # (per esempio con un abbonamento che copre tutto), conta altro.
+    if candidate.effective_cost < cheapest - 0.01:
+        return "economico"
+    if candidate.total_duration_min and candidate.total_duration_min <= fastest:
+        return "veloce"
+    if candidate.changes <= min(c.changes for c in others):
+        return "comodo"
+    if candidate.effective_cost <= cheapest + 0.01:
+        return "economico"
+    return "alternativa"
+
+
 def _plan_from_candidate(
     candidate: Candidate,
     ranked: dict[str, dict] | None,
@@ -168,6 +267,7 @@ def _plan_from_candidate(
     confidence: float | None = None,
     watchouts: list[str] | None = None,
     ai: bool = False,
+    profile: str | None = None,
 ) -> dict[str, Any]:
     plan = candidate.as_dict(ranked=ranked)
     notes = list(plan.pop("notes", []) or [])
@@ -181,6 +281,7 @@ def _plan_from_candidate(
     plan["confidence"] = confidence
     plan["watchouts"] = list(watchouts or []) + notes
     plan["ai"] = ai
+    plan["profile"] = profile
     plan["fingerprint"] = _fingerprint(plan)
     return plan
 
@@ -188,6 +289,53 @@ def _plan_from_candidate(
 def _fingerprint(plan: dict[str, Any]) -> str:
     ids = ",".join(str(step.get("offer_id")) for step in plan.get("steps", []))
     return f"{plan.get('total_price')}|{ids}"
+
+
+def _pass_question(prefs: dict[str, Any]) -> list[dict]:
+    """Chiede quali abbonamenti ha l'utente, se non li ha gia' dichiarati.
+
+    E' la domanda che spesso cambia tutto: con un abbonamento regionale il
+    viaggio da 6 ore costa 0 euro e diventa il piano migliore.
+    """
+    if passes_service.normalize_passes(prefs.get("passes")):
+        return []
+    return [
+        {
+            "key": "abbonamenti",
+            "text": (
+                "Hai qualche abbonamento o carnet in corso (Trenitalia, bus/metro "
+                "cittadino, carnet da 10 biglietti)? Se la tratta e' coperta il "
+                "biglietto non lo paghi: il piano migliore puo' cambiare del tutto."
+            ),
+            "options": [
+                {
+                    "id": "trenitalia_regionale",
+                    "label": "Abbonamento Trenitalia (regionale)",
+                    "prefs": {"add_pass": "trenitalia_regionale"},
+                },
+                {
+                    "id": "trenitalia_tutti",
+                    "label": "Abbonamento Trenitalia (tutti i treni)",
+                    "prefs": {"add_pass": "trenitalia_tutti"},
+                },
+                {
+                    "id": "carnet_regionale",
+                    "label": "Carnet 10 biglietti regionali",
+                    "prefs": {"add_pass": "carnet_regionale"},
+                },
+                {
+                    "id": "urbano",
+                    "label": "Abbonamento bus/metro cittadino",
+                    "prefs": {"add_pass": "urbano"},
+                },
+                {
+                    "id": "none",
+                    "label": "Nessuno, pago ogni biglietto",
+                    "prefs": {"clear_passes": True},
+                },
+            ],
+        }
+    ]
 
 
 def _relax_questions(
@@ -298,7 +446,138 @@ def _relax_questions(
                 ],
             }
         )
-    return questions[:2]
+    # La domanda sugli abbonamenti viene dopo: le altre sbloccano subito un
+    # piano, questa arriva quando c'e' spazio.
+    return (questions + _pass_question(prefs))[:2]
+
+
+def _priority_question(candidates: list[Candidate]) -> list[dict]:
+    """Chiede la priorita' quando c'e' un trade-off reale fra tempo e prezzo.
+
+    E' la domanda che fa un travel agent: "il piu' economico ci mette 6 ore,
+    il piu' veloce costa 5 euro in piu': cosa preferisci?".
+    """
+    usable = [
+        c
+        for c in candidates
+        if c.total_duration_min and not c.partial and c.effective_cost > 0
+    ]
+    if len(usable) < 2:
+        return []
+    cheapest = min(usable, key=lambda c: c.effective_cost)
+    fastest = min(usable, key=lambda c: (c.total_duration_min or 10**6, c.effective_cost))
+    if fastest is cheapest:
+        return []
+    # Quanto tempo si guadagna scegliendo il piu' veloce (e quanto costa).
+    gain = (cheapest.total_duration_min or 0) - (fastest.total_duration_min or 0)
+    extra = fastest.effective_cost - cheapest.effective_cost
+    if gain < 60 or extra < 1:
+        return []
+    return [
+        {
+            "key": "priorita",
+            "text": (
+                f"Ci sono due ottimi viaggi: il piu' economico costa "
+                f"{cheapest.effective_cost:.2f} EUR e ci mette "
+                f"{_human_duration(cheapest.total_duration_min)}; il piu' veloce costa "
+                f"{fastest.effective_cost:.2f} EUR e ci mette "
+                f"{_human_duration(fastest.total_duration_min)}. Cosa preferisci?"
+            ),
+            "options": [
+                {
+                    "id": "economico",
+                    "label": (
+                        f"Preferisco spendere meno "
+                        f"({cheapest.effective_cost:.2f} EUR, "
+                        f"{_human_duration(cheapest.total_duration_min)})"
+                    ),
+                    "prefs": {"prefer_fast": False},
+                },
+                {
+                    "id": "veloce",
+                    "label": (
+                        f"Preferisco arrivare prima "
+                        f"({_human_duration(fastest.total_duration_min)}, "
+                        f"{fastest.effective_cost:.2f} EUR)"
+                    ),
+                    "prefs": {"prefer_fast": True},
+                },
+            ],
+        }
+    ]
+
+
+def _pick_alternatives(candidates: list[Candidate], chosen: Candidate) -> list[Candidate]:
+    """Sceglie le alternative con un PROFILO diverso dal piano scelto.
+
+    Un travel agent non mostra "le altre tre piu' economiche": mostra
+    "il piu' veloce", "il piu' comodo (meno cambi)", "il piu' economico".
+    """
+    rest = [c for c in candidates if c.id != chosen.id]
+    if not rest:
+        return []
+    picked: list[Candidate] = []
+    seen: set[str] = set()
+
+    def _add(candidate: Candidate | None) -> None:
+        if candidate is None or candidate.id in seen:
+            return
+        seen.add(candidate.id)
+        picked.append(candidate)
+
+    priced = [c for c in rest if c.total_duration_min]
+    _add(min(priced, key=lambda c: c.total_duration_min or 10**6) if priced else None)
+    _add(min(rest, key=lambda c: (c.changes, c.effective_cost)))
+    _add(min(rest, key=lambda c: c.effective_cost))
+    for candidate in rest:
+        if len(picked) >= 3:
+            break
+        _add(candidate)
+    return picked
+
+
+def _merge_alternatives(
+    candidates: list[Candidate], chosen: Candidate, ai_ids: Any
+) -> list[Candidate]:
+    """Alternativhe: prima quelle indicate dall'AI, poi i profili diversi."""
+    by_id = {c.id: c for c in candidates}
+    picked: list[Candidate] = []
+    seen: set[str] = set()
+
+    if isinstance(ai_ids, list):
+        for raw in ai_ids[:3]:
+            candidate = by_id.get(str(raw))
+            if candidate is not None and candidate.id != chosen.id:
+                seen.add(candidate.id)
+                picked.append(candidate)
+    for candidate in _pick_alternatives(candidates, chosen):
+        if len(picked) >= 3:
+            break
+        if candidate.id in seen:
+            continue
+        seen.add(candidate.id)
+        picked.append(candidate)
+    return picked
+
+
+def _ai_options_with_prefs(key: str, options: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Alle opzioni dell'AI sulle priorita' aggancia le preferenze.
+
+    Cosi' il click sul pulsante e' deterministico: non serve che l'AI
+    interpreti la risposta una seconda volta.
+    """
+    if key not in ("priorita", "priority", "prefer_fast", "travel_time", "speed"):
+        return options
+    enriched: list[dict[str, Any]] = []
+    for option in options:
+        label = str(option.get("label") or "").lower()
+        if any(word in label for word in ("veloc", "prima", "tempo", "arrivare")):
+            enriched.append({**option, "prefs": {"prefer_fast": True}})
+        elif any(word in label for word in ("econom", "meno", "risparm", "soldi")):
+            enriched.append({**option, "prefs": {"prefer_fast": False}})
+        else:
+            enriched.append(option)
+    return enriched
 
 
 async def analyze(
@@ -342,7 +621,7 @@ async def analyze(
     use_ai = ai_enabled() and client.available
 
     chosen = candidates[0]
-    alternatives = candidates[1:]
+    alternatives = _pick_alternatives(candidates, chosen)
     ai_questions: list[dict] = []
     watchouts: list[str] = []
     title = None
@@ -374,7 +653,9 @@ async def analyze(
             if picked is None:
                 picked = chosen
             chosen = picked
-            alternatives = [c for c in candidates if c.id != chosen.id]
+            alternatives = _merge_alternatives(
+                candidates, chosen, data.get("alternatives")
+            )
             title = str(data.get("title") or "").strip() or None
             explanation = str(data.get("explanation") or "").strip() or None
             try:
@@ -397,7 +678,9 @@ async def analyze(
                         {
                             "key": str(raw["key"]),
                             "text": str(raw["text"]),
-                            "options": options,
+                            "options": _ai_options_with_prefs(
+                                str(raw["key"]), options
+                            ),
                         }
                     )
             result.used_ai = True
@@ -419,12 +702,25 @@ async def analyze(
         confidence=confidence,
         watchouts=watchouts,
         ai=result.used_ai,
+        profile=_profile_of(chosen, candidates),
     )
     result.plan = plan
     result.alternatives = [
-        _plan_from_candidate(candidate, ranked, ai=result.used_ai) for candidate in alternatives[:3]
+        _plan_from_candidate(
+            candidate,
+            ranked,
+            ai=result.used_ai,
+            profile=_profile_of(candidate, candidates),
+        )
+        for candidate in alternatives[:3]
     ]
-    result.questions = ai_questions
+    # Le domande dell'AI hanno la precedenza; se non ce ne sono, si propone
+    # la domanda sugli abbonamenti (cambia il piano) e poi quella sul
+    # trade-off tempo/prezzo (il tipico gesto del travel agent).
+    if ai_questions:
+        result.questions = ai_questions
+    else:
+        result.questions = (_pass_question(prefs) + _priority_question(candidates))[:2]
     parziale = " (prezzo parziale)" if plan.get("partial") else ""
     result.summary = f"{plan['title']} · {plan['total_price']:.2f} EUR{parziale}"
 
@@ -535,6 +831,32 @@ async def interpret_answer(question: dict[str, Any], answer: str) -> dict[str, A
         flag = yes_no(lowered, True)
         if flag is not None:
             return {"prefs": {"allow_multi_leg": flag}, "note": clean}
+
+    if key in ("abbonamenti", "passes", "pass"):
+        # Testo libero: "ho l'abbonamento Trenitalia" -> il tipo giusto.
+        testo = lowered
+        if any(word in testo for word in ("nessun", "niente", "no abbonament", "pagho ogni")):
+            return {"prefs": {"clear_passes": True}, "note": clean}
+        if "freccia" in testo or "tutti i treni" in testo or "annuale" in testo:
+            return {"prefs": {"add_pass": "trenitalia_tutti"}, "note": clean}
+        if "carnet" in testo and "bus" in testo:
+            return {"prefs": {"add_pass": "carnet_bus"}, "note": clean}
+        if "carnet" in testo:
+            return {"prefs": {"add_pass": "carnet_regionale"}, "note": clean}
+        if "trenitalia" in testo or "treno" in testo or "regionale" in testo:
+            return {"prefs": {"add_pass": "trenitalia_regionale"}, "note": clean}
+        if any(word in testo for word in ("bus", "metro", "urbano", "citta", "città", "tram")):
+            return {"prefs": {"add_pass": "urbano"}, "note": clean}
+
+    if key in ("priorita", "priority", "prefer_fast", "travel_time", "speed"):
+        if clean.strip().lower() in ("yes", "si", "sì", "ok", "true", "1"):
+            return {"prefs": {"prefer_fast": True}, "note": clean}
+        if clean.strip().lower() in ("no", "false", "0"):
+            return {"prefs": {"prefer_fast": False}, "note": clean}
+        if any(word in lowered for word in ("veloc", "prima", "tempo", "arrivare", "veloce")):
+            return {"prefs": {"prefer_fast": True}, "note": clean}
+        if any(word in lowered for word in ("econom", "meno", "spend", "risparm", "soldi")):
+            return {"prefs": {"prefer_fast": False}, "note": clean}
 
     if key == "max_walk_km":
         digits = [ch for ch in clean.replace(",", ".") if ch.isdigit() or ch == "."]

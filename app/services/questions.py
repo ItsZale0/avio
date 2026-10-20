@@ -8,6 +8,7 @@ risposta diventa una preferenza (`watches.prefs`) usata al giro successivo.
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 from typing import Any
 
 from .. import db, notify, store
@@ -16,6 +17,12 @@ from ..timeutil import now_utc
 # Massimo due domande in attesa per ricerca: oltre, l'utente smette di
 # rispondere e le opzioni si contraddicono.
 MAX_PENDING_QUESTIONS = 2
+
+# Dopo quante ore una domanda gia' posta puo' essere riproposta. Serve per
+# il caso "ti ho chiesto di alzare il budget e hai detto no": l'agente non
+# deve insistere ogni ora, ma dopo qualche giorno i prezzi possono essere
+# cambiati e vale la pena riproporla.
+REASK_AFTER_HOURS = 12
 
 # Chiavi "note" a bassa priorita': non orientano i filtri, arricchiscono il contesto.
 KNOWN_PREFS = {
@@ -27,7 +34,14 @@ KNOWN_PREFS = {
     "no_changes",
     "notes",
     "arrivo_giorno_prima",
+    # "True" = arrivare prima conta piu' del prezzo (travel agent).
+    "prefer_fast",
+    # Lista di abbonamenti in corso (vedi app/services/passes.py).
+    "passes",
 }
+
+# Pseudo-preferenze che agiscono sulla lista degli abbonamenti.
+PASS_ACTIONS = {"add_pass", "clear_passes"}
 
 
 def _row_to_question(row) -> dict[str, Any]:
@@ -117,19 +131,37 @@ def create_many(watch_id: int, run_id: int | None, questions: list[dict]) -> lis
         ).fetchone()
         if int(pending["n"]) >= MAX_PENDING_QUESTIONS:
             return created
-        existing = {
-            row["key"]: row["status"]
-            for row in conn.execute(
-                "SELECT key, status FROM questions WHERE watch_id = ?", (watch_id,)
-            )
-        }
+
+        # Domande gia' poste per questa ricerca: con data, cosi' si puo'
+        # riproporre una domanda dopo un po' (i prezzi cambiano) senza
+        # insistere a ogni giro.
+        previous = conn.execute(
+            "SELECT key, text, status, created_at, answered_at FROM questions "
+            "WHERE watch_id = ? ORDER BY id DESC",
+            (watch_id,),
+        ).fetchall()
+        cutoff = (now_utc() - timedelta(hours=REASK_AFTER_HOURS)).isoformat()
+        recent_keys: set[str] = set()
+        recent_texts: set[str] = set()
+        for row in previous:
+            if row["status"] == "pending":
+                recent_keys.add(str(row["key"]))
+                recent_texts.add(_normalize_text(row["text"]))
+                continue
+            stamp = row["answered_at"] or row["created_at"]
+            if stamp and str(stamp) >= cutoff:
+                recent_keys.add(str(row["key"]))
+                recent_texts.add(_normalize_text(row["text"]))
+
         for question in questions[:MAX_PENDING_QUESTIONS]:
             key = str(question.get("key") or "").strip()
             text = str(question.get("text") or "").strip()
             if not key or not text:
                 continue
-            if key in existing:
-                continue  # gia' chiesta (in attesa) o gia' risposta
+            if key in recent_keys:
+                continue  # gia' chiesta (in attesa) o gia' risposta di recente
+            if _normalize_text(text) in recent_texts:
+                continue  # stessa domanda, detta diversamente
             cursor = conn.execute(
                 "INSERT INTO questions(watch_id, run_id, key, text, options, allow_free_text,"
                 " status, created_at) VALUES (?,?,?,?,?,?,?,?)",
@@ -144,7 +176,8 @@ def create_many(watch_id: int, run_id: int | None, questions: list[dict]) -> lis
                     now_utc().isoformat(),
                 ),
             )
-            existing[key] = "pending"
+            recent_keys.add(key)
+            recent_texts.add(_normalize_text(text))
             # Leggiamo dalla stessa connessione: la riga non e' ancora committata.
             row = conn.execute(
                 "SELECT * FROM questions WHERE id = ?", (int(cursor.lastrowid),)
@@ -152,6 +185,14 @@ def create_many(watch_id: int, run_id: int | None, questions: list[dict]) -> lis
             if row:
                 created.append(_row_to_question(row))
     return created
+
+
+def _normalize_text(text: Any) -> str:
+    """Chiave di confronto fra domande: minuscole, senza punteggiatura."""
+    cleaned = "".join(
+        ch for ch in str(text or "").lower() if ch.isalnum() or ch.isspace()
+    )
+    return " ".join(cleaned.split())
 
 
 def merge_prefs(watch: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
@@ -171,7 +212,23 @@ def merge_prefs(watch: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
             if amount > 0:
                 changes["max_price"] = round(amount, 2)
             continue
-        if key not in KNOWN_PREFS:
+        if key == "add_pass":
+            # Aggiunge un abbonamento a quelli gia' dichiarati.
+            from . import passes as passes_service
+
+            current = passes_service.normalize_passes(prefs.get("passes"))
+            tipo = str(value or "").strip()
+            if not tipo:
+                continue
+            if any(p["tipo"] == tipo for p in current):
+                continue
+            current.append({"tipo": tipo, "nome": passes_service.pass_name(tipo)})
+            prefs["passes"] = current
+            continue
+        if key == "clear_passes":
+            prefs["passes"] = []
+            continue
+        if key not in KNOWN_PREFS and key not in PASS_ACTIONS:
             continue
         if key == "notes":
             previous = str(prefs.get("notes") or "").strip()

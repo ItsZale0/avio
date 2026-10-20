@@ -64,6 +64,26 @@ function fmtTime(iso) {
   const d = new Date(iso);
   return isNaN(d) ? "—" : tf.format(d);
 }
+const ALT_PROFILE = {
+  economico: "Più economico",
+  veloce: "Più veloce",
+  comodo: "Meno cambi",
+  alternativa: "Alternativa",
+  proposta: "Proposta",
+};
+
+// Gli abbonamenti che l'agente conosce: se la tratta e' coperta, il
+// biglietto non lo paghi.
+const PASS_TYPES = [
+  { id: "trenitalia_regionale", label: "Trenitalia regionale", hint: "Abbonamento o carnet regionale Trenitalia" },
+  { id: "trenitalia_tutti", label: "Trenitalia (tutti i treni)", hint: "Abbonamento annuale Trenitalia, anche Frecce" },
+  { id: "carnet_regionale", label: "Carnet 10 biglietti regionali", hint: "Consuma 1 biglietto del carnet" },
+  { id: "carnet_bus", label: "Carnet bus regionali", hint: "Consuma 1 biglietto del carnet" },
+  { id: "abbonamento_unico", label: "Abbonamento regionale unico", hint: "Treni e bus regionali" },
+  { id: "urbano", label: "Abbonamento urbano", hint: "Bus, metro e tram cittadini" },
+  { id: "carnet_urbano", label: "Carnet 10 biglietti urbani", hint: "Consuma 1 biglietto del carnet" },
+];
+
 function fmtDuration(minutes) {
   if (!minutes) return "";
   const h = Math.floor(minutes / 60);
@@ -103,7 +123,9 @@ const BADGES = {
   closest: "Più vicino",
   price_drop: "Ribasso",
   under_budget: "Sotto budget",
+  coperto: "Coperto",
   spezzato: "2 biglietti",
+  diretto: "Diretto",
   estimate: "Stima",
   orario: "Orario",
 };
@@ -616,9 +638,18 @@ function renderDetail() {
     const meta = state.sources.find((item) => item.id === s);
     return meta ? meta.label : s;
   }).join(", ");
+  const passNames = ((watch.prefs && watch.prefs.passes) || [])
+    .map((p) => {
+      const tipo = typeof p === "string" ? p : p.tipo;
+      const known = PASS_TYPES.find((item) => item.id === tipo);
+      if (typeof p === "string") return known ? known.label : tipo;
+      return p.nome || (known ? known.label : tipo);
+    })
+    .join(", ");
   $("#watchSub").textContent =
     `entro ${fmtDate(watch.arrive_by)} · budget ${watch.max_price != null ? euro(watch.max_price) : "libero"} · ` +
-    `ogni ${watch.interval_min} min · raggio ${watch.radius_km} km · ${sources}`;
+    `ogni ${watch.interval_min} min · raggio ${watch.radius_km} km · ${sources}` +
+    (passNames ? ` · 🎟️ ${passNames}` : "");
 
   $("#btnToggleWatch").textContent = watch.active ? "Pausa" : "Riprendi";
 
@@ -695,38 +726,73 @@ function renderPlan() {
   const duration = fmtDuration(plan.total_duration_min);
   const confidence = plan.confidence != null ? Math.round(Number(plan.confidence) * 100) : null;
   const watchouts = (plan.watchouts || []).map((w) => `<span>⚠️ ${esc(w)}</span>`).join("");
+  const changes = plan.changes || 0;
+  const changeLabel = changes === 0
+    ? "nessun cambio"
+    : changes === 1 ? "1 cambio" : `${changes} cambi`;
+  // Il prezzo grande e' quello che si spende davvero: biglietto + spostamento
+  // per raggiungere il punto di ritrovo. Se un abbonamento copre il viaggio,
+  // il costo effettivo e' zero e il prezzo del biglietto resta informazione.
+  const accessCost = plan.access_cost || 0;
+  const covered = !!plan.covered;
+  const netTotal = plan.net_total_price != null ? plan.net_total_price : plan.total_price;
+  const effective = covered
+    ? (netTotal || 0) + accessCost
+    : (plan.effective_cost != null
+        ? plan.effective_cost
+        : (plan.total_price != null ? plan.total_price + accessCost : null));
+  const hasAccess = accessCost > 0.01;
+  const passNames = (plan.passes || []).join(", ");
   const alts = state.planAlternatives.length
     ? `<div class="plan-alts">
-         <h4>Alternative più economiche</h4>
-         ${state.planAlternatives.map((alt) => `
+         <h4>Alternative: altri profili</h4>
+         ${state.planAlternatives.map((alt) => {
+           const altCovered = !!alt.covered;
+           const altNet = altCovered
+             ? (alt.net_total_price != null ? alt.net_total_price : 0)
+             : alt.total_price;
+           return `
            <div class="plan-alt">
-             <span>${esc(alt.title || "")} ${alt.total_duration_min ? "· " + fmtDuration(alt.total_duration_min) : ""}</span>
-             <b>${alt.total_price != null ? euro(alt.total_price) : "—"}</b>
-           </div>`).join("")}
+             <span class="alt-profile">${esc(ALT_PROFILE[alt.profile] || "Alternativa")}</span>
+             <span>${esc(alt.title || "")}${alt.total_duration_min ? " · " + fmtDuration(alt.total_duration_min) : ""}${alt.changes ? " · " + (alt.changes === 1 ? "1 cambio" : alt.changes + " cambi") : ""}${altCovered ? " · coperto" : ""}</span>
+             <b>${altNet != null ? euro(altNet) : "—"}${altCovered && alt.total_price != null ? `<span class="was">${euro(alt.total_price)}</span>` : ""}</b>
+           </div>`;
+         }).join("")}
        </div>`
     : "";
 
   box.innerHTML = `
     <div class="plan-head">
       <div>
-        <div class="eyebrow">${plan.ai ? "🧠 Piano AI · più economico" : "🧮 Piano più economico"}${plan.partial ? " · prezzo parziale" : ""}</div>
+        <div class="eyebrow">${plan.ai ? "🧠 Piano AI" : "🧮 Piano"}${plan.profile ? " · " + esc(ALT_PROFILE[plan.profile] || "") : ""}${plan.partial ? " · prezzo parziale" : ""}</div>
         <div class="plan-title">${esc(plan.title || "")}</div>
       </div>
       <div class="plan-price">
-        <strong>${plan.total_price != null ? euro(plan.total_price) : "—"}</strong>
-        <small>${plan.partial ? "totale noto · tratte da verificare" : "costo totale"}${plan.ai && confidence != null ? ` · fiducia ${confidence}%` : ""}</small>
+        <strong>${effective != null ? euro(effective) : "—"}</strong>
+        ${covered && plan.total_price != null ? `<span class="was">${euro(plan.total_price)}</span>` : ""}
+        <small>${covered
+          ? `coperto da ${esc(passNames || "abbonamento")}`
+          : plan.partial ? "totale noto · tratte da verificare"
+          : hasAccess ? "biglietto + spostamento" : "costo totale"}${plan.ai && confidence != null ? ` · fiducia ${confidence}%` : ""}</small>
+        ${covered && plan.total_price != null ? `<small>biglietto ${euro(plan.total_price)}, ma è già coperto</small>` : ""}
+        ${!covered && hasAccess && plan.total_price != null ? `<small>biglietti ${euro(plan.total_price)} + ${euro(accessCost)} spostamento</small>` : ""}
       </div>
     </div>
     <div class="plan-explanation">${esc(plan.explanation || "")}</div>
-    ${steps ? `<div class="plan-steps">${steps}</div>` : ""}
-    <div class="plan-meta">
+    <div class="plan-facts">
+      ${plan.depart_at ? `<span>🛫 partenza ${fmtDate(plan.depart_at)}</span>` : ""}
       ${plan.arrive_at ? `<span>🏁 arrivo ${fmtDate(plan.arrive_at)}</span>` : ""}
       ${duration ? `<span>⏱ ${duration}</span>` : ""}
-      ${plan.transfer_km != null ? `<span>🚶 cambio ${plan.transfer_km} km</span>` : ""}
+      <span>🔁 ${changeLabel}</span>
+      ${covered ? `<span>🎟️ coperto da ${esc(passNames || "abbonamento")}</span>` : ""}
+      ${plan.transfer_km != null ? `<span>🚶 ${plan.transfer_km} km a piedi nel cambio</span>` : ""}
+    </div>
+    ${steps ? `<div class="plan-steps">${steps}</div>` : ""}
+    <div class="plan-meta">
       ${plan.partial ? "<span>💶 prezzo parziale</span>" : ""}
-      ${plan.kind === "single"
+      ${(plan.steps || []).length === 1
         ? "<span>🎯 tratta diretta</span>"
-        : `<span>🔁 ${plan.steps.length} tratte</span>`}
+        : `<span>🔁 ${(plan.steps || []).length} tratte</span>`}
     </div>
     ${watchouts ? `<div class="plan-watchouts">${watchouts}</div>` : ""}
     ${alts}`;
@@ -813,6 +879,12 @@ function offerCard(offer, suppressNew = false) {
 
   const detailBits = [];
   if (duration) detailBits.push(`⏱ ${duration}`);
+  const changes = offer.details?.cambi;
+  if (changes != null) {
+    detailBits.push(
+      changes === 0 ? "🎯 diretto, nessun cambio" : `🔁 ${changes} ${changes === 1 ? "cambio" : "cambi"}`
+    );
+  }
   if (offer.seats) detailBits.push(`👤 ${offer.seats} posti`);
   if (offer.rating) detailBits.push(`★ ${Number(offer.rating).toFixed(1)}`);
   if (effective != null && offer.price != null && Math.abs(effective - offer.price) > 0.01) {
@@ -830,6 +902,12 @@ function offerCard(offer, suppressNew = false) {
     detailBits.push(
       `🎫 2 biglietti invece di 1: risparmi ${euro(offer.details.risparmio)} ` +
       `(diretto ${euro(offer.details.prezzo_diretto)})`
+    );
+  }
+  if (offer.details?.pass) {
+    const nota = offer.details.pass_note ? ` (${offer.details.pass_note})` : "";
+    detailBits.push(
+      `🎟️ coperto da ${esc(offer.details.pass)}${nota}: non lo paghi`
     );
   }
 
@@ -1199,6 +1277,17 @@ function openWatchModal(watch) {
     input.checked = notify.includes(input.value);
   });
 
+  // Abbonamenti: la lista dei tipi noti, con i selezionati della ricerca.
+  const currentPasses = (data.prefs && data.prefs.passes) || [];
+  const selectedPasses = currentPasses.map((p) => (typeof p === "string" ? p : p.tipo));
+  $("#passesBox").innerHTML = PASS_TYPES.map((pass) => {
+    const checked = selectedPasses.includes(pass.id) ? "checked" : "";
+    return `<label class="chip" title="${esc(pass.hint)}">
+      <input type="checkbox" name="pass" value="${esc(pass.id)}" ${checked} />
+      ${esc(pass.label)}
+    </label>`;
+  }).join("");
+
   openModal("watchModal");
   setTimeout(() => $("#fFrom").focus(), 60);
 }
@@ -1324,6 +1413,7 @@ async function submitWatch(event) {
   const sources = $$("#sourcesBox input[name=source]:checked").map((i) => i.value);
   if (!sources.length) return fail("Seleziona almeno una fonte.");
   const notify = $$("#notifyBox input[name=notify]:checked").map((i) => i.value);
+  const passTypes = $$("#passesBox input[name=pass]:checked").map((i) => i.value);
 
   const payload = {
     name: $("#fName").value.trim() || null,
@@ -1339,6 +1429,9 @@ async function submitWatch(event) {
     notify,
     active: true,
   };
+  // Gli abbonamenti sono parte delle preferenze: il resto si conserva.
+  // Si manda sempre (anche vuota): togliere un abbonamento deve valere.
+  payload.prefs = { passes: passTypes.map((tipo) => ({ tipo })) };
 
   const button = $("#btnSaveWatch");
   button.disabled = true;

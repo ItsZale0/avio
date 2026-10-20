@@ -14,6 +14,7 @@ from ..config import HOST, PORT
 from ..scoring import score_offers
 from ..timeutil import from_iso, iso, now_utc, parse_dt
 from . import questions as questions_service
+from . import passes as passes_service
 from . import split_tickets
 
 RUNNING: set[int] = set()
@@ -40,6 +41,7 @@ def build_context(watch: dict[str, Any]) -> SearchContext:
         passengers=int(watch.get("passengers") or 1),
         max_price=watch.get("max_price"),
         allow_day_before=bool(prefs.get("arrivo_giorno_prima")),
+        prefs=prefs,
     )
 
 
@@ -85,11 +87,15 @@ def _filter_offers(offers: list[Offer], ctx: SearchContext, late_minutes: int = 
             if dropoff is not None and dropoff > limit:
                 continue
 
-        if ctx.max_price is not None and offer.price is not None and offer.price > ctx.max_price:
-            # Fuori budget: scartata. Il prezzo reale della soluzione piu'
-            # economica viene comunque comunicato all'utente dalla domanda
-            # "vuoi alzare il budget?", con la possibilita' di accettare.
-            continue
+        if ctx.max_price is not None and offer.price is not None:
+            # Con un abbonamento che copre la tratta il costo reale e' 0:
+            # il biglietto non lo paghi, quindi il budget non e' un vincolo.
+            costo = offer.net_cost if offer.net_cost is not None else offer.price
+            if costo > ctx.max_price:
+                # Fuori budget: scartata. Il prezzo reale della soluzione piu'
+                # economica viene comunque comunicato all'utente dalla domanda
+                # "vuoi alzare il budget?", con la possibilita' di accettare.
+                continue
         kept.append(offer)
 
     return kept
@@ -184,6 +190,22 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
                     )
         except Exception as exc:  # noqa: BLE001
             errors.append(f"split: {type(exc).__name__}: {exc}")
+
+        # Abbonamenti: se la tratta e' coperta, il biglietto non lo paghi.
+        # Il prezzo reale resta, ma il costo effettivo diventa 0 e cambia
+        # il piano migliore.
+        user_passes = passes_service.normalize_passes(prefs.get("passes"))
+        if user_passes:
+            covered = 0
+            for offer in gathered:
+                passes_service.apply_passes(user_passes, offer)
+                if offer.net_cost is not None:
+                    covered += 1
+            if covered:
+                hints.append(
+                    f"Abbonamenti attivi: {passes_service.summary(user_passes)}. "
+                    f"{covered} offerte coperte: biglietto a 0 EUR."
+                )
 
         offers = _filter_offers(gathered, ctx, late_minutes=late_minutes)
         ranked = score_offers(offers, ctx)

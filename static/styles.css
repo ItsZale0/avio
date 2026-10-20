@@ -280,6 +280,7 @@ a:hover { text-decoration: underline; }
 .tag.closest { color: #422006; background: #fde68a; }
 .tag.price_drop { color: #450a0a; background: #fca5a5; }
 .tag.under_budget { color: #052e16; background: #86efac; }
+.tag.coperto { color: #052e16; background: #5eead4; }
 .tag.spezzato { color: #422006; background: #fdba74; }
 .tag.estimate { color: #3b0764; background: #d8b4fe; }
 .tag.new { color: #052e16; background: #bbf7d0; }
@@ -628,6 +629,19 @@ select { cursor: pointer; }
 .plan-alts h4 { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
 .plan-alt { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; padding: 4px 0; color: var(--muted); }
 .plan-alt b { color: var(--text); font-weight: 600; }
+.alt-profile {
+  flex: 0 0 auto; font-size: 10.5px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .04em;
+  color: #7dd3fc; background: rgba(125, 211, 252, .12);
+  border-radius: 999px; padding: 2px 8px; align-self: center;
+}
+
+/* Il quadro del viaggio: partenza, arrivo, durata, cambi. */
+.plan-facts {
+  display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px;
+  font-size: 12.5px; color: #cfe0f0;
+}
+.plan-facts span { white-space: nowrap; }
 
 .questions-card {
   border: 1px solid rgba(96, 165, 250, 0.3);

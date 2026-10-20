@@ -7,11 +7,16 @@ degrada con un hint senza bloccare le altre fonti.
 
 from __future__ import annotations
 
+import asyncio
+import logging
+
 import httpx
 
 from ..geo import CITIES, haversine_km
 from ..timeutil import ROME, parse_dt
 from .base import Adapter, AdapterResult, Offer, SearchContext, tappa
+
+log = logging.getLogger("carpool.trenitalia")
 
 LOCATIONS_URL = "https://app.lefrecce.it/Channels.Website.BFF.WEB/app/locations"
 SOLUTIONS_URL = "https://app.lefrecce.it/Channels.Website.BFF.WEB/website/ticket/solutions"
@@ -23,6 +28,10 @@ HEADERS = {
 }
 
 MAX_FALLBACK_KM = 60
+# Quanti tentativi per la ricerca di una stazione: l'API ogni tanto rallenta
+# o risponde con un errore transitorio, e un timeout non deve far fallire
+# l'intera ricerca.
+LOOKUP_ATTEMPTS = 3
 
 _station_cache: dict[str, dict | None] = {}
 
@@ -45,22 +54,34 @@ def _candidates(place: str, lat: float | None, lon: float | None) -> list[tuple[
 
 
 async def _lookup_station(client: httpx.AsyncClient, name: str) -> dict | None:
+    """Cerca la stazione omonima. None = non trovata (o API irraggiungibile).
+
+    I risultati "non trovato" vengono messi in cache, i fallimenti di rete no:
+    cosi' un timeout momentaneo non blocca le ricerche successive.
+    """
     key = name.strip().lower()
     if key in _station_cache:
         return _station_cache[key]
     result: dict | None = None
-    try:
-        response = await client.get(LOCATIONS_URL, params={"name": name, "limit": "5"})
-        response.raise_for_status()
-        items = response.json()
-        if isinstance(items, list):
-            exact = [i for i in items if str(i.get("name", "")).lower() == key]
-            chosen = (exact or items or [None])[0]
-            if chosen and chosen.get("locationId"):
-                result = {"id": chosen["locationId"], "name": chosen.get("name") or name}
-    except Exception:
-        result = None
-    _station_cache[key] = result
+    confirmed = False
+    for attempt in range(LOOKUP_ATTEMPTS):
+        try:
+            response = await client.get(LOCATIONS_URL, params={"name": name, "limit": "5"})
+            response.raise_for_status()
+            items = response.json()
+            confirmed = True
+            if isinstance(items, list):
+                exact = [i for i in items if str(i.get("name", "")).lower() == key]
+                chosen = (exact or items or [None])[0]
+                if chosen and chosen.get("locationId"):
+                    result = {"id": chosen["locationId"], "name": chosen.get("name") or name}
+            break
+        except Exception as exc:  # noqa: BLE001
+            log.debug("lookup stazione '%s' fallito (%s): %s", name, type(exc).__name__, exc)
+            if attempt + 1 < LOOKUP_ATTEMPTS:
+                await asyncio.sleep(0.7 * (attempt + 1))
+    if confirmed:
+        _station_cache[key] = result
     return result
 
 
@@ -71,6 +92,24 @@ async def _resolve(client: httpx.AsyncClient, place: str, lat: float | None, lon
             shifted = candidate.strip().lower() != place.strip().lower()
             return station, (distance if shifted else 0.0), shifted
     return None, 0.0, False
+
+
+async def _post_solutions(
+    client: httpx.AsyncClient, body: dict, attempts: int = 3
+) -> dict:
+    """Chiede le soluzioni, riproificando in caso di errore transitorio."""
+    last: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            response = await client.post(SOLUTIONS_URL, json=body)
+            response.raise_for_status()
+            return response.json()
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+            log.debug("solutions fallito (%s): %s", type(exc).__name__, exc)
+            if attempt + 1 < attempts:
+                await asyncio.sleep(0.7 * (attempt + 1))
+    raise last if last else RuntimeError("soluzioni non disponibili")
 
 
 class TrenitaliaAdapter(Adapter):
@@ -91,7 +130,10 @@ class TrenitaliaAdapter(Adapter):
                 )
                 if not from_st or not to_st:
                     return AdapterResult(
-                        hints=[f"Trenitalia: stazione non trovata ({ctx.from_place} / {ctx.to_place})."]
+                        hints=[
+                            f"Trenitalia: stazione non trovata o API non raggiungibile "
+                            f"({ctx.from_place} / {ctx.to_place})."
+                        ]
                     )
                 if from_shifted:
                     hints.append(
@@ -119,12 +161,9 @@ class TrenitaliaAdapter(Adapter):
                     },
                     "advancedSearchRequest": {"bestFare": False, "bikeFilter": False},
                 }
-                response = await client.post(SOLUTIONS_URL, json=body)
-                response.raise_for_status()
-                data = response.json()
+                data = await _post_solutions(client, body)
         except Exception as exc:
             return AdapterResult(hints=[f"Trenitalia non raggiungibile: {type(exc).__name__}"])
-
         offers = self._parse(
             data,
             ctx,
@@ -171,6 +210,12 @@ class TrenitaliaAdapter(Adapter):
             if not depart_at:
                 continue
 
+            duration_min = None
+            if arrive_at:
+                duration_min = max(
+                    0, int((arrive_at - depart_at).total_seconds() // 60)
+                )
+
             trains = solution.get("trains") or []
             categories = [str(t.get("trainCategory") or "").strip() for t in trains if t.get("trainCategory")]
             operator = _main_operator(categories)
@@ -191,6 +236,7 @@ class TrenitaliaAdapter(Adapter):
                     dropoff_lat=ctx.to_lat,
                     dropoff_lon=ctx.to_lon,
                     seats=None,
+                    duration_min=duration_min,
                     deeplink="https://www.trenitalia.com/it.html",
                     details={
                         "fonte": "Trenitalia",

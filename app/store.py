@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import date, timedelta
 from typing import Any
 from urllib.parse import quote
@@ -168,6 +169,30 @@ def list_watches(user_id: int | None = None) -> list[dict[str, Any]]:
     return [watch_to_dict(row) for row in rows]
 
 
+def _merge_prefs(existing: Any, new: Any) -> dict[str, Any]:
+    """Unisce le preferenze nuove con quelle gia' imparate.
+
+    Gli abbonamenti sono l'unica eccezione: se vengono reimpostati, la
+    lista nuova sostituisce la vecchia (il form e' la fonte di verita').
+    """
+    base: dict[str, Any] = {}
+    if isinstance(existing, str):
+        try:
+            existing = json.loads(existing)
+        except (ValueError, TypeError):
+            existing = {}
+    if isinstance(existing, dict):
+        base = dict(existing)
+    if not isinstance(new, dict):
+        return base
+    if "passes" in new:
+        from .services.passes import normalize_passes
+
+        base["passes"] = normalize_passes(new["passes"])
+    base.update({k: v for k, v in new.items() if k != "passes"})
+    return base
+
+
 def update_watch(
     watch_id: int, payload: WatchUpdate, *, user_id: int | None = None
 ) -> dict[str, Any] | None:
@@ -180,7 +205,10 @@ def update_watch(
     if changes.get("notify") is not None:
         changes["notify"] = db.dump_json(changes["notify"])
     if changes.get("prefs") is not None:
-        changes["prefs"] = db.dump_json(changes["prefs"])
+        current = get_watch(watch_id, user_id=user_id) or {}
+        changes["prefs"] = db.dump_json(
+            _merge_prefs(current.get("prefs"), changes["prefs"])
+        )
     elif "prefs" in changes:
         changes.pop("prefs")
     if changes.get("active") is not None:
@@ -272,7 +300,11 @@ def _plan_to_dict(row) -> dict[str, Any]:
     item = db.row_to_dict(row) or {}
     item["steps"] = db.load_json(item.get("steps"), [])
     item["watchouts"] = db.load_json(item.get("watchouts"), [])
+    item["passes"] = db.load_json(item.get("passes"), [])
     item["is_current"] = bool(item.get("is_current"))
+    item["partial"] = bool(item.get("partial"))
+    item["ai"] = bool(item.get("ai"))
+    item["covered"] = bool(item.get("covered"))
     return item
 
 
@@ -296,8 +328,10 @@ def save_plans(
             conn.execute(
                 """
                 INSERT INTO plans(watch_id, run_id, kind, title, total_price, total_duration_min,
-                    steps, explanation, watchouts, confidence, fingerprint, created_at, is_current)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)
+                    steps, explanation, watchouts, confidence, fingerprint, created_at, is_current,
+                    profile, changes, effective_cost, access_cost, depart_at, arrive_at,
+                    transfer_km, partial, ai, net_total_price, covered, passes)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     watch_id,
@@ -312,6 +346,18 @@ def save_plans(
                     item.get("confidence"),
                     item.get("fingerprint"),
                     timestamp,
+                    item.get("profile"),
+                    item.get("changes"),
+                    item.get("effective_cost"),
+                    item.get("access_cost"),
+                    item.get("depart_at"),
+                    item.get("arrive_at"),
+                    item.get("transfer_km"),
+                    1 if item.get("partial") else 0,
+                    1 if item.get("ai") else 0,
+                    item.get("net_total_price"),
+                    1 if item.get("covered") else 0,
+                    db.dump_json(item.get("passes") or []),
                 ),
             )
 

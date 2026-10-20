@@ -106,6 +106,23 @@ L'agente non si limita al prezzo più basso in assoluto: cerca anche i modi
   (“arrivo la sera prima va bene?”, “alzo il budget a 13 €?”, “meglio il
   giorno dopo?”) e poi ricalcola.
 
+- **Gli abbonamenti contano**: l'agente chiede quali abbonamenti hai
+  (Trenitalia regionale, annuale, carnet da 10 biglietti, abbonamento urbano)
+  e **se la tratta e' coperta il biglietto non lo paghi**. Il piano mostra
+  "0,00 EUR" con il prezzo del biglietto barrato e la dicitura "coperto da...".
+  Un regionale di 6 ore coperto da un abbonamento batte un Frecciarossa da
+  30 euro: l'agente lo sceglie e te lo spiega. Gli abbonamenti si impostano
+  nella scheda della ricerca ("Abbonamenti in corso").
+
+### Il tempo conta quanto il prezzo
+
+Un bravo travel agent non sceglie solo il piu' economico: guarda anche
+**durata, cambi e orari**. Il punteggio pesa prezzo, durata del viaggio,
+numero di cambi, arrivo anticipato, distanza e affidabilita'; se dici
+"preferisco arrivare prima", il tempo pesa quanto il prezzo. Ogni piano
+mostra partenza, arrivo, durata e cambi, e le alternative sono scelte per
+**profilo** ("piu' veloce", "meno cambi", "piu' economico"), non per prezzo.
+
 1. Crea una chiave gratuita su <https://console.groq.com/keys>.
 2. Incollala in **Impostazioni → Intelligenza (Groq)** → *Prova AI*.
 3. **Scegli i modelli** nei due menu a tendina: *Modello ragionamento* (sceglie

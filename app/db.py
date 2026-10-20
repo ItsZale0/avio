@@ -221,7 +221,19 @@ CREATE TABLE IF NOT EXISTS plans (
     confidence        REAL,
     fingerprint       TEXT,
     created_at        TEXT NOT NULL,
-    is_current        INTEGER NOT NULL DEFAULT 0
+    is_current        INTEGER NOT NULL DEFAULT 0,
+    profile           TEXT,
+    changes           INTEGER,
+    effective_cost    REAL,
+    access_cost       REAL,
+    depart_at         TEXT,
+    arrive_at         TEXT,
+    transfer_km       REAL,
+    partial           INTEGER NOT NULL DEFAULT 0,
+    ai                INTEGER NOT NULL DEFAULT 0,
+    net_total_price   REAL,
+    covered           INTEGER NOT NULL DEFAULT 0,
+    passes            TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE INDEX IF NOT EXISTS idx_plans_watch ON plans(watch_id, is_current);
@@ -269,6 +281,20 @@ MIGRATIONS = [
     ("questions", "sent_at", "TEXT"),
     ("watches", "user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"),
     ("push_subscriptions", "user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"),
+    # Il piano diventa un "scheda di viaggio": profilo, orari, durata, cambi.
+    ("plans", "profile", "TEXT"),
+    ("plans", "changes", "INTEGER"),
+    ("plans", "effective_cost", "REAL"),
+    ("plans", "access_cost", "REAL"),
+    ("plans", "depart_at", "TEXT"),
+    ("plans", "arrive_at", "TEXT"),
+    ("plans", "transfer_km", "REAL"),
+    ("plans", "partial", "INTEGER NOT NULL DEFAULT 0"),
+    ("plans", "ai", "INTEGER NOT NULL DEFAULT 0"),
+    # Abbonamenti: quanto si paga davvero e quale pass copre il viaggio.
+    ("plans", "net_total_price", "REAL"),
+    ("plans", "covered", "INTEGER NOT NULL DEFAULT 0"),
+    ("plans", "passes", "TEXT NOT NULL DEFAULT '[]'"),
 ]
 
 # Indici sulle colonne introdotte dalle migrazioni: si creano dopo, quando
