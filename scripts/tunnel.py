@@ -25,9 +25,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import queue
 import re
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -36,6 +38,7 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 URL_PATTERN = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
 CLOUDFLARED = r"C:\Program Files (x86)\cloudflared\cloudflared.exe"
+TUNNEL_LOG = BASE / "data" / "logs" / "tunnel.log"
 
 
 def find_cloudflared() -> str | None:
@@ -224,18 +227,22 @@ def redeploy_pages(token: str, repo: str = "ItsZale0/carpool-intelligence") -> b
 
 
 def check_tunnel(url: str, attempts: int = 6, wait: int = 5) -> bool:
-    """Verifica che il tunnel pubblico risponda.
+    """Verifica che il tunnel pubblico risponda davvero con l'app.
 
-    Cloudflare quick tunnel usa la porta 7844: se la rete la blocca, il
-    tunnel non si registra e l'indirizzo risponde 530. Meglio accorgersene
-    subito che aspettare una dashboard muta.
+    Non basta un 200: ngrok, quando la richiesta sembra venire da un
+    browser, risponde 200 con la sua pagina di avviso. L'unica risposta
+    buona e' il JSON di /api/auth/status.
     """
     for attempt in range(attempts):
         try:
-            request = urllib.request.Request(f"{url.rstrip('/')}/api/auth/status")
+            request = urllib.request.Request(
+                f"{url.rstrip('/')}/api/auth/status",
+                headers={"ngrok-skip-browser-warning": "1"},
+            )
             with urllib.request.urlopen(request, timeout=12) as response:
-                response.read()
-            return True
+                body = response.read().decode("utf-8", errors="replace")
+            if "locked" in body:
+                return True
         except urllib.error.HTTPError as exc:
             if exc.code not in (502, 503, 530):
                 return True  # risponde: e' un errore dell'app, non del tunnel
@@ -322,6 +329,66 @@ def ngrok_domain() -> str:
         return ""
 
 
+def _drain(stream, path: Path, lines: "queue.Queue[str]") -> None:
+    """Svuota l'output del tunnel, altrimenti il processo si blocca.
+
+    ngrok scrive su stdout ogni richiesta: con la pipe piena (64 KB) il
+    processo si ferma e il tunnel resta "vivo" ma non risponde piu'. Qui
+    l'output va sul file di log e le righe servono a trovare l'URL.
+    """
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8", errors="replace") as log:
+            for line in stream:
+                try:
+                    log.write(line)
+                    log.flush()
+                except OSError:
+                    pass
+                lines.put(line)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _spawn(
+    command: list[str],
+    pattern: str,
+    env: dict[str, str] | None = None,
+    timeout: int = 45,
+) -> tuple[subprocess.Popen, str | None]:
+    """Avvia il tunnel e aspetta l'URL pubblico leggendo il suo output."""
+    TUNNEL_LOG.parent.mkdir(parents=True, exist_ok=True)
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+        env=env,
+    )
+    righe: "queue.Queue[str]" = queue.Queue()
+    threading.Thread(
+        target=_drain, args=(process.stdout, TUNNEL_LOG, righe), daemon=True
+    ).start()
+    url: str | None = None
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            line = righe.get(timeout=1.0)
+        except queue.Empty:
+            if process.poll() is not None:
+                break
+            continue
+        match = re.search(pattern, line)
+        if match:
+            url = match.group(1 if match.groups() else 0).strip().strip('"')
+            if url:
+                break
+    return process, url
+
+
 def start_ngrok(port: int) -> tuple[subprocess.Popen, str | None]:
     """Avvia ngrok e restituisce (processo, URL pubblico).
 
@@ -346,31 +413,11 @@ def start_ngrok(port: int) -> tuple[subprocess.Popen, str | None]:
     domain = ngrok_domain()
     if domain:
         # Dominio riservato: l'indirizzo pubblico non cambia mai.
-        command += ["--domain", domain]
+        host = domain.replace("https://", "").replace("http://", "").strip("/")
+        command += ["--url", f"https://{host}"]
     env = dict(os.environ)
     env["NGROK_AUTHTOKEN"] = token
-    process = subprocess.Popen(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        bufsize=1,
-        env=env,
-    )
-    url: str | None = None
-    deadline = time.time() + 40
-    for line in process.stdout:  # type: ignore[union-attr]
-        sys.stdout.write("  " + line)
-        sys.stdout.flush()
-        match = re.search(r"url=(\S+)", line)
-        if match:
-            url = match.group(1).strip().rstrip('"')
-            break
-        if time.time() > deadline:
-            break
-    return process, url
+    return _spawn(command, r"url=(\S+)", env=env)
 
 
 def start_cloudflared(port: int) -> tuple[subprocess.Popen, str | None]:
@@ -385,27 +432,7 @@ def start_cloudflared(port: int) -> tuple[subprocess.Popen, str | None]:
         binary, "tunnel", "--url", f"http://127.0.0.1:{port}",
         "--no-autoupdate", "--protocol", "http2",
     ]
-    process = subprocess.Popen(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        bufsize=1,
-    )
-    url: str | None = None
-    deadline = time.time() + 40
-    for line in process.stdout:  # type: ignore[union-attr]
-        sys.stdout.write("  " + line)
-        sys.stdout.flush()
-        match = URL_PATTERN.search(line)
-        if match:
-            url = match.group(0)
-            break
-        if time.time() > deadline:
-            break
-    return process, url
+    return _spawn(command, r"(https://[a-z0-9-]+\.trycloudflare\.com)")
 
 
 def main() -> int:
@@ -489,8 +516,58 @@ def main() -> int:
             )
         print("  Per aggiornare anche la dashboard su GitHub Pages:")
         print("    -> Actions -> Deploy frontend su GitHub Pages -> Re-run all jobs")
-        print("\nPremi CTRL+C per chiudere il tunnel.")
-        process.wait()
+        print("\nControllo il tunnel ogni 45 secondi: se cade, lo riavvio e")
+        print("ripubblico l'indirizzo (il link GitHub resta sempre quello giusto).")
+        print("Premi CTRL+C per chiudere il tunnel.")
+
+        def pubblica(nuovo: str) -> None:
+            if update_env(nuovo):
+                print("  .env aggiornato (CARPOOL_PUBLIC_URL)")
+            if not args.no_github:
+                publish_backend_pointer(nuovo)
+                update_github_variable(nuovo)
+
+        fallimenti = 0
+        while True:
+            time.sleep(45)
+            vivo = process.poll() is None
+            if vivo and check_tunnel(url, attempts=1, wait=0):
+                fallimenti = 0
+                continue
+            fallimenti += 1
+            motivo = "terminato" if not vivo else "non risponde"
+            print(f"  Tunnel {motivo} ({fallimenti}/3).")
+            if fallimenti < 3:
+                continue
+            # Riavvio: si riprova con lo stesso provider, poi con gli altri.
+            if process.poll() is None:
+                _terminate_tree(process)
+            nuovo_url: str | None = None
+            nuovi_provider = [provider] + [p for p in providers if p != provider]
+            for tentativo in nuovi_provider:
+                try:
+                    if tentativo == "ngrok":
+                        process, nuovo_url = start_ngrok(args.port)
+                    else:
+                        process, nuovo_url = start_cloudflared(args.port)
+                except Exception as exc:  # noqa: BLE001
+                    print(f"  {tentativo} non riavviabile: {exc}", file=sys.stderr)
+                    nuovo_url = None
+                    continue
+                if nuovo_url:
+                    provider = tentativo
+                    break
+            fallimenti = 0
+            if not nuovo_url:
+                print("  Riavvio non riuscito: riprovo fra 30 secondi.", file=sys.stderr)
+                time.sleep(30)
+                continue
+            if nuovo_url != url:
+                url = nuovo_url
+                print(f"\nNuovo indirizzo del tunnel: {url}")
+                pubblica(url)
+            else:
+                print("  Tunnel riavviato: stesso indirizzo.")
     except KeyboardInterrupt:
         print("\nChiudo il tunnel.")
     finally:

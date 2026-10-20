@@ -1,9 +1,13 @@
 # Politica di traffico ngrok.
 #
-# ngrok v3.4+ mostra una pagina di avviso quando l'header Host della
-# richiesta non corrisponde al dominio del tunnel. Il frontend su GitHub
-# Pages chiama l'API con l'Host del tunnel: riscrivendolo a localhost
-# l'ngrok inoltra la richiesta all'app senza passare per l'avviso.
+# L'header Host viene riscritto a localhost: l'app non si fida di Host
+# diversi e ngrok lo usa per capire se la richiesta arriva dal suo dominio.
+#
+# Nota: la pagina di avviso di ngrok ("You are about to visit...") non si
+# puo' togliere da qui (la decide il bordo di ngrok). Le chiamate API la
+# evitano con l'header ngrok-skip-browser-warning, che il frontend manda
+# sempre; l'apertura nel browser la mostra invece una volta per indirizzo
+# (basta cliccare "Visit Site").
 on_http_request:
   - actions:
       - type: add-headers

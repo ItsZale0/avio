@@ -32,11 +32,12 @@ L'IP si vede con `ipconfig` (Wi-Fi) oppure con
 resta raggiungibile solo dal PC. Attenzione: l'app è protetta da password, ma
 chi è sulla stessa rete può raggiungere la porta.
 
-Lo script avvia anche il **tunnel Cloudflare**, che rende l'app raggiungibile
-dal telefono. Il tunnel "quick" assegna un URL nuovo a ogni avvio: per questo
-`scripts/tunnel.py` aggiorna da solo il `.env`, la variabile GitHub
-`CARPOOL_API_BASE` e rilancia il deploy di GitHub Pages. Per farlo serve un
-token GitHub con scope `repo` in `GITHUB_TOKEN` (`setx GITHUB_TOKEN "ghp_..."`).
+Lo script avvia anche il **tunnel ngrok** (o Cloudflare, se ngrok non c'e'),
+che rende l'app raggiungibile dal telefono. Il tunnel gratuito assegna un URL
+nuovo a ogni avvio: per questo `scripts/tunnel.py` aggiorna da solo il `.env`,
+il file `backend.json`, la variabile GitHub `CARPOOL_API_BASE` e rilancia il
+deploy di GitHub Pages. Per farlo serve un token GitHub con scope `repo` in
+`GITHUB_TOKEN` (`setx GITHUB_TOKEN "ghp_..."`).
 
 ### Il link unico: GitHub Pages
 
@@ -44,20 +45,29 @@ L'indirizzo da usare, da qualunque dispositivo e da qualunque rete, e':
 
 **<https://itszale0.github.io/carpool-intelligence/>**
 
-L'interfaccia vive su GitHub Pages, l'API dietro il tunnel. Non serve
+L'interfaccia vive su GitHub Pages, l'API dietro il tunnel ngrok. Non serve
 ricordare l'URL del tunnel ne' l'IP del PC: a ogni avvio dell'agente il
 tunnel cambia indirizzo, e la dashboard lo segue da sola.
 
-Il meccanismo e' a due puntatori, per non restare mai fermi:
+Il meccanismo e' a tre livelli, per non restare mai fermi:
 
-| file | chi lo aggiorna | quando e' fresco |
+| pezzo | chi lo aggiorna | a cosa serve |
 |---|---|---|
-| `config.json` (su Pages) | il deploy automatico | subito (fetch senza cache) |
-| `backend.json` (sul branch) | lo script del tunnel, a ogni avvio | entro ~5 min (cache CDN) |
+| `config.json` (su Pages) | il deploy automatico | indirizzo del backend per la PWA |
+| `backend.json` (sul branch) | lo script del tunnel, a ogni avvio | puntatore fresco senza aspettare il deploy |
+| controllo di vita nel browser | il frontend, a ogni apertura | scarta i puntatori morti e tiene il primo che risponde davvero |
 
-Il frontend legge entrambi, sceglie il piu' recente e, se il backend non
-risponde, prova l'altro: se il tunnel e' stato riavviato, la pagina si
-riprende da sola in un secondo.
+Aprendo il link GitHub da un browser, la pagina verifica in pochi secondi
+quale backend e' **online** e passa al tunnel attivo: cosi' la sessione vive
+sulla stessa origine (cookie affidabile, niente preflight) e non si resta
+mai su un indirizzo vecchio. Per restare sulla pagina di GitHub aggiungi
+`?resta=1` all'indirizzo.
+
+Il tunnel si autocontrolla ogni 45 secondi: se non risponde lo riavvia e
+ripubblica l'indirizzo appena cambia. Se in `Impostazioni -> Dominio ngrok`
+metti il dominio statico del tuo account (gratuito, uno per account),
+l'indirizzo pubblico **non cambia mai** e il link e' stabile per sempre.
+
 
 **Per farlo girare in background senza finestre di terminale:**
 

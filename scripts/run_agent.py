@@ -111,9 +111,39 @@ def _should_stop() -> bool:
     return STOP_FILE.exists()
 
 
+def _prendi_lock():
+    """Un solo supervisore alla volta.
+
+    Due agenti insieme avviano due tunnel sullo stesso token e si pestano
+    i piedi (ngrok ne accetta uno, l'altro resta appeso); in piu' il
+    secondo sovrascrive il puntatore del backend. Il lock e' del sistema:
+    se il processo muore, Windows lo rilascia da solo.
+    """
+    if os.name != "nt":
+        return None
+    try:
+        import msvcrt
+    except ImportError:  # pragma: no cover - solo Windows
+        return None
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    lock_path = DATA_DIR / "agent.lock"
+    handle = lock_path.open("w")
+    try:
+        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+    except OSError:
+        handle.close()
+        return None
+    return handle
+
+
 def main() -> int:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
+    lock = _prendi_lock()
+    if lock is None:
+        _log("supervisore", "gia' in esecuzione: non avvio un secondo agente")
+        print("L'agente e' gia' in esecuzione: non ne avvio un secondo.")
+        return 0
     STOP_FILE.unlink(missing_ok=True)
     PID_FILE.write_text(str(os.getpid()), encoding="utf-8")
 

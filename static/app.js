@@ -234,16 +234,26 @@ async function api(path, options = {}) {
   let response;
   let lastError = null;
 
+  // L'header dice a ngrok di non mettere la pagina di avviso al posto
+  // della risposta: senza, ogni chiamata da GitHub Pages riceverebbe
+  // l'HTML "You are about to visit..." invece del JSON.
+  const headers = {
+    "Content-Type": "application/json",
+    "ngrok-skip-browser-warning": "1",
+    ...(options.headers || {}),
+  };
+
   // Il tunnel puo' essere riavviato in qualunque momento e cambiare URL:
   // se la richiesta fallisce a livello di rete si prova un altro backend
   // conosciuto (config.json di Pages, puntatore fresco su GitHub).
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
       response = await fetch(API_BASE + path, {
-        headers: { "Content-Type": "application/json" },
+        headers,
         // La sessione vive in un cookie HttpOnly: va sempre mandato.
         credentials: "include",
         ...options,
+        headers,
       });
       break;
     } catch (error) {
@@ -374,11 +384,66 @@ async function loadRuntimeConfig() {
   const unici = [...perBase.values()].sort(
     (a, b) => String(b.updated).localeCompare(String(a.updated))
   );
-  if (unici.length) {
-    API_FALLBACKS = unici.map((item) => item.base);
-    API_BASE = API_FALLBACKS[0];
-    showApiHint();
+  if (!unici.length) return;
+
+  // Il puntatore piu' fresco non basta: il tunnel puo' essere caduto e
+  // l'URL vecchio restare scritto nel file. Si tiene il primo che
+  // risponde davvero, cosi' il link GitHub porta sempre a quello online.
+  let scelto = unici[0];
+  for (const item of unici) {
+    if (await backendVivo(item.base)) {
+      scelto = item;
+      break;
+    }
   }
+  API_FALLBACKS = [scelto.base, ...unici.map((i) => i.base).filter((b) => b !== scelto.base)];
+  API_BASE = scelto.base;
+  showApiHint();
+  passaAlTunnel();
+}
+
+/* L'API risponde? (un tunnel "vivo" ma appeso non risponde: si scarta).
+   Si controlla anche il contenuto: ngrok risponde 200 con la sua pagina
+   di avviso, che non e' l'app. */
+async function backendVivo(base, ms = 4000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const response = await fetch(
+      base.replace(/\/$/, "") + "/api/auth/status?ts=" + Date.now(),
+      {
+        cache: "no-store",
+        credentials: "include",
+        signal: ctrl.signal,
+        headers: { "ngrok-skip-browser-warning": "1" },
+      }
+    );
+    if (!response.ok) return false;
+    const body = await response.json();
+    return !!(body && typeof body === "object" && "locked" in body);
+  } catch (_) {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/* Dal link GitHub Pages al tunnel attivo: stessa origine vuol dire cookie
+   di sessione affidabile e nessun preflight CORS. Con ?resta=1 si resta
+   sulla pagina di GitHub. */
+function passaAlTunnel() {
+  if (!API_BASE || API_BASE === location.origin) return;
+  if (!/(^|\.)github\.io$/.test(location.hostname)) return;
+  if (new URLSearchParams(location.search).has("resta")) return;
+  try {
+    const target = new URL(API_BASE);
+    target.pathname = "/";
+    // La chiave d'accesso viaggia nella query (?key=...): va conservata,
+    // altrimenti il passaggio al tunnel perderebbe l'accesso in un tocco.
+    target.search = location.search;
+    target.hash = location.hash;
+    location.replace(target.toString());
+  } catch (_) { /* URL strano: si resta qui */ }
 }
 
 /* Se la pagina e' su un dominio diverso dall'API, il browser potrebbe
