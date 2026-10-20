@@ -154,14 +154,23 @@ const MAX_MAP_OFFERS = 40;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/* Il puntatore "fresco" del backend, letto direttamente dal repo: il tunnel
+   cambia URL a ogni avvio e la config.json di GitHub Pages si aggiorna solo
+   dopo il deploy (un paio di minuti). Questo file e' subito disponibile. */
+const RAW_BACKEND =
+  "https://raw.githubusercontent.com/ItsZale0/carpool-intelligence/main/backend.json";
+
+/* Tutti i backend conosciuti, in ordine di preferenza. */
+let API_FALLBACKS = [];
+
 async function api(path, options = {}) {
   let response;
   let lastError = null;
 
   // Il tunnel puo' essere riavviato in qualunque momento e cambiare URL:
-  // se la richiesta fallisce a livello di rete si rilegge config.json
-  // (che nel frattempo e' stato aggiornato) e si riprova.
-  for (let attempt = 0; attempt < 3; attempt++) {
+  // se la richiesta fallisce a livello di rete si prova un altro backend
+  // conosciuto (config.json di Pages, puntatore fresco su GitHub).
+  for (let attempt = 0; attempt < 5; attempt++) {
     try {
       response = await fetch(API_BASE + path, {
         headers: { "Content-Type": "application/json" },
@@ -172,11 +181,27 @@ async function api(path, options = {}) {
       break;
     } catch (error) {
       lastError = error;
-      if (attempt === 2) {
+      // 1) Prova subito un altro backend noto.
+      const alternative = API_FALLBACKS.find((base) => base !== API_BASE);
+      if (alternative) {
+        API_BASE = alternative;
+        API_FALLBACKS = [alternative, ...API_FALLBACKS.filter((b) => b !== alternative)];
+        continue;
+      }
+      // 2) Rileggi i puntatori: potrebbero essersi aggiornati.
+      if (attempt >= 1) {
+        await loadRuntimeConfig();
+        const fresh = API_FALLBACKS.find((base) => base !== API_BASE);
+        if (fresh) {
+          API_BASE = fresh;
+          API_FALLBACKS = [fresh, ...API_FALLBACKS.filter((b) => b !== fresh)];
+          continue;
+        }
+      }
+      if (attempt >= 3) {
         scheduleApiRetry();
         throw new Error("Server non raggiungibile");
       }
-      await loadRuntimeConfig();
       await sleep(1500 * (attempt + 1));
     }
   }
@@ -209,7 +234,12 @@ async function loadRuntimeConfig() {
   // `cache: "no-store"` e i query param servono a non prendere una copia
   // vecchia: se il tunnel e' stato riavviato, l'URL e' cambiato e quello
   // precedente non porta piu' da nessuna parte.
+  //
+  // In coda si legge anche il puntatore "fresco" pubblicato dal tunnel sul
+  // branch: e' aggiornato all'istante, mentre la config.json di Pages arriva
+  // solo dopo il deploy.
   const stamp = Date.now();
+  const found = [];
   const candidates = [`config.json?ts=${stamp}`, "/config.json"];
   for (const path of candidates) {
     try {
@@ -217,12 +247,27 @@ async function loadRuntimeConfig() {
       if (!response.ok) continue;
       const config = await response.json();
       if (config && typeof config.apiBase === "string" && config.apiBase) {
-        API_BASE = config.apiBase.replace(/\/$/, "");
-        showApiHint();
-        return;
+        found.push(config.apiBase.replace(/\/$/, ""));
       }
-      return;
+      break;
     } catch (_) { /* prova il successivo */ }
+  }
+  try {
+    const response = await fetch(`${RAW_BACKEND}?ts=${stamp}`, { cache: "no-store" });
+    if (response.ok) {
+      const config = await response.json();
+      if (config && typeof config.apiBase === "string" && config.apiBase) {
+        found.push(config.apiBase.replace(/\/$/, ""));
+      }
+    }
+  } catch (_) { /* senza rete resta solo la config.json */ }
+
+  const unici = [...new Set(found)];
+  if (unici.length) {
+    API_FALLBACKS = unici;
+    // Il puntatore fresco viene per primo: e' quello aggiornato.
+    API_BASE = unici[unici.length - 1] || unici[0];
+    showApiHint();
   }
 }
 

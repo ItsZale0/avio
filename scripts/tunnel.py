@@ -7,9 +7,12 @@ dashboard resta "offline". Questo script:
 1. avvia `cloudflared tunnel --url http://127.0.0.1:<porta>`;
 2. aspetta che compaia l'URL pubblico;
 3. aggiorna `CARPOOL_PUBLIC_URL` nel file `.env` locale;
-4. aggiorna la variabile di repository `CARPOOL_API_BASE` su GitHub, cosi'
+4. scrive `backend.json` nel repo e lo pubblica: e' il puntatore **fresco**
+   che il frontend legge direttamente da GitHub, senza aspettare il deploy
+   di Pages (che ci mette un paio di minuti);
+5. aggiorna la variabile di repository `CARPOOL_API_BASE` su GitHub, cosi'
    il prossimo deploy di Pages punterà al tunnel giusto;
-5. lascia il tunnel in primo piano: premere CTRL+C lo chiude.
+6. lascia il tunnel in primo piano: premere CTRL+C lo chiude.
 
 Uso:
     python scripts/tunnel.py                 # avvia e sincronizza
@@ -81,6 +84,52 @@ def update_env(url: str) -> bool:
     if changed:
         env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return changed
+
+
+def publish_backend_pointer(url: str, repo: str = "ItsZale0/carpool-intelligence") -> bool:
+    """Scrive `backend.json` nel repo e lo pubblica su GitHub.
+
+    E' il puntatore che il frontend legge quando la config.json di Pages e'
+    vecchia (il deploy ci mette un paio di minuti): appena il file e' nel
+    branch, il browser lo vede subito su raw.githubusercontent.com.
+    """
+    pointer = BASE / "backend.json"
+    content = json.dumps(
+        {"apiBase": url, "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
+        indent=2,
+    ) + "\n"
+    try:
+        if pointer.exists() and pointer.read_text(encoding="utf-8") == content:
+            return True
+        pointer.write_text(content, encoding="utf-8")
+    except OSError as exc:
+        print(f"  Scrittura di backend.json fallita: {exc}", file=sys.stderr)
+        return False
+
+    commands = [
+        ["git", "add", "backend.json"],
+        ["git", "commit", "-m", f"backend: tunnel {url}"],
+        ["git", "push", "origin", "main"],
+    ]
+    for command in commands:
+        try:
+            result = subprocess.run(
+                command, cwd=BASE, capture_output=True, text=True, timeout=60
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            print(f"  {' '.join(command)} fallito: {exc}", file=sys.stderr)
+            return False
+        if result.returncode != 0:
+            # "nothing to commit" non e' un errore.
+            if "nothing to commit" in (result.stdout or "") + (result.stderr or ""):
+                continue
+            print(
+                f"  {' '.join(command)} fallito: {(result.stderr or result.stdout or '').strip()[:200]}",
+                file=sys.stderr,
+            )
+            return False
+    print("  Puntatore del backend pubblicato su GitHub (backend.json).")
+    return True
 
 
 def update_github_variable(url: str, repo: str = "ItsZale0/carpool-intelligence") -> bool:
@@ -220,6 +269,7 @@ def main() -> int:
                 if update_env(url):
                     print("  .env aggiornato (CARPOOL_PUBLIC_URL)")
                 if not args.no_github:
+                    publish_backend_pointer(url)
                     update_github_variable(url)
                 print("  Per aggiornare anche la dashboard su GitHub Pages:")
                 print("    -> Actions -> Deploy frontend su GitHub Pages -> Re-run all jobs")
