@@ -236,7 +236,10 @@ a:hover { text-decoration: underline; }
 .stat small { display: block; color: var(--muted-2); font-size: 11px; margin-top: 2px; }
 
 /* ---------- tabs ---------- */
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line-soft); margin-bottom: 18px; overflow-x: auto; }
+.tabs {
+  display: flex; flex-wrap: wrap; align-items: stretch;
+  gap: 4px; border-bottom: 1px solid var(--line-soft); margin-bottom: 18px;
+}
 .tab {
   appearance: none; border: 0; background: transparent; color: var(--muted);
   font: inherit; font-size: 13.5px; font-weight: 600;
