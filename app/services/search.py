@@ -199,6 +199,15 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
                 errors.append(error)
 
         prefs = intelligence.prefs_of(watch)
+        # L'agevolazione X-GO e' un dato dell'utente, non della ricerca.
+        try:
+            from . import settings as app_settings
+
+            xgo = (app_settings.get("xgo") or "").strip()
+            if xgo and not prefs.get("xgo"):
+                prefs = {**prefs, "xgo": xgo}
+        except Exception:  # noqa: BLE001
+            pass
         late_minutes = int(prefs.get("flexible_days", 0) or 0) * 1440
         gathered = _dedupe(offers)
 
@@ -237,6 +246,14 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
                 )
         except Exception as exc:  # noqa: BLE001
             errors.append(f"split: {type(exc).__name__}: {exc}")
+
+        # Sconti X-GO (Trenitalia): -20% sui Regionali per chi e' iscritto.
+        try:
+            from . import discounts as discounts_service
+
+            discounts_service.apply_xgo(gathered, prefs)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"sconti: {type(exc).__name__}: {exc}")
 
         # Abbonamenti: se la tratta e' coperta, il biglietto non lo paghi.
         # Il prezzo reale resta, ma il costo effettivo diventa 0 e cambia

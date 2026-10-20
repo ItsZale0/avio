@@ -1711,6 +1711,7 @@ async function openSettings() {
 
     $("#sTelegramToken").value = s.telegram_token || "";
     $("#sTelegramChat").value = s.telegram_chat_id || "";
+    if ($("#sXgo")) $("#sXgo").value = s.xgo || "";
     if ($("#sNgrokToken")) $("#sNgrokToken").value = s.ngrok_authtoken || "";
     if ($("#sNgrokDomain")) $("#sNgrokDomain").value = s.ngrok_domain || "";
     // Gli abbonamenti globali dell'utente.
@@ -1841,6 +1842,7 @@ function settingsPayload() {
     groq_api_key: $("#sGroqKey").value.trim(),
     ngrok_authtoken: $("#sNgrokToken").value.trim(),
     ngrok_domain: $("#sNgrokDomain").value.trim(),
+    xgo: $("#sXgo") ? $("#sXgo").value : "",
     // Gli abbonamenti globali: una lista JSON di {tipo}.
     passes: JSON.stringify(
       $$("#globalPassesBox input[name=globalpass]:checked").map((i) => ({ tipo: i.value }))

@@ -36,6 +36,8 @@ GLOBAL_KEYS = {
     "ngrok_domain",
     # Gli abbonamenti dell'utente: valgono per tutte le ricerche.
     "passes",
+    # Agevolazione X-GO di Trenitalia ("giovane" / "senior" / "").
+    "xgo",
 }
 
 # Impostazioni personali: valgono per il singolo utente.
@@ -83,6 +85,8 @@ DEFAULTS: dict[str, str] = {
     "ngrok_authtoken": "",
     # Lista JSON degli abbonamenti in corso.
     "passes": "[]",
+    # Agevolazione X-GO: "giovane" (under 30), "senior" (60+), "" (nessuna).
+    "xgo": "",
     # Dominio ngrok riservato (facoltativo): rende l'URL stabile per sempre.
     "ngrok_domain": "",
 }

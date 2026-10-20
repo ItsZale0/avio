@@ -239,6 +239,7 @@ _REGIONI_TRENITALIA: dict[str, list[str]] = {
     "abruzzo": ["pescara", "l'aquila"],
     "fvg": ["trieste", "udine"],
     "trentino": ["trento"],
+    "alto_adige": ["bolzano", "bressanone", "cortina d'ampezzo"],
 }
 
 for _regione, _citta in _REGIONI_TRENITALIA.items():
@@ -313,20 +314,57 @@ def _is_expired(pass_info: dict[str, Any], when: date | None) -> bool:
     return expiry < when
 
 
+# Treni su cui l'abbonamento regionale NON vale (fonte Trenitalia: "validi
+# esclusivamente sui treni regionali: Regionale, Regionale Veloce e Regionale
+# Express. Non sono accettati su Frecciarossa, Frecciargento, Frecciabianca
+# o Intercity"). Ci metto anche le Frecce Regionale (ibride premium) e i
+# treni degli operatori privati (Italo/NTV).
+NON_REGIONALI = (
+    "frecciarossa",
+    "frecciargento",
+    "frecciabianca",
+    "frecce regionale",
+    "intercity",
+    "eurocity",
+    "italo",
+    "ntv",
+    "notte",
+    "night",
+)
+# Compagnie che fanno solo treni regionali.
+OPERATORI_REGIONALI = (
+    "trenord",
+    "tper",
+    "fse",
+    "suedtirolmobil",
+    "südtirolmobil",
+    "taf",
+    "arst",
+    "ferrovie del sud est",
+    "treni del sud est",
+    "tpl",
+    "fvg",
+    "stazione ferroviaria",
+)
+
+
 def _is_regional_train(offer: Any) -> bool:
-    """True se l'offerta e' fatta solo di treni regionali."""
+    """True se l'offerta e' fatta solo di treni regionali.
+
+    Si guarda sia la categoria del treno (delle API Trenitalia) sia la
+    compagnia (delle API Omio, che danno il nome dell'operatore).
+    """
     details = getattr(offer, "details", None) or {}
     categorie = str(details.get("treni") or "")
-    if not categorie:
-        # Senza informazioni sul tipo di treno non si presume la copertura.
+    compagnia = str(details.get("compagnia") or getattr(offer, "operator", "") or "")
+    testo = f"{categorie} {compagnia}".lower()
+    if any(parola in testo for parola in NON_REGIONALI):
         return False
-    testo = categorie.lower()
-    if any(
-        parola in testo
-        for parola in ("frecciarossa", "frecciargento", "frecciabianca", "intercity", "eurostar")
-    ):
-        return False
-    return any(parola in testo for parola in ("regionale", "regio"))
+    if any(parola in categorie.lower() for parola in ("regionale", "regio")):
+        return True
+    if any(op in compagnia.lower() for op in OPERATORI_REGIONALI):
+        return True
+    return False
 
 
 def _area_points(pass_info: dict[str, Any]) -> list[tuple[float, float]]:
@@ -397,6 +435,23 @@ def _route_points(offer: Any) -> list[tuple[float, float]]:
     return unici
 
 
+def regione_di(lat: float | None, lon: float | None) -> str | None:
+    """La regione in cui si trova un punto (per le condizioni degli sconti)."""
+    if lat is None or lon is None:
+        return None
+    for regione, citta in _REGIONI_TRENITALIA.items():
+        for nome in citta:
+            coords = CITIES.get(nome)
+            if not coords:
+                continue
+            dist = haversine_km(lat, lon, coords[0], coords[1])
+            # Attenzione: la distanza 0 e' un valore valido (non usare
+            # "or 1e9", che la tratterebbe come falsa).
+            if dist is not None and dist <= 45:
+                return regione
+    return None
+
+
 def _regione_del_viaggio(offer: Any) -> list[tuple[float, float]]:
     """Le citta' della regione in cui parte il viaggio.
 
@@ -415,12 +470,11 @@ def _regione_del_viaggio(offer: Any) -> list[tuple[float, float]]:
                 punti.append(coords)
         if not punti:
             continue
-        if any(
-            (haversine_km(lat, lon, plat, plon) or 1e9) <= 45 for plat, plon in punti
-        ):
-            return punti
+        for plat, plon in punti:
+            dist = haversine_km(lat, lon, plat, plon)
+            if dist is not None and dist <= 45:
+                return punti
     return []
-
 
 def _segment_covered(
     primo: tuple[float, float],

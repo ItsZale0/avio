@@ -36,6 +36,8 @@ KNOWN_PREFS = {
     "arrivo_giorno_prima",
     # "True" = arrivare prima conta piu' del prezzo (travel agent).
     "prefer_fast",
+    # Agevolazione X-GO di Trenitalia ("giovane" / "senior" / "").
+    "xgo",
     # Lista di abbonamenti in corso (vedi app/services/passes.py).
     "passes",
 }

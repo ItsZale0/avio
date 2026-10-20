@@ -354,6 +354,42 @@ def _pass_question(prefs: dict[str, Any]) -> list[dict]:
     ]
 
 
+def _xgo_question(prefs: dict[str, Any]) -> list[dict]:
+    """Chiede se l'utente ha diritto agli sconti X-GO (Trenitalia).
+
+    Il programma X-GO da' il -20% sui treni regionali ai under 30 e ai
+    over 60: sono soldi in meno su ogni Regionale.
+    """
+    if str(prefs.get("xgo") or "").strip():
+        return []
+    return [
+        {
+            "key": "xgo",
+            "text": (
+                "Hai il programma X-GO di Trenitalia? Per chi ha meno di 30 "
+                "anni o 60 e piu' lo sconto e' del 20% sui treni regionali."
+            ),
+            "options": [
+                {
+                    "id": "giovane",
+                    "label": "Ho meno di 30 anni (X-GO Young, -20%)",
+                    "prefs": {"xgo": "giovane"},
+                },
+                {
+                    "id": "senior",
+                    "label": "Ho 60 anni o piu' (X-GO Senior, -20%)",
+                    "prefs": {"xgo": "senior"},
+                },
+                {
+                    "id": "no",
+                    "label": "No, non ho l'agevolazione",
+                    "prefs": {"xgo": ""},
+                },
+            ],
+        }
+    ]
+
+
 def _point_questions(
     offers: list[Offer], ctx: SearchContext, watch: dict[str, Any]
 ) -> list[dict]:
@@ -679,6 +715,7 @@ async def analyze(
             return result
         result.questions = (
             _relax_questions(diagnostics, ctx, prefs)
+            + _xgo_question(prefs)
             + _point_questions(diagnostics, ctx, watch)
         )[:2]
         result.summary = "Nessuna combinazione rispetta i vincoli attuali."
@@ -791,12 +828,14 @@ async def analyze(
     if ai_questions:
         result.questions = (
             ai_questions
+            + _xgo_question(prefs)
             + _point_questions(offers, ctx, watch)
             + _pass_question(prefs)
         )[:2]
     else:
         result.questions = (
-            _point_questions(offers, ctx, watch)
+            _xgo_question(prefs)
+            + _point_questions(offers, ctx, watch)
             + _pass_question(prefs)
             + _priority_question(candidates)
         )[:2]

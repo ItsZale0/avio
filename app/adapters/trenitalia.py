@@ -401,12 +401,18 @@ def _tappe_from_nodes(nodes: list[dict]) -> list[dict]:
 
 
 def _main_operator(categories: list[str]) -> str:
+    """Il nome dell'operatore e del tipo di treno, per la card."""
     if not categories:
         return "Trenitalia"
     high_speed = {"Frecciarossa", "Frecciargento", "Frecciabianca", "Italo"}
     for category in categories:
         if category in high_speed:
             return category
-    if "Intercity" in categories:
-        return "Intercity"
+    for category in categories:
+        if category.startswith("Intercity"):
+            return category  # Intercity, Intercity Notte
+        if category.startswith("EuroCity"):
+            return category
+        if category.startswith("Frecce Regional"):
+            return "Frecce Regionale"
     return f"Trenitalia {categories[0]}"
