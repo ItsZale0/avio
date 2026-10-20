@@ -189,6 +189,14 @@ aggiorna `watches.prefs` (o `max_price`) e fa ripartire una ricerca subito. Le d
 già poste o risposte non si ripetono (dedupe per `key`). Con l'AI attiva, il modello
 può aggiungere fino a 2 domande proprie ("accetti un cambio?", "quanti bagagli?").
 
+**Il budget non deve mai far sparire i risultati.** Se il tetto scarta tutte le
+offerte, `_filter_offers` tiene le dodici più economiche e le marca
+`details.sopra_budget` (con budget ed eccesso); il planner fa lo stesso con i
+candidati. Così l'utente vede il prezzo reale del viaggio più economico,
+l'AI può scrivere il piano ("supera il budget di 8 €") e la card offre un
+pulsante per alzare il tetto con un clic. Senza questo, un budget troppo basso
+lasciava la ricerca vuota e priva di qualsiasi piano.
+
 ### Bot Telegram in polling
 
 `app/services/telegram_bot.py` gira nello stesso processo (job ogni 45 s):
@@ -313,7 +321,7 @@ affidabilità  = rating/5 * 100, default 68
 - Le **stime** di carsharing hanno un malus del 15% sul punteggio prezzo.
 - Il **costo effettivo** aggiunge il costo di accesso al punto di ritrovo.
 - Badge assegnati una volta per ricerca: `cheapest`, `best_value`, `fastest`,
-  `closest`, `under_budget`, `estimate`, `price_drop`.
+  `closest`, `under_budget`, `over_budget`, `estimate`, `price_drop`.
 - I mezzi pubblici (prezzo ignoto) non entrano nella classifica “Migliori”: stanno
   nella scheda **Carsharing & vicino**.
 
