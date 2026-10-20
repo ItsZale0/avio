@@ -447,7 +447,6 @@ function bindEvents() {
   $("#btnDelKey").addEventListener("click", deleteKey);
   $("#btnTelegramLink").addEventListener("click", telegramLink);
   $("#btnTelegramConfirm").addEventListener("click", telegramConfirm);
-
   $("#questionsCard").addEventListener("click", (event) => {
     const button = event.target.closest("[data-answer]");
     if (!button) return;
@@ -694,18 +693,6 @@ function renderPlan() {
        </div>`
     : "";
 
-  // Se il piano supera il budget, offri di alzarlo con un clic.
-  const overBudget = plan.total_price != null && state.watch?.max_price
-    && plan.total_price > state.watch.max_price;
-  const raiseBtn = overBudget
-    ? `<div class="plan-raise">
-         <span>Il budget di ${euro(state.watch.max_price)} e' troppo basso per questa soluzione.</span>
-         <button type="button" class="btn ghost" data-raise-budget="${Math.ceil(plan.total_price)}">
-           Alza il budget a ${euro(Math.ceil(plan.total_price))}
-         </button>
-       </div>`
-    : "";
-
   box.innerHTML = `
     <div class="plan-head">
       <div>
@@ -729,28 +716,7 @@ function renderPlan() {
         : `<span>🔁 ${plan.steps.length} tratte</span>`}
     </div>
     ${watchouts ? `<div class="plan-watchouts">${watchouts}</div>` : ""}
-    ${raiseBtn}
     ${alts}`;
-
-  const raiseButton = box.querySelector("[data-raise-budget]");
-  if (raiseButton) {
-    raiseButton.addEventListener("click", () => raiseBudget(Number(raiseButton.dataset.raiseBudget)));
-  }
-}
-
-async function raiseBudget(amount) {
-  const watch = state.watch;
-  if (!watch) return;
-  try {
-    await api(`/api/watches/${watch.id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ max_price: amount }),
-    });
-    toast(`Budget portato a ${euro(amount)}: cerco di nuovo`);
-    await loadDetail(watch.id);
-  } catch (error) {
-    toast(error.message, "error");
-  }
 }
 
 function renderQuestions() {
@@ -1408,6 +1374,7 @@ async function openSettings() {
     $$(".admin-only").forEach((el) => el.classList.toggle("hidden", !isAdmin));
 
     renderAccessInfo();
+    loadTelegramChats();
 
     $("#sTelegramToken").value = s.telegram_token || "";
     $("#sTelegramChat").value = s.telegram_chat_id || "";
@@ -1649,8 +1616,73 @@ async function telegramConfirm() {
     hint.textContent = "Chat collegata.";
     if (state.user) state.user.telegram_chat_id = result.telegram_chat_id;
     renderAccessInfo();
+    loadTelegramChats();
   } catch (error) {
     hint.textContent = error.message;
+  }
+}
+
+/* ---------- chat e gruppi Telegram ---------- */
+async function loadTelegramChats() {
+  const list = $("#telegramChatsList");
+  const info = $("#telegramChatsInfo");
+  if (!list) return;
+  try {
+    const data = await api("/api/telegram/chats");
+    const chats = data.chats || [];
+    if (data.add_url) {
+      $("#telegramAddBotBox")?.classList.remove("hidden");
+      const link = $("#telegramAddBot");
+      if (link) link.href = data.add_url;
+    }
+    if (!chats.length) {
+      info.textContent =
+        "Nessuna chat registrata. Aggiungimi a un gruppo (o a un canale): mi registro da solo e ti scrivo li'.";
+      list.innerHTML = "";
+      return;
+    }
+    info.textContent = `${chats.length} chat registrate. Gli avvisi arrivano in tutte, tranne se ne scegli una predefinita.`;
+    list.innerHTML = chats
+      .map(
+        (chat) => `
+        <div class="user-row">
+          <span>${esc(chat.title || chat.username || chat.chat_id)}
+            <small>${esc(chat.chat_type || "")} · ${esc(chat.chat_id)}${chat.is_default ? " · predefinita" : ""}</small>
+          </span>
+          <span>
+            ${chat.is_default ? "" : `<button type="button" class="btn ghost tiny" data-tg-default="${esc(chat.chat_id)}">Predefinita</button>`}
+            <button type="button" class="btn ghost tiny" data-tg-remove="${esc(chat.chat_id)}">Togli</button>
+          </span>
+        </div>`
+      )
+      .join("");
+
+    list.querySelectorAll("[data-tg-default]").forEach((button) =>
+      button.addEventListener("click", async () => {
+        try {
+          await api(`/api/telegram/chats/${encodeURIComponent(button.dataset.tgDefault)}/default`, {
+            method: "POST",
+          });
+          loadTelegramChats();
+        } catch (error) {
+          toast(error.message, "error");
+        }
+      })
+    );
+    list.querySelectorAll("[data-tg-remove]").forEach((button) =>
+      button.addEventListener("click", async () => {
+        try {
+          await api(`/api/telegram/chats/${encodeURIComponent(button.dataset.tgRemove)}`, {
+            method: "DELETE",
+          });
+          loadTelegramChats();
+        } catch (error) {
+          toast(error.message, "error");
+        }
+      })
+    );
+  } catch (error) {
+    info.textContent = "✗ " + error.message;
   }
 }
 

@@ -39,6 +39,7 @@ from .services import questions as questions_service
 from .services import scheduler
 from .services import search
 from .services import settings as app_settings
+from .services import telegram_chats as telegram_chats_service
 from .timeutil import iso, now_utc, parse_dt
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -301,6 +302,39 @@ async def confirm_telegram(request: Request):
         raise HTTPException(status_code=400, detail="Il bot non ha ancora inviato il codice")
     auth.set_telegram_chat(int(user["id"]), chat_id)
     return {"ok": True, "telegram_chat_id": chat_id}
+
+
+# --------------------------------------------------------------------------- #
+# Chat Telegram: privati, gruppi e canali
+# --------------------------------------------------------------------------- #
+@app.get("/api/telegram/chats")
+async def telegram_chats(request: Request):
+    """Le chat Telegram registrate, e il link per aggiungere il bot."""
+    user = deps.require_user(request)
+    uid = int(user["id"])
+    bot = await notify.telegram_bot_info()
+    return {
+        "chats": telegram_chats_service.list_chats(uid),
+        "bot": bot,
+        "add_url": f"https://t.me/{bot['username']}" if bot.get("username") else "",
+    }
+
+
+@app.post("/api/telegram/chats/{chat_id}/default")
+async def telegram_set_default(chat_id: str, request: Request):
+    """Imposta la chat predefinita (dove arrivano gli avvisi)."""
+    user = deps.require_user(request)
+    if not telegram_chats_service.set_default(int(user["id"]), chat_id):
+        raise HTTPException(status_code=404, detail="Chat non trovata")
+    return {"ok": True, "chats": telegram_chats_service.list_chats(int(user["id"]))}
+
+
+@app.delete("/api/telegram/chats/{chat_id}")
+async def telegram_delete_chat(chat_id: str, request: Request):
+    """Toglie una chat dalla lista."""
+    user = deps.require_user(request)
+    removed = telegram_chats_service.remove_chat(int(user["id"]), chat_id)
+    return {"ok": removed, "chats": telegram_chats_service.list_chats(int(user["id"]))}
 
 
 # --------------------------------------------------------------------------- #

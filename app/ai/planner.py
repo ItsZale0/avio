@@ -129,6 +129,22 @@ def _reaches_destination(offer: Offer, ctx: SearchContext) -> bool:
     return distance <= limit
 
 
+def _arrives_in_window(offer: Offer, ctx: SearchContext, latest: datetime) -> bool:
+    """True se la tratta arriva nella finestra richiesta.
+
+    L'arrivo deve essere nel giorno indicato dall'utente e non oltre l'ora
+    richiesta: "devo essere li' entro le 11 di giovedi" non ammette un
+    treno che arriva mercoledi sera.
+    """
+    if not offer.arrive_at:
+        return True
+    if offer.arrive_at > latest:
+        return False
+    if offer.arrive_at < ctx.arrival_day_start:
+        return False
+    return True
+
+
 def _duration(depart: datetime | None, arrive: datetime | None) -> int | None:
     if not depart or not arrive:
         return None
@@ -200,6 +216,7 @@ def _build_triples(
             and o.depart_at
             and _reaches_destination(o, ctx)
             and (o.arrive_at is None or o.arrive_at <= latest)
+            and _arrives_in_window(o, ctx, latest)
         ),
         key=_price_sort,
     )[:MAX_SIDE_LEGS]
@@ -235,6 +252,8 @@ def _build_triples(
                 legs = [leg1, leg2, leg3]
                 priced_legs = [leg for leg in legs if leg.price is not None]
                 if not priced_legs:
+                    continue
+                if not _arrives_in_window(leg3, ctx, latest):
                     continue
                 notes = []
                 if transfer12 is not None:
@@ -297,6 +316,8 @@ def build_candidates(
     for offer in singles:
         if offer.arrive_at and offer.arrive_at > latest:
             continue
+        if not _arrives_in_window(offer, ctx, latest):
+            continue
         if not _reaches_destination(offer, ctx):
             continue
         candidate = Candidate(
@@ -336,6 +357,8 @@ def build_candidates(
                 if leg2 is leg1:
                     continue
                 if leg2.arrive_at and leg2.arrive_at > latest:
+                    continue
+                if not _arrives_in_window(leg2, ctx, latest):
                     continue
                 if not _reaches_destination(leg2, ctx):
                     continue
@@ -389,19 +412,9 @@ def build_candidates(
             candidates.setdefault(key, candidate)
 
     if not candidates and over_budget:
-        # Il budget ha esaurito i candidati: si mostrano i piu' economici
-        # comunque, con la nota che superano il tetto.
-        cheapest = sorted(
-            over_budget.values(),
-            key=lambda c: (c.total_price, c.total_duration_min or 10**6),
-        )[:6]
-        for candidate in cheapest:
-            candidate.notes = list(candidate.notes or []) + [
-                f"sopra il budget di {ctx.max_price:.2f} EUR"
-            ]
-            candidates[("over", candidate.legs[0].fingerprint, *(
-                leg.fingerprint for leg in candidate.legs[1:]
-            ))] = candidate
+        # Il budget ha esaurito i candidati. Non se ne propongono: il prezzo
+        # reale viene comunicato dalla domanda "vuoi alzare il budget?".
+        pass
 
     all_candidates = list(candidates.values())
 

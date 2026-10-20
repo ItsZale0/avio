@@ -70,6 +70,24 @@ CREATE TABLE IF NOT EXISTS telegram_links (
     expires_at TEXT NOT NULL
 );
 
+-- Chat Telegram registrati: chat privati, gruppi e canali dove l'utente
+-- ha aggiunto il bot. "is_default" indica dove mandare gli avvisi per
+-- impostazione predefinita.
+CREATE TABLE IF NOT EXISTS telegram_chats (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    chat_id      TEXT NOT NULL,
+    chat_type    TEXT,
+    title        TEXT,
+    username     TEXT,
+    is_default   INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT NOT NULL,
+    last_seen_at TEXT,
+    UNIQUE(user_id, chat_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_telegram_chats_user ON telegram_chats(user_id);
+
 CREATE TABLE IF NOT EXISTS watches (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id       INTEGER REFERENCES users(id) ON DELETE CASCADE,

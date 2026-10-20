@@ -24,6 +24,7 @@ def build_context(watch: dict[str, Any]) -> SearchContext:
     arrive_by = parse_dt(watch["arrive_by"])
     if not arrive_by:
         raise ValueError("arrive_by mancante")
+    prefs = intelligence.prefs_of(watch)
     return SearchContext(
         watch_id=watch["id"],
         from_place=watch["from_place"],
@@ -37,6 +38,7 @@ def build_context(watch: dict[str, Any]) -> SearchContext:
         radius_km=float(watch.get("radius_km") or 5),
         passengers=int(watch.get("passengers") or 1),
         max_price=watch.get("max_price"),
+        allow_day_before=bool(prefs.get("arrivo_giorno_prima")),
     )
 
 
@@ -49,14 +51,19 @@ def _filter_offers(offers: list[Offer], ctx: SearchContext, late_minutes: int = 
     """
     now = now_utc()
     latest = ctx.arrive_by + timedelta(minutes=max(0, late_minutes))
+    # L'arrivo deve essere nel giorno richiesto: "devo essere a Trento entro
+    # le 11 di giovedi" non ammette un treno che arriva mercoledi sera.
+    earliest = ctx.arrival_day_start
     kept: list[Offer] = []
-    over_budget: list[Offer] = []
     for offer in offers:
         if not offer.depart_at and offer.mode != "transit":
             continue
         if offer.depart_at and offer.depart_at < now - timedelta(minutes=5):
             continue
         if ctx.depart_after and offer.depart_at and offer.depart_at < ctx.depart_after - timedelta(minutes=15):
+            continue
+        if offer.arrive_at and offer.arrive_at < earliest:
+            # Arrivato il giorno prima (o prima): fuori dalla finestra.
             continue
         if offer.arrive_at and offer.arrive_at > latest + timedelta(minutes=10):
             continue
@@ -78,23 +85,12 @@ def _filter_offers(offers: list[Offer], ctx: SearchContext, late_minutes: int = 
                 continue
 
         if ctx.max_price is not None and offer.price is not None and offer.price > ctx.max_price:
-            # Sopra budget: si accantona invece di scartare subito.
-            over_budget.append(offer)
+            # Fuori budget: scartata. Il prezzo reale della soluzione piu'
+            # economica viene comunque comunicato all'utente dalla domanda
+            # "vuoi alzare il budget?", con la possibilita' di accettare.
             continue
         kept.append(offer)
 
-    if not kept and over_budget:
-        # Il budget ha cancellato tutto: si mostrano le piu' economiche
-        # comunque, con l'etichetta "sopra budget".
-        over_budget.sort(key=lambda o: (o.price is None, o.price or 0, o.arrive_at or now))
-        for offer in over_budget[:12]:
-            offer.details = {
-                **(offer.details or {}),
-                "sopra_budget": True,
-                "budget": ctx.max_price,
-                "eccesso": round((offer.price or 0) - (ctx.max_price or 0), 2),
-            }
-            kept.append(offer)
     return kept
 
 
@@ -171,6 +167,8 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
 
         new_offers, drops = _persist(watch_id, offers, ranked)
         _deactivate_past(watch_id)
+        # Le offerte che non rispettano piu' i filtri escono dalla lista.
+        _deactivate_filtered_out(watch_id, offers)
 
         best = _best_offer(offers, ranked)
 
@@ -198,7 +196,10 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
                 best_price=new_best,
             )
         else:
-            store.update_ai_fields(watch_id, summary=intel.summary)
+            # Nessuna combinazione valida: il piano precedente non e' piu'
+            # valido (i filtri possono essere cambiati).
+            store.clear_plans(watch_id)
+            store.update_ai_fields(watch_id, summary=intel.summary, reset_best=True)
 
         # Domande all'utente: al massimo due, mai ripetute.
         created_questions: list[dict] = []
@@ -429,6 +430,32 @@ def _deactivate_past(watch_id: int) -> None:
             "AND ((arrive_at IS NOT NULL AND arrive_at < ?) OR (arrive_at IS NULL AND depart_at IS NOT NULL AND depart_at < ?))",
             (watch_id, threshold, threshold),
         )
+
+
+def _deactivate_filtered_out(watch_id: int, offers: list[Offer]) -> int:
+    """Disattiva le offerte salvate che questo giro non ha piu' trovato.
+
+    Serve perche' i filtri cambiano nel tempo (budget, giorno, orario): un
+   'offerta che era valida ieri non deve restare in lista oggi solo perche'
+    e' ancora salvata nel database. La lista deve rispecchiare i filtri
+    attuali.
+    """
+    if not offers:
+        # Nessuna offerta valida: tutte quelle salvate escono dalla lista.
+        with db.db() as conn:
+            cursor = conn.execute(
+                "UPDATE offers SET active=0 WHERE watch_id=? AND active=1", (watch_id,)
+            )
+            return cursor.rowcount
+    fingerprints = [offer.fingerprint for offer in offers]
+    placeholders = ",".join(["?"] * len(fingerprints))
+    with db.db() as conn:
+        cursor = conn.execute(
+            f"UPDATE offers SET active=0 WHERE watch_id=? AND active=1 "
+            f"AND fingerprint NOT IN ({placeholders})",
+            [watch_id, *fingerprints],
+        )
+        return cursor.rowcount
 
 
 def _best_offer(offers: list[Offer], ranked: dict[str, dict]) -> dict[str, Any] | None:

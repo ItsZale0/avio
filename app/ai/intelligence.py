@@ -177,6 +177,17 @@ def _relax_questions(
 ) -> list[dict]:
     """Domande mirate quando non c'e' nessuna combinazione valida."""
     latest = ctx.arrive_by + timedelta(minutes=int(prefs.get("flexible_days", 0)) * 1440)
+    # Offerte che arrivano nel giorno richiesta (ed entro il limite): sono
+    # le uniche che interessano per il prezzo.
+    in_window = [
+        o
+        for o in offers
+        if o.arrive_at is None
+        or (
+            ctx.arrival_day_start <= o.arrive_at <= latest
+            or (prefs.get("flexible_days", 0) and o.arrive_at > latest)
+        )
+    ]
     late = [
         o
         for o in offers
@@ -184,15 +195,55 @@ def _relax_questions(
         and o.arrive_at > latest
         and _reaches_destination(o, ctx)
         and (o.price is None or ctx.max_price is None or o.price <= ctx.max_price)
-    ]
+    ]    # Nella finestra di tempo ma piu' care del budget: e' il prezzo reale
+    # della soluzione che l'utente deve conoscere per decidere.
     over_budget = [
         o
-        for o in offers
+        for o in in_window
         if ctx.max_price is not None
         and o.price is not None
         and o.price > ctx.max_price
     ]
+    # Offerte che arrivano la sera prima: servono solo se l'utente le accetta.
+    giorno_prima = [
+        o
+        for o in offers
+        if o.arrive_at
+        and ctx.arrival_day_start <= o.arrive_at < ctx.arrival_day_start + timedelta(days=1)
+        and o.arrive_at > ctx.arrival_day_start
+    ]
+    # La sera primavera' rispetto al giorno richiesto.
+    sera_prima = [
+        o
+        for o in offers
+        if o.arrive_at
+        and (ctx.arrival_day_start - timedelta(days=1)) <= o.arrive_at < ctx.arrival_day_start
+    ]
     questions: list[dict] = []
+    if sera_prima and not prefs.get("arrivo_giorno_prima"):
+        presto = max(sera_prima, key=lambda o: o.arrive_at or ctx.arrival_day_start)
+        questions.append(
+            {
+                "key": "arrivo_giorno_prima",
+                "text": (
+                    "Nessuna corsa arriva in tempo per l'ora che hai chiesto. "
+                    f"Il piu' vicino arriva {human_rome(presto.arrive_at, '%a %d %b alle %H:%M')}, "
+                    "cioe' la sera prima: va bene o preferisci aspettare il giorno dopo?"
+                ),
+                "options": [
+                    {
+                        "id": "no",
+                        "label": "No, voglio arrivare quel giorno",
+                        "prefs": {"arrivo_giorno_prima": False},
+                    },
+                    {
+                        "id": "yes",
+                        "label": "Si, arrivo la sera prima",
+                        "prefs": {"arrivo_giorno_prima": True},
+                    },
+                ],
+            }
+        )
     if late and not prefs.get("flexible_days"):
         soonest = min(late, key=lambda o: o.arrive_at or latest)
         questions.append(
@@ -211,6 +262,7 @@ def _relax_questions(
         )
     if over_budget and ctx.max_price:
         cheapest = min(over_budget, key=lambda o: o.price or 0)
+        suggested = round((cheapest.price or 0) * 1.1, 2)
         questions.append(
             {
                 "key": "budget_flex",
@@ -222,8 +274,8 @@ def _relax_questions(
                     {"id": "keep", "label": "No, resto sul budget", "prefs": {}},
                     {
                         "id": "raise",
-                        "label": f"Alzo a {round((cheapest.price or 0) * 1.1, 2):.0f} EUR",
-                        "prefs": {"budget_raise": round((cheapest.price or 0) * 1.1, 2)},
+                        "label": f"Alzo a {suggested:.0f} EUR",
+                        "prefs": {"budget_raise": suggested},
                     },
                 ],
             }

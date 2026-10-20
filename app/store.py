@@ -326,6 +326,16 @@ def current_plans(watch_id: int) -> list[dict[str, Any]]:
     return [_plan_to_dict(row) for row in rows]
 
 
+def clear_plans(watch_id: int) -> None:
+    """Nessun piano valido: toglie quello corrente.
+
+    Serve perche' i filtri cambiano: un piano valido ieri (o con un budget
+    diverso) non deve restare a schermo come se fosse ancora valido.
+    """
+    with db.db() as conn:
+        conn.execute("UPDATE plans SET is_current = 0 WHERE watch_id = ?", (watch_id,))
+
+
 def update_ai_fields(
     watch_id: int,
     *,

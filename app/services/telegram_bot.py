@@ -15,6 +15,7 @@ from ..schemas import DEFAULT_SOURCES, WatchIn
 from ..timeutil import human_rome, now_utc
 from . import questions as questions_service
 from . import settings as app_settings
+from . import telegram_chats
 
 log = logging.getLogger("carpool.telegram")
 
@@ -29,6 +30,13 @@ def _user_for_chat(chat_id: str) -> dict | None:
     from .. import auth
 
     return auth.user_for_telegram_chat(chat_id)
+
+
+def _owner_user() -> dict | None:
+    """Il proprietario unico dell'istanza: e' lui che possiede le ricerche."""
+    from .. import auth
+
+    return auth.implicit_owner()
 
 
 async def _reply(text: str, *, user_id: int | None = None) -> None:
@@ -67,7 +75,67 @@ async def _handle_update(update: dict) -> None:
         return
     message = update.get("message") or update.get("edited_message")
     if message:
+        # Il bot e' stato aggiunto a un gruppo o a un canale: si registra.
+        if await _handle_bot_added(message):
+            return
         await _handle_message(message)
+
+
+async def _handle_bot_added(message: dict) -> bool:
+    """Registra la chat quando il bot viene aggiunto a un gruppo o canale.
+
+    Telegram invia un messaggio di servizio con "new_chat_members": e' il
+    modo piu' semplice per dare "l'accesso" senza codici da copiare.
+    """
+    chat = message.get("chat") or {}
+    chat_type = str(chat.get("type") or "")
+    if chat_type not in telegram_chats.GROUP_TYPES and chat_type != "channel":
+        return False
+    new_members = message.get("new_chat_members") or []
+    bot_id = await _bot_id()
+    added = False
+    for member in new_members:
+        if str((member or {}).get("id") or "") == bot_id:
+            added = True
+            break
+    if not added:
+        return False
+
+    chat_id = str(chat.get("id") or "")
+    title = chat.get("title") or chat.get("username")
+    username = chat.get("username")
+    user = _owner_user()
+    if not user:
+        await notify.send_telegram_message(
+            "Ciao! Sono l'agente di viaggio. Per usarmi apri l'app, genera un codice "
+            "in Impostazioni → Telegram e scrivimi /link CODICE.",
+            chat_id=chat_id,
+        )
+        return True
+
+    telegram_chats.register_chat(
+        int(user["id"]),
+        chat_id,
+        chat_type=chat_type,
+        title=title,
+        username=username,
+        make_default=False,
+    )
+    await notify.send_telegram_message(
+        f"✅ {telegram_chats.describe({'chat_id': chat_id, 'chat_type': chat_type, 'title': title, 'username': username})}\n"
+        "Ora qui puoi chiedermi un viaggio (“Thiene → Trento, arrivo domani alle 11”) "
+        "e riceverai qui gli avvisi.",
+        chat_id=chat_id,
+    )
+    return True
+
+
+async def _bot_id() -> str:
+    """L'id del bot, per riconoscere gli aggiornamenti che lo riguardano."""
+    ok, result = await notify.telegram_call("getMe")
+    if ok and isinstance(result, dict):
+        return str(result.get("id") or "")
+    return ""
 
 
 async def _handle_callback(callback: dict) -> None:
@@ -114,8 +182,8 @@ async def _handle_callback(callback: dict) -> None:
         )
 
 
-async def _handle_command(text: str, chat_id: str) -> None:
-    """Comandi del bot: /start, /link, /help, /chi."""
+async def _handle_command(text: str, chat_id: str, message_chat: dict | None = None) -> None:
+    """Comandi del bot: /start, /link, /chi, /chat, /chats, /removechat."""
     command = text.split()[0].lower().split("@")[0]
 
     if command in ("/start", "/help"):
@@ -171,7 +239,7 @@ async def _handle_command(text: str, chat_id: str) -> None:
         return
 
     if command == "/chi":
-        owner = _user_for_chat(chat_id)
+        owner = _owner_user()
         if owner:
             watches = store.list_watches(int(owner["id"]))
             if not watches:
@@ -189,6 +257,64 @@ async def _handle_command(text: str, chat_id: str) -> None:
             )
         return
 
+    if command in ("/chat", "/addchat"):
+        # Registra la chat corrente (gruppo, canale o privato).
+        owner = _owner_user()
+        chat = message_chat or {}
+        chat_type = str(chat.get("type") or "private")
+        title = chat.get("title") or chat.get("username")
+        username = chat.get("username")
+        if not owner:
+            await notify.send_telegram_message(
+                "Prima collegami: apri l'app → Impostazioni → Telegram → "
+                "“Collega la mia chat”, poi scrivi /link CODICE.",
+                chat_id=chat_id,
+            )
+            return
+        telegram_chats.register_chat(
+            int(owner["id"]),
+            chat_id,
+            chat_type=chat_type,
+            title=title,
+            username=username,
+            make_default=True,
+        )
+        await notify.send_telegram_message(
+            f"✅ Chat registrata: {telegram_chats.describe({'chat_id': chat_id, 'chat_type': chat_type, 'title': title, 'username': username})}.\n"
+            "Qui riceverai gli avvisi e potrai chiedermi viaggi.",
+            chat_id=chat_id,
+        )
+        return
+
+    if command == "/chats":
+        owner = _owner_user()
+        if not owner:
+            return
+        chats = telegram_chats.list_chats(int(owner["id"]))
+        if not chats:
+            await notify.send_telegram_message(
+                "Nessuna chat registrata. Aggiungimi a un gruppo o scrivi /chat qui.",
+                user_id=int(owner["id"]),
+            )
+            return
+        righe = "\n".join(f"• {telegram_chats.describe(c)}" for c in chats)
+        await notify.send_telegram_message(
+            f"Le tue chat:\n{righe}\n\nUsa /removechat per toglierne una.",
+            user_id=int(owner["id"]),
+        )
+        return
+
+    if command == "/removechat":
+        owner = _owner_user()
+        if not owner:
+            return
+        removed = telegram_chats.remove_chat(int(owner["id"]), chat_id)
+        await notify.send_telegram_message(
+            "Chat rimossa: non ti scrivo piu' qui." if removed else "Questa chat non era registrata.",
+            chat_id=chat_id,
+        )
+        return
+
 
 async def _handle_message(message: dict) -> None:
     chat_id = str((message.get("chat") or {}).get("id") or "")
@@ -197,19 +323,26 @@ async def _handle_message(message: dict) -> None:
         return
 
     if text.startswith("/"):
-        await _handle_command(text, chat_id)
+        await _handle_command(text, chat_id, message.get("chat") or {})
         return
 
     owner = _user_for_chat(chat_id)
     if owner:
         user_id: int | None = int(owner["id"])
     else:
-        # Chat non registrata: se l'istanza ha una chat globale, si accetta
-        # solo quella (comportamento a utente singolo).
-        configured = _configured_chat()
-        if configured and chat_id and chat_id != configured:
-            return
-        user_id = None
+        # Chat registrata (per esempio un gruppo): l'utente proprietario e'
+        # quello dell'istanza, e il messaggio vale per le sue ricerche.
+        registered = telegram_chats.find_by_chat(chat_id)
+        if registered:
+            user_id = int(registered[0]["user_id"])
+            telegram_chats.touch(chat_id)
+        else:
+            # Chat non registrata: se l'istanza ha una chat globale, si accetta
+            # solo quella (comportamento a utente singolo).
+            configured = _configured_chat()
+            if configured and chat_id and chat_id != configured:
+                return
+            user_id = None
 
     pending = questions_service.pending(limit=1, user_id=user_id)
     looks_like_trip = (

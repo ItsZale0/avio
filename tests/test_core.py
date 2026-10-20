@@ -83,15 +83,30 @@ class FilterTest(unittest.TestCase):
         kept = _filter_offers([offer, cheap], ctx)
         self.assertEqual([o.external_id for o in kept], ["x-cheap"])
 
-    def test_keeps_over_budget_when_nothing_fits(self):
-        # Se il budget scarta tutto, si mostrano comunque le piu' economiche:
-        # e' l'informazione che serve all'utente per decidere.
+    def test_drops_over_budget_always(self):
+        # Fuori budget si scarta sempre: l'utente vede solo i prezzi che
+        # stanno dentro i filtri. Il prezzo reale della soluzione piu'
+        # economica lo comunico la domanda "vuoi alzare il budget?".
         ctx = make_context(max_price=15)
-        kept = _filter_offers([make_offer(price=25)], ctx)
-        self.assertEqual(len(kept), 1)
-        self.assertTrue(kept[0].details.get("sopra_budget"))
-        self.assertEqual(kept[0].details.get("budget"), 15)
-        self.assertEqual(kept[0].details.get("eccesso"), 10)
+        self.assertEqual(_filter_offers([make_offer(price=25)], ctx), [])
+
+    def test_drops_offer_from_previous_day(self):
+        # "Devo essere a Trento entro le 11 di quel giorno": un arrivo del
+        # giorno prima non vale.
+        ctx = make_context()
+        ieri = make_offer(
+            arrive_at=ctx.arrive_by - timedelta(days=1),
+            depart_at=ctx.depart_after - timedelta(days=1),
+        )
+        self.assertEqual(_filter_offers([ieri], ctx), [])
+
+    def test_keeps_offer_of_the_same_day(self):
+        ctx = make_context()
+        same_day = make_offer(
+            arrive_at=ctx.arrive_by - timedelta(hours=2),
+            depart_at=ctx.arrive_by - timedelta(hours=4),
+        )
+        self.assertEqual(len(_filter_offers([same_day], ctx)), 1)
 
     def test_drops_late_arrival(self):
         ctx = make_context()

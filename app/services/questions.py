@@ -13,6 +13,10 @@ from typing import Any
 from .. import db, notify, store
 from ..timeutil import now_utc
 
+# Massimo due domande in attesa per ricerca: oltre, l'utente smette di
+# rispondere e le opzioni si contraddicono.
+MAX_PENDING_QUESTIONS = 2
+
 # Chiavi "note" a bassa priorita': non orientano i filtri, arricchiscono il contesto.
 KNOWN_PREFS = {
     "flexible_days",
@@ -22,6 +26,7 @@ KNOWN_PREFS = {
     "prefer_modes",
     "no_changes",
     "notes",
+    "arrivo_giorno_prima",
 }
 
 
@@ -96,19 +101,29 @@ def list_all(
 
 
 def create_many(watch_id: int, run_id: int | None, questions: list[dict]) -> list[dict[str, Any]]:
-    """Crea le domande nuove. Salta quelle gia' poste o gia' risposte (stessa key)."""
+    """Crea le domande nuove. Salta quelle gia' poste o gia' risposte (stessa key).
+
+    Al massimo due domande in attesa per ricerca: oltre, l'utente non
+    risponderebbe e le opzioni si contraddicono.
+    """
     created: list[dict[str, Any]] = []
     if not questions:
         return created
 
     with db.db() as conn:
+        pending = conn.execute(
+            "SELECT COUNT(*) AS n FROM questions WHERE watch_id = ? AND status = 'pending'",
+            (watch_id,),
+        ).fetchone()
+        if int(pending["n"]) >= MAX_PENDING_QUESTIONS:
+            return created
         existing = {
             row["key"]: row["status"]
             for row in conn.execute(
                 "SELECT key, status FROM questions WHERE watch_id = ?", (watch_id,)
             )
         }
-        for question in questions[:2]:
+        for question in questions[:MAX_PENDING_QUESTIONS]:
             key = str(question.get("key") or "").strip()
             text = str(question.get("text") or "").strip()
             if not key or not text:

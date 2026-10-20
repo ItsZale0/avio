@@ -29,6 +29,8 @@ class SearchContext:
     radius_km: float
     passengers: int = 1
     max_price: float | None = None
+    # True se l'utente accetta di arrivare la sera prima (una notte in hotel).
+    allow_day_before: bool = False
 
     @property
     def distance_km(self) -> float | None:
@@ -38,11 +40,46 @@ class SearchContext:
 
     @property
     def window_start(self) -> datetime:
-        from datetime import timedelta
+        """Inizio della finestra di ricerca: quando si puo' partire.
+
+        Se l'utente ha indicato una partenza minima si usa quella; altrimenti
+        si parte da mezzanotte del giorno in cui deve arrivare.
+        """
+        from datetime import timedelta, timezone
+
+        from ..timeutil import ROME
 
         if self.depart_after:
             return self.depart_after
-        return self.arrive_by - timedelta(hours=10)
+        local = self.arrive_by.astimezone(ROME)
+        start = local.replace(hour=0, minute=0, second=0, microsecond=0)
+        return start.astimezone(timezone.utc)
+
+    @property
+    def arrival_day_start(self) -> datetime:
+        """Inizio del giorno in cui l'utente deve essere a destinazione.
+
+        E' diverso da `window_start`: "non partire prima delle 6" non
+        significa "posso arrivare il giorno prima". Se arrivo il 21 e devo
+        essere li' il 22 alle 11, mi serve una notte in hotel: la richiesta
+        e' per il 22. Con `allow_day_before` si accetta anche la sera prima.
+        """
+        from datetime import timedelta, timezone
+
+        from ..timeutil import ROME
+
+        local = self.arrive_by.astimezone(ROME)
+        start = local.replace(hour=0, minute=0, second=0, microsecond=0)
+        if self.allow_day_before:
+            start -= timedelta(days=1)
+        return start.astimezone(timezone.utc)
+
+    @property
+    def window_end(self) -> datetime:
+        """Fine della finestra: l'ora di arrivo richiesta (piu' qualche minuto)."""
+        from datetime import timedelta
+
+        return self.arrive_by + timedelta(minutes=10)
 
 
 @dataclass

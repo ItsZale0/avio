@@ -43,24 +43,70 @@ async def send_telegram_message(
 ) -> tuple[bool, str, int | None]:
     """Invia un messaggio Telegram.
 
-    Con `user_id` il destinatario e' l'utente (chat e token suoi); senza,
-    si usano le impostazioni globali dell'istanza.
+    Con `user_id` il destinatario e' l'utente (tutte le sue chat
+    registrate: privato, gruppi, canali). Senza, si usano le impostazioni
+    globali dell'istanza. Con `chat_id` si forza una chat precisa.
     """
     if user_id is not None:
         values = app_settings.get_user_all(user_id)
     else:
         values = app_settings.get_all()
-    chat = (chat_id or values.get("telegram_chat_id", "")).strip()
-    if not (values.get("telegram_token", "").strip() and chat):
+
+    targets: list[str] = []
+    if chat_id:
+        targets = [chat_id]
+    elif user_id is not None:
+        # Tutte le chat registrate dell'utente (gruppi compresi).
+        from .services import telegram_chats
+
+        targets = telegram_chats.chat_ids(user_id)
+        if not targets:
+            fallback = values.get("telegram_chat_id", "").strip()
+            if fallback:
+                targets = [fallback]
+    else:
+        fallback = values.get("telegram_chat_id", "").strip()
+        if fallback:
+            targets = [fallback]
+
+    if not targets:
         return False, "Telegram non configurato (token o chat_id mancante)", None
-    payload: dict = {"chat_id": chat, "text": text, "disable_web_page_preview": True}
-    if reply_markup:
-        payload["reply_markup"] = reply_markup
-    ok, result = await telegram_call("sendMessage", payload, token=values.get("telegram_token"))
-    if not ok:
-        return False, str(result), None
-    message_id = result.get("message_id") if isinstance(result, dict) else None
-    return True, "", message_id
+    if not values.get("telegram_token", "").strip():
+        return False, "Telegram non configurato (token mancante)", None
+
+    last_error = ""
+    last_message_id: int | None = None
+    sent = False
+    for target in targets:
+        payload: dict = {
+            "chat_id": target,
+            "text": text,
+            "disable_web_page_preview": True,
+        }
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+        ok, result = await telegram_call("sendMessage", payload, token=values.get("telegram_token"))
+        if not ok:
+            last_error = str(result)
+            continue
+        sent = True
+        if isinstance(result, dict):
+            last_message_id = result.get("message_id")
+    if not sent:
+        return False, last_error or "invio non riuscito", None
+    return True, "", last_message_id
+
+
+async def telegram_bot_info() -> dict:
+    """Nome e id del bot: servono per il link "aggiungimi a un gruppo"."""
+    ok, result = await telegram_call("getMe", {})
+    if not ok or not isinstance(result, dict):
+        return {}
+    return {
+        "id": str(result.get("id") or ""),
+        "username": result.get("username") or "",
+        "first_name": result.get("first_name") or "",
+    }
 
 
 async def telegram_get_updates(offset: int = 0, timeout: int = 0) -> list[dict]:
