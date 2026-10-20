@@ -167,6 +167,35 @@ app/ai/intelligence.py   manda a Groq i candidati in JSON compatto
 store.save_plans() + questions.create_many()
 ```
 
+### La spezzatura: pagare meno con due biglietti
+
+Il trucco italiano classico: sulla stessa tratta, comprare **due biglietti**
+invece di uno costa spesso meno, perché il regionale è molto più economico
+del Frecciarossa. Esempio reale misurato (Milano → Napoli, 22 ottobre):
+
+| | Prezzo | Arrivo |
+|---|---|---|
+| Biglietto unico (Intercity) | 87,50 € | 20:29 |
+| **Spezzato**: Milano→Bologna + Bologna→Napoli (regionali) | **66,40 €** | 20:29 |
+| | **risparmio 21,10 €** | |
+
+`app/services/split_tickets.py` fa così:
+
+1. prende il viaggio ferroviario più economico trovato;
+2. sceglie i **nodi ferroviari in linea** sul percorso (Bologna, Firenze,
+   Verona…): una città è "in linea" se
+   `dist(partenza, X) + dist(X, arrivo) − dist(partenza, arrivo) < 70 km`;
+3. chiede all'API Trenitalia il prezzo dei **due segmenti** separati
+   (il secondo biglietto parte almeno 25 minuti dopo l'arrivo del primo);
+4. **tiene la spezzatura solo se è più economica** del biglietto diretto e
+   rispetta la finestra di arrivo.
+
+Il risultato entra nel pool come offerta normale (`source="spezzatura"`),
+quindi compete con le altre nel piano: se vince, l'AI lo spiega ("sono due
+biglietti, risparmi X €") e la card mostra i due ticket con i rispettivi
+orari. Il trucco esiste anche fra operatori diversi: il planner mette già in
+concorrenza le tratte di fonti diverse (Trenitalia + bus, auto + treno).
+
 - **Router a due modelli**: `llama-3.3-70b-versatile` per pianificare/parsare,
   `llama-3.1-8b-instant` per compiti brevi. Nomi configurabili; se un modello
   non esiste il client prova automaticamente gli altri (`GroqClient._model_order`).

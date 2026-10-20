@@ -79,6 +79,33 @@ L'agente ha un **cervello**: capisce una richiesta scritta a parole, sceglie la
 fino alla stazione + bus) e **ti fa le domande** che sbloccano un piano migliore
 (“posso arrivare il giorno dopo?”, “alzo il budget?”, “accetti un cambio?”).
 
+### I trucchi che un booking non fa
+
+L'agente non si limita al prezzo più basso in assoluto: cerca anche i modi
+**intelligenti** di pagare meno.
+
+- **Spezzatura**: due biglietti invece di uno. Su molte tratte il regionale
+  costa molto meno del Frecciarossa, e comprare il viaggio a pezzi conviene.
+  Misurato davvero, Milano → Napoli:
+
+  | | Prezzo |
+  |---|---|
+  | Biglietto unico (Intercity) | 87,50 € |
+  | **Due biglietti** (Milano→Bologna + Bologna→Napoli, regionali) | **66,40 €** |
+  | | **risparmi 21,10 €** |
+
+  L'agente chiama l'API Trenitalia per i singoli segmenti, e propone la
+  spezzatura **solo se batte davvero** il prezzo diretto. Nella card vedi i due
+  ticket con gli orari e il risparmio.
+
+- **Mezi diversi sulla stessa tratta**: treno + bus, auto + treno, e così via.
+  Il planner mette in concorrenza tutte le combinazioni possibili e sceglie
+  il costo totale più basso, tempo di percorrenza compreso.
+
+- **Flessibilità**: se non esiste niente che arriva in tempo, l'agente chiede
+  (“arrivo la sera prima va bene?”, “alzo il budget a 13 €?”, “meglio il
+  giorno dopo?”) e poi ricalcola.
+
 1. Crea una chiave gratuita su <https://console.groq.com/keys>.
 2. Incollala in **Impostazioni → Intelligenza (Groq)** → *Prova AI*.
 3. **Scegli i modelli** nei due menu a tendina: *Modello ragionamento* (sceglie
