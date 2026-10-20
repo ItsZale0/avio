@@ -277,17 +277,19 @@ async function submitLogin(event) {
   event.preventDefault();
   const hint = $("#loginHint");
   const button = $("#btnLogin");
+  const username = $("#aLoginUser").value.trim();
   button.disabled = true;
   try {
     await api("/api/auth/login", {
       method: "POST",
       body: JSON.stringify({
-        username: $("#aLoginUser").value.trim(),
+        username: username,
         password: $("#aLoginPass").value,
       }),
     });
     hint.textContent = "";
     $("#aLoginPass").value = "";
+    sessionStorage.removeItem("ch_last_user");
 
     // Il login puo' riuscire ma il cookie non essere salvato: succede
     // quando il browser blocca i cookie di terze parti (frontend su un
@@ -306,6 +308,12 @@ async function submitLogin(event) {
     await bootApp();
   } catch (error) {
     hint.textContent = error.message;
+    hint.className = "field-hint err";
+    // Se e' un problema di rete il tunnel potrebbe essere stato riavviato:
+    // si tiene il nome utente per non farlo riscrivere.
+    if (/raggiungibile|non risponde|fetch/i.test(error.message)) {
+      sessionStorage.setItem("ch_last_user", username);
+    }
   } finally {
     button.disabled = false;
   }
@@ -358,6 +366,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   bindEvents();
   registerServiceWorker();
   await loadRuntimeConfig();
+  // Il nome utente dell'ultimo tentativo: se il tunnel si riavvia non
+  // bisogna riscriverlo.
+  const lastUser = sessionStorage.getItem("ch_last_user");
+  if (lastUser) $("#aLoginUser").value = lastUser;
   try {
     const authState = await api("/api/auth/status");
     if (!authState.authenticated) {
@@ -369,9 +381,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     state.user = authState.user;
     await bootApp();
   } catch (error) {
-    toast("Impossibile contattare il server: " + error.message, "error");
-    $("#agentStatus").classList.add("offline");
-    $("#agentText").textContent = "offline";
+    showAuthScreen();
+    switchAuthTab("login");
+    const hint = $("#loginHint");
+    hint.textContent =
+      "Server non raggiungibile: il tunnel potrebbe essere stato riavviato. " +
+      "Riprovo fra poco…";
+    hint.className = "field-hint err";
+    scheduleApiRetry();
   }
 });
 
