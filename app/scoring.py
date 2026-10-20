@@ -16,6 +16,7 @@ import math
 from datetime import datetime
 
 from .adapters.base import Offer, SearchContext
+from .geo import walking_km, walking_minutes
 
 # Pesi di base: il prezzo guida, ma tempo e comodita' contano davvero.
 BASE_WEIGHTS = {
@@ -259,6 +260,14 @@ def score_offers(offers: list[Offer], ctx: SearchContext) -> dict[str, dict]:
                 "minuti_dropoff_a_piedi": _minuti_a_piedi(
                     offer.dropoff_distance_km(ctx)
                 ),
+                # I km realmente percorsi a piedi (non la retta): cosi' i
+                # minuti e i km nella card dicono la stessa cosa.
+                "km_pickup_a_piedi": _round(
+                    walking_km(offer.pickup_distance_km(ctx))
+                ),
+                "km_dropoff_a_piedi": _round(
+                    walking_km(offer.dropoff_distance_km(ctx))
+                ),
                 "costo_accesso_stimato": access,
                 "costo_effettivo": round(costo + access, 2) if costo is not None else None,
                 "durata_min": offer.duration_min,
@@ -318,8 +327,6 @@ def score_offers(offers: list[Offer], ctx: SearchContext) -> dict[str, dict]:
 
 def _minuti_a_piedi(distanza_km: float | None) -> int | None:
     """Minuti a piedi per una distanza in linea d'aria (percorso reale)."""
-    from .geo import walking_km, walking_minutes
-
     return walking_minutes(walking_km(distanza_km))
 
 

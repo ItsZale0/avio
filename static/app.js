@@ -1204,8 +1204,12 @@ function offerCard(offer, suppressNew = false) {
   // d'aria): se non ci sono, si stimano qui con la stessa regola.
   const walkKm = offer.details?.distanza_pickup_km;
   const walkMin = offer.details?.minuti_pickup_a_piedi;
+  const walkKmReale = offer.details?.km_pickup_a_piedi;
   if (walkMin != null && walkMin > 0) {
-    detailBits.push(`🚶 ${walkMin} min a piedi fino al ritrovo`);
+    detailBits.push(
+      `🚶 ${walkMin} min a piedi fino al ritrovo` +
+        (walkKmReale != null && walkKmReale > 0.05 ? ` (${walkKmReale} km)` : "")
+    );
   } else if (walkKm != null && walkKm > 0.05) {
     const minuti = Math.round((walkKm * 1.25 / 4.5) * 60);
     detailBits.push(`🚶 ${minuti} min a piedi fino al ritrovo`);
