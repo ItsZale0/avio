@@ -38,3 +38,21 @@ jobs:
             "$URL/api/watches"
           head -20 /tmp/h
           head -c 200 /tmp/c; echo
+          echo
+          echo "=== 4. Preflight con l'header custom che usa il frontend ==="
+          curl -s -D /tmp/h2 -o /dev/null -X OPTIONS \
+            -H "Origin: https://itszale0.github.io" \
+            -H "Access-Control-Request-Method: POST" \
+            -H "Access-Control-Request-Headers: content-type, ngrok-skip-browser-warning" \
+            "$URL/api/watches"
+          grep -i "access-control-allow" /tmp/h2
+          echo
+          echo "=== 5. POST reale (come fa il frontend) ==="
+          code=$(curl -s -o /tmp/e -w "%{http_code}" -X POST \
+            -H "Origin: https://itszale0.github.io" \
+            -H "Content-Type: application/json" \
+            -H "ngrok-skip-browser-warning: 1" \
+            -d '{"password":"sbagliata-di-prova"}' \
+            "$URL/api/auth/unlock")
+          echo "HTTP $code (401 = risposta normale del server, il tunnel funziona)"
+          head -c 200 /tmp/e; echo
