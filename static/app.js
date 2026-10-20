@@ -76,6 +76,9 @@ const ALT_PROFILE = {
 // ufficiale e' in app/services/passes.py): qui solo la copia in memoria.
 let PASS_CATALOGO = [];
 
+// La chat con l'agente: ogni ricerca ha la sua conversazione.
+const CHAT = {};
+
 /* Costruisce il selettore: ricerca + gruppi di caselle. */
 function renderPassPicker(box, selezionati, nomeCampo) {
   if (!box) return;
@@ -1166,6 +1169,7 @@ function renderTab() {
   if (state.tab === "nearby") return renderNearby(panel);
   if (state.tab === "links") return renderLinks(panel);
   if (state.tab === "runs") return renderRuns(panel);
+  if (state.tab === "ask") return renderChat(panel);
 }
 
 function isInitialRun() {
@@ -2354,6 +2358,130 @@ async function testTelegram() {
   } catch (error) {
     hint.textContent = "✗ " + error.message;
     hint.className = "field-hint err";
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Chiedi all'agente                                                  */
+/* ------------------------------------------------------------------ */
+function renderChat(panel) {
+  const watch = state.watch;
+  if (!watch) return;
+  const messaggi = CHAT[watch.id] || [];
+  const esempi = [
+    "Quanto costa il viaggio piu' economico?",
+    "Qual e' l'opzione che arriva prima?",
+    "Alzo il budget a 15 euro",
+    "Preferisco viaggiare in treno, senza cambi",
+    "Ho l'abbonamento IVOL",
+  ];
+  panel.innerHTML = `
+    <div class="chat">
+      <div class="chat-head">
+        <strong>💬 Chiedi all'agente</strong>
+        <small class="field-hint">
+          Fai una domanda sui viaggi trovati o cambia la ricerca a parole
+          (budget, orario, mezzo, abbonamento, punto di ritrovo). Le risposte
+          usano i prezzi e gli orari reali di questa ricerca.
+        </small>
+      </div>
+      <div class="chat-messaggi" id="chatMessaggi">
+        ${
+          messaggi.length
+            ? messaggi
+                .map(
+                  (m) => `<div class="chat-msg ${m.ruolo === "io" ? "me" : "agente"}">
+                    <span class="chat-testi">${esc(m.testo)}</span>
+                    ${
+                      m.cambiamenti && m.cambiamenti.length
+                        ? `<small class="chat-cambio">🔄 ${esc(m.cambiamenti.join(", "))}</small>`
+                        : ""
+                    }
+                  </div>`
+                )
+                .join("")
+            : `<div class="chat-vuoto">
+                <p>Nessuna domanda per ora. Prova con una di queste:</p>
+                <div class="chips">
+                  ${esempi
+                    .map(
+                      (e) =>
+                        `<button class="chip chat-esempio" data-esempio="${esc(e)}">${esc(e)}</button>`
+                    )
+                    .join("")}
+                </div>
+              </div>`
+        }
+      </div>
+      <form class="chat-input" id="chatForm">
+        <input
+          id="chatText"
+          type="text"
+          maxlength="1000"
+          autocomplete="off"
+          placeholder="Scrivi la domanda o la richiesta…"
+        />
+        <button class="btn primary" type="submit" id="chatSend">Invia</button>
+      </form>
+      <small class="field-hint" id="chatStato"></small>
+    </div>`;
+
+  $("#chatForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const input = $("#chatText");
+    const testo = (input?.value || "").trim();
+    if (!testo) return;
+    input.value = "";
+    chiediAllAgente(testo);
+  });
+  panel.querySelectorAll(".chat-esempio").forEach((bottone) => {
+    bottone.addEventListener("click", () => chiediAllAgente(bottone.dataset.esempio));
+  });
+  const scatola = $("#chatMessaggi");
+  if (scatola) scatola.scrollTop = scatola.scrollHeight;
+}
+
+async function chiediAllAgente(testo) {
+  const watch = state.watch;
+  if (!watch) return;
+  const lista = CHAT[watch.id] || (CHAT[watch.id] = []);
+  lista.push({ ruolo: "io", testo });
+  renderChat($("#tabPanel"));
+  const stato = $("#chatStato");
+  if (stato) stato.textContent = "Sto pensando…";
+  const pulsante = $("#chatSend");
+  if (pulsante) pulsante.disabled = true;
+  try {
+    const risultato = await api(`/api/watches/${watch.id}/ask`, {
+      method: "POST",
+      body: JSON.stringify({ text: testo }),
+    });
+    const cambiamenti = Object.entries(risultato.changes || {}).map(([chiave, valore]) => {
+      if (chiave === "max_price") return `budget ${Number(valore).toFixed(2)} EUR`;
+      if (chiave === "from_point") return `partenza da ${valore || "centro citta'"}`;
+      if (chiave === "to_point") return `arrivo a ${valore || "centro citta'"}`;
+      if (chiave === "depart_after") return `partenza dopo ${valore || "-"}`;
+      if (chiave === "arrive_by") return `arrivo entro ${valore || "-"}`;
+      return `${chiave}: ${valore}`;
+    });
+    lista.push({
+      ruolo: "agente",
+      testo: risultato.reply || "Non ho capito la richiesta.",
+      cambiamenti,
+    });
+    if (risultato.rerun) {
+      if (stato) stato.textContent = "Ho aggiornato la ricerca, ricalcolo…";
+      setTimeout(() => refreshAll(), 1500);
+      setTimeout(() => refreshAll(), 5000);
+    } else if (stato) {
+      stato.textContent = "";
+    }
+  } catch (error) {
+    lista.push({ ruolo: "agente", testo: "Non sono riuscito a rispondere: " + error.message });
+    if (stato) stato.textContent = "";
+  } finally {
+    if (pulsante) pulsante.disabled = false;
+    renderChat($("#tabPanel"));
   }
 }
 

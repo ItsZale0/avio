@@ -22,6 +22,7 @@ from .config import APP_NAME, CORS_ORIGINS, HOST, PORT, WEB_DIR
 from .schemas import (
     AccessIn,
     AnswerIn,
+    AskIn,
     OfferOut,
     ParseRequest,
     PushSubscribeIn,
@@ -795,6 +796,27 @@ async def ai_parse(payload: ParseRequest):
     result = await intelligence.parse_trip_text(payload.text)
     if not result.get("ok"):
         raise HTTPException(status_code=400, detail=result.get("error") or "Interpretazione non riuscita")
+    return result
+
+
+@app.post("/api/watches/{watch_id}/ask")
+async def ask_agent(watch_id: int, payload: AskIn, request: Request):
+    """Domanda o richiesta libera all'agente, con i dati reali della ricerca.
+
+    Se la richiesta cambia qualcosa (budget, orario, mezzo, abbonamento),
+    il cambiamento viene applicato e la ricerca riparte.
+    """
+    user = deps.require_user(request)
+    uid = int(user["id"])
+    if not store.get_watch(watch_id, user_id=uid):
+        raise HTTPException(status_code=404, detail="Ricerca non trovata")
+    from .ai import chat as chat_service
+
+    result = await chat_service.answer(watch_id, payload.text, user_id=uid)
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error") or "Richiesta non riuscita")
+    if result.get("rerun"):
+        _queue_run(watch_id, "answer", delay=0.4)
     return result
 
 

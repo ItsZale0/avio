@@ -193,6 +193,12 @@ class AnswerIn(BaseModel):
     source: str = "web"
 
 
+class AskIn(BaseModel):
+    """Una domanda o richiesta libera all'agente."""
+
+    text: str = Field(..., min_length=1, max_length=1000)
+
+
 class QuestionOut(BaseModel):
     id: int
     watch_id: int

@@ -259,6 +259,26 @@ arrivano in chat con i **pulsanti** pronti. La risposta diventa una preferenza
 (`flexible_days`, `allow_multi_leg`, `max_walk_km`, `luggage`, …) usata dal giro
 successivo. Puoi anche scrivere liberamente in chat: il bot interpreta la risposta.
 
+### 💬 Chiedi all'agente (qualsiasi domanda o richiesta)
+
+Nella scheda di ogni ricerca c'è la tab **"Chiedi"**: scrivi a parole e l'agente
+risponde **usando i dati reali** di quella ricerca (prezzi, orari, il piano
+scelto, i tempi a piedi, gli abbonamenti che hai), oppure esegue la richiesta e
+ricalcola tutto.
+
+| Scrivi questo | Cosa succede |
+|---|---|
+| *"Quanto costa il viaggio più economico?"* | risponde con il prezzo vero |
+| *"Qual è l'opzione che arriva prima?"* | risponde con orari reali |
+| *"Alzo il budget a 15 euro"* | cambia il tetto e ricalcola |
+| *"Preferisco viaggiare in treno, senza cambi"* | cambia le preferenze |
+| *"Ho l'abbonamento IVOL"* | aggiunge l'abbonamento e ricalcola |
+| *"Parto dalla stazione di Trento"* | cambia il punto di ritrovo |
+
+Le richieste che toccano i filtri vengono applicate e la ricerca riparte
+automaticamente. Senza intelligenza configurata l'agente risponde comunque con
+i dati reali e riconosce a mano le richieste più comuni.
+
 ---
 
 ## Configurazione notifiche

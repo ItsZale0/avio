@@ -239,6 +239,13 @@ def merge_prefs(watch: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
             changes[f"{field}_lat"] = None
             changes[f"{field}_lon"] = None
             continue
+        if key in ("set_depart_after", "set_arrive_by"):
+            # L'orario di partenza o arrivo chiesto a parole:
+            # "parto dopo le 9", "devo essere li' entro le 12".
+            field = "depart_after" if key == "set_depart_after" else "arrive_by"
+            value = str(value or "").strip()
+            changes[field] = value or None
+            continue
         if key not in KNOWN_PREFS and key not in PASS_ACTIONS:
             continue
         if key == "notes":
