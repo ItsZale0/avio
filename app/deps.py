@@ -51,17 +51,32 @@ def is_secure_request(request: Request) -> bool:
     forwarded = (request.headers.get("x-forwarded-proto") or "").strip().lower()
     return forwarded == "https"
 
+def auth_enabled() -> bool:
+    """True se l'app chiede l'accesso. Di default no: si entra direttamente."""
+    from .services import settings as app_settings
+
+    return app_settings.get("auth_enabled", "0") == "1"
+
+
 def current_user(request: Request) -> dict[str, Any] | None:
     """Utente della sessione corrente, o None se non c'e'."""
     return auth.resolve_session(_token_from_request(request))
 
 
 def require_user(request: Request) -> dict[str, Any]:
-    """Utente obbligatorio: 401 se non autenticato."""
+    """Utente obbligatorio.
+
+    Con l'accesso disattivato (impostazione predefinita) restituisce il
+    proprietario implicite, cosi' l'app funziona senza login.
+    """
     user = current_user(request)
-    if not user:
-        raise HTTPException(status_code=401, detail="Devi effettuare l'accesso")
-    return user
+    if user:
+        return user
+    if not auth_enabled():
+        owner = auth.implicit_owner()
+        if owner:
+            return owner
+    raise HTTPException(status_code=401, detail="Devi effettuare l'accesso")
 
 
 def require_admin(request: Request) -> dict[str, Any]:

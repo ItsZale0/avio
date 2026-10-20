@@ -21,6 +21,8 @@ const state = {
   polling: null,
   carsharingZones: null,
   showZones: true,
+  // True se l'app non chiede l'accesso: niente schermata di login.
+  authDisabled: false,
 };
 
 // Base dell'API: vuota quando frontend e backend sono sullo stesso host.
@@ -155,8 +157,12 @@ async function api(path, options = {}) {
   if (!response) throw lastError || new Error("Server non raggiungibile");
 
   if (response.status === 401) {
-    // Sessione scaduta o assente: torna alla schermata di accesso.
-    showAuthScreen();
+    // Accesso richiesto: torna alla schermata di accesso. Con l'accesso
+    // disattivato non dovrebbe accadere, ma meglio coprire il caso.
+    if (!state.authDisabled) {
+      showAuthScreen();
+      throw new Error("Accesso richiesto");
+    }
     throw new Error("Accesso richiesto");
   }
   if (!response.ok) {
@@ -372,6 +378,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (lastUser) $("#aLoginUser").value = lastUser;
   try {
     const authState = await api("/api/auth/status");
+    if (authState.auth_enabled === false) {
+      // Accesso non richiesto: si entra direttamente, senza schermata.
+      state.authDisabled = true;
+      state.user = authState.user || null;
+      await bootApp();
+      return;
+    }
     if (!authState.authenticated) {
       showAuthScreen();
       // Se non c'e' nessun account, il form di registrazione e' quello giusto.

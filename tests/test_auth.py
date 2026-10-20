@@ -354,6 +354,66 @@ class TelegramLinkTest(AuthTestCase):
         self.assertIsNone(auth.user_for_telegram_chat(""))
 
 
+class _FakeRequest:
+    """Richiesta minima per le dipendenze FastAPI."""
+
+    def __init__(self, scheme: str = "http", headers: dict[str, str] | None = None):
+        self.url = type("U", (), {"scheme": scheme})()
+        self.headers = {key.lower(): value for key, value in (headers or {}).items()}
+        self.cookies: dict[str, str] = {}
+
+
+class NoLoginTests(AuthTestCase):
+    """Con l'accesso disattivato l'app si apre senza login."""
+
+    def setUp(self):
+        super().setUp()
+        from app.services import settings as app_settings
+
+        self._saved = app_settings.get("auth_enabled", "0")
+        app_settings.update({"auth_enabled": "0"})
+
+    def tearDown(self):
+        from app.services import settings as app_settings
+
+        app_settings.update({"auth_enabled": self._saved})
+        super().tearDown()
+
+    def test_auth_is_disabled_by_default(self):
+        from app import deps
+
+        self.assertFalse(deps.auth_enabled())
+
+    def test_require_user_returns_implicit_owner(self):
+        from app import deps
+
+        owner = self.make_admin()
+        user = deps.require_user(_FakeRequest())
+        self.assertEqual(user["id"], int(owner["id"]))
+
+    def test_implicit_owner_prefers_admin(self):
+        from app import auth
+
+        self.make_admin()
+        self.make_member("altro")
+        owner = auth.implicit_owner()
+        self.assertTrue(owner["is_admin"])
+
+    def test_ensure_owner_creates_account_if_missing(self):
+        from app import auth
+
+        self.assertIsNone(auth.implicit_owner())
+        owner = auth.ensure_owner()
+        self.assertIsNotNone(owner)
+        self.assertTrue(owner["is_admin"])
+
+    def test_public_user_hides_password(self):
+        from app import auth
+
+        owner = self.make_admin()
+        self.assertNotIn("password_hash", auth.public_user(owner))
+
+
 class ProxyCookieTest(unittest.TestCase):
     """Il cookie di sessione deve avere Secure quando c'e' un reverse proxy.
 

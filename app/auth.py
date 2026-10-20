@@ -196,6 +196,34 @@ def public_user(user: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def implicit_owner() -> dict[str, Any] | None:
+    """Il proprietario quando l'accesso e' disattivato.
+
+    Serve per la modalita' "senza login": l'app usa sempre il primo
+    account (di norma l'amministratore) come proprietario delle ricerche,
+    cosi' i dati, le impostazioni e le notifiche restano quelli gia' salvati.
+    """
+    with db.db() as conn:
+        row = conn.execute(
+            "SELECT * FROM users ORDER BY is_admin DESC, id ASC LIMIT 1"
+        ).fetchone()
+    return db.row_to_dict(row) if row else None
+
+
+def ensure_owner() -> dict[str, Any]:
+    """Come `implicit_owner`, ma crea l'account se non ce n'e' nessuno."""
+    owner = implicit_owner()
+    if owner:
+        return owner
+    # Password casuale: l'utente non deve autenticarsi (accesso disattivato),
+    # ma se in futuro lo riattiva deve poterla cambiare.
+    password = secrets.token_urlsafe(12)
+    user = create_user("admin", password, is_admin=True, status=STATUS_ACTIVE)
+    if not user:
+        raise RuntimeError("impossibile creare l'account proprietario")
+    return user
+
+
 # --------------------------------------------------------------------------- #
 # Sessioni
 # --------------------------------------------------------------------------- #

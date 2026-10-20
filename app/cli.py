@@ -64,6 +64,9 @@ def main(argv: list[str] | None = None) -> int:
     user_parser.add_argument("--password", help="password (chiede l'interattivamente se omessa)")
     user_parser.add_argument("--admin", action="store_true", help="ruolo amministratore")
 
+    auth_parser = sub.add_parser("auth", help="attiva o disattiva l'accesso con password")
+    auth_parser.add_argument("state", choices=("on", "off"), help="on = chiede il login, off = libero")
+
     sub.add_parser("gtfs-list", help="mostra i feed GTFS e lo stato dell'import")
 
     gtfs_parser = sub.add_parser("gtfs-update", help="scarica e importa gli orari GTFS")
@@ -106,6 +109,23 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         if user:
             print(f"Creato: {user['username']} ({'admin' if user['is_admin'] else 'member'})")
+        return 0
+
+    if args.command == "auth":
+        from .services import settings as app_settings
+
+        db.init_db()
+        enabled = "1" if args.state == "on" else "0"
+        app_settings.update({"auth_enabled": enabled})
+        if enabled:
+            owner = auth.implicit_owner()
+            if not owner:
+                owner = auth.ensure_owner()
+            print(f"Accesso con password ATTIVATO. Account: {owner['username']}")
+            print("Se hai dimenticato la password:")
+            print(f"  python -m app.cli user-add {owner['username'] --password \"NUOVA\"")
+        else:
+            print("Accesso con password DISATTIVATO: l'app si apre direttamente.")
         return 0
 
     if args.command == "gtfs-list":

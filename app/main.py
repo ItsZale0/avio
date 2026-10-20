@@ -75,7 +75,9 @@ if CORS_ORIGINS:
 async def auth_middleware(request: Request, call_next):
     """Blocca le API che richiedono l'accesso, salvo quelle pubbliche.
 
-    Le rotte protette restituiscono 401 JSON: il frontend mostra il login.
+    Con `auth_enabled = 0` (impostazione predefinita) non viene chiesto
+    nessun accesso: l'app si apre direttamente e le ricerche sono del
+    proprietario implicito.
     """
     path = request.url.path
     # Le richieste preflight CORS (OPTIONS) non hanno cookie: vanno lasciate
@@ -83,15 +85,15 @@ async def auth_middleware(request: Request, call_next):
     if request.method == "OPTIONS":
         return await call_next(request)
     if path.startswith("/api/") and path not in deps.PUBLIC_PATHS:
-        user = deps.current_user(request)
-        if not user:
-            return JSONResponse(
-                {"detail": "Accesso richiesto", "code": "unauthorized"},
-                status_code=401,
-                headers={"WWW-Authenticate": "Session"},
-            )
-        # L'utente corrente e' disponibile ai handler senza ripeterlo.
-        request.state.user = user
+        if deps.auth_enabled():
+            user = deps.current_user(request)
+            if not user:
+                return JSONResponse(
+                    {"detail": "Accesso richiesto", "code": "unauthorized"},
+                    status_code=401,
+                    headers={"WWW-Authenticate": "Session"},
+                )
+            request.state.user = user
     return await call_next(request)
 
 
@@ -137,9 +139,21 @@ async def _resolve_places(payload: WatchIn) -> dict:
 @app.get("/api/auth/status")
 async def auth_status(request: Request):
     """Stato della sessione: serve al frontend per sapere se mostrare il login."""
+    enabled = deps.auth_enabled()
     user = deps.current_user(request)
+    if not enabled:
+        # Accesso disattivato: il frontend entra direttamente.
+        owner = auth.implicit_owner()
+        return {
+            "authenticated": True,
+            "auth_enabled": False,
+            "user": auth.public_user(owner) if owner else None,
+            "needs_setup": auth.count_users() == 0,
+            "registration_open": True,
+        }
     return {
         "authenticated": bool(user),
+        "auth_enabled": True,
         "user": auth.public_user(user) if user else None,
         "needs_setup": auth.count_users() == 0,
         "registration_open": auth.count_users(auth.STATUS_ACTIVE) > 0,

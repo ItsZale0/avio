@@ -41,6 +41,9 @@ Poi:
 1. **Crea il tuo account**: al primo avvio compare il form di registrazione.
    Il primo account è **amministratore**; gli altri restano in attesa di
    approvazione e l'admin li abilita da *Impostazioni → Utenti*.
+   > Se preferisci **nessun accesso** (l'app si apre direttamente, senza
+   > password), l'utente viene già creato in automatico: basta disattivare
+   > l'accesso con `python -m app.cli auth off`.
 2. **+ Nuova ricerca** → inserisci partenza, arrivo, “entro quando”, budget, raggio.
    (Oppure scrivi il viaggio in una frase e premi **✨ Compila con l'AI**.)
 3. Scegli le fonti e i canali di avviso.
@@ -50,6 +53,10 @@ Ogni utente vede **solo le proprie** ricerche, offerte, avvisi e notifiche
 (Telegram e push). Le impostazioni personali (Telegram, SMTP, fascia di
 silenzio) sono per utente; quelle comuni (chiave Groq, orari GTFS) restano
 dell'amministratore.
+
+> **Accesso disattivato (predefinito)**: l'app si apre direttamente e le
+> ricerche appartengono al proprietario unico. Per richiedere una password:
+> `python -m app.cli auth on`.
 
 Da riga di comando:
 
@@ -330,6 +337,17 @@ python scripts\export_deploy.py
 # test
 python -m unittest discover -s tests -v
 
+# stato dell'agente (processi, URL pubblico, log)
+python scripts\agent_status.py
+
+# avvio in background senza finestre / arresto
+wscript.exe avvia-agente.vbs
+python scripts\stop_agent.py
+
+# accesso con password: on = richiesto, off = libero
+python -m app.cli auth on
+python -m app.cli auth off
+
 # avvio con ricarica automatica (sviluppo)
 python -m uvicorn app.main:app --reload --port 8787
 
@@ -354,10 +372,14 @@ python scripts/make_icons.py
 - I prezzi possono cambiare tra un controllo e l'altro: **verifica sempre nell'app/sito**
   prima di prenotare.
 - Il carsharing è una **stima** basata su tariffe indicative, non una prenotazione.
-- L'app ha **accesso con nome utente e password** (bcrypt + sessione in cookie `HttpOnly`).
-  Ogni utente vede solo le proprie ricerche, offerte, avvisi e notifiche. Resta
-  comunque consigliato metterla dietro un tunnel con URL segreto (meglio con
-  **Cloudflare Access**): l'accesso protegge i dati, non il canale.
+- L'accesso con nome utente e password è **disattivato per impostazione
+  predefinita** (`python -m app.cli auth off`): l'app si apre direttamente e le
+  ricerche appartengono al proprietario unico. Per riattivarlo:
+  `python -m app.cli auth on` (bcrypt + sessione in cookie `HttpOnly`, ogni
+  utente vede solo le proprie ricerche e notifiche).
+- **L'URL del tunnel è la protezione**: chi lo conosce può usare l'app.
+  Per un URL stabile e non indovinabile serve un dominio tuo (tunnel con nome
+  su Cloudflare) o **Cloudflare Access** davanti.
 - Orari e disponibilità dei mezzi pubblici non sono inclusi: i link puntano a Google Maps.
 - **Orari GTFS**: treni e bus locali sono coperti dove esiste un feed aperto (Trentino,
   Lombardia, tram di Padova). Il GTFS **non contiene i prezzi**: le card mostrano

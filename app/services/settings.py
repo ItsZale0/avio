@@ -59,13 +59,13 @@ DEFAULTS: dict[str, str] = {
     "ai_enabled": "1",
     "gtfs_enabled": "1",
     "sources_migrated_gtfs": "",
-    # Il free tier di Groq cambia: questi sono i modelli disponibili al
-    # momento, ma si possono scegliere altri in Impostazioni -> Intelligenza.
     "ai_model_smart": "openai/gpt-oss-120b",
     "ai_model_fast": "openai/gpt-oss-20b",
     "vapid_private_key": "",
     "vapid_public_key": "",
     "telegram_offset": "0",
+    # "0" = l'app si apre direttamente, senza accesso. "1" = login richiesto.
+    "auth_enabled": "0",
 }
 
 
