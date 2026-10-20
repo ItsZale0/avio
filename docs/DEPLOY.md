@@ -90,6 +90,23 @@ Test-NetConnection 198.41.192.107 -Port 7844   # edge Cloudflare
 Test-NetConnection 1.1.1.1 -Port 443            # dovrebbe funzionare
 ```
 
+### ngrok: tre cose da sapere
+
+1. **La pagina di avviso**: con il piano gratuito ngrok mostra "You are about
+   to visit…" al browser. Le richieste API non la vedono, ma il frontend su
+   GitHub Pages si': per questo ngrok **vieta l'header di bypass nel
+   preflight** e un frontend cross-origin non puo' aggirarla. La soluzione
+   e' usare l'app servita dal tunnel stesso (stessa origine, nessun CORS):
+   l'app serve gia' il frontend, quindi basta aprire https://<tunnel>/.
+2. **L'URL stabile**: nel pannello ngrok, *Domains -> Create Domain* per
+   prenotare il dominio statico incluso nel piano gratuito. Mettilo in
+   Impostazioni -> *Accesso da fuori* -> "Dominio ngrok" (o NGROK_DOMAIN
+   nel .env): da li' in poi l'indirizzo non cambia mai.
+3. **Verificare da fuori**: il workflow *Verifica tunnel* (Actions -> Verifica
+   tunnel -> Run workflow) fa le prove da un runner esterno: GET, preflight
+   CORS e POST reale. Serve perche' dalla rete di casa il tunnel puo' essere
+   bloccato e non si distinguerebbe "rotto" da "filtrato".
+
 ### Il link che dai agli altri
 
 L'unico indirizzo da usare e' **<https://itszale0.github.io/carpool-intelligence/>**:
