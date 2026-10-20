@@ -82,7 +82,7 @@ class NormalizeTests(unittest.TestCase):
     def test_string_list_is_accepted(self):
         result = passes_service.normalize_passes(["trenitalia_regionale"])
         self.assertEqual(len(result), 1)
-        self.assertEqual(result[0]["nome"], "Abbonamento Trenitalia (regionale)")
+        self.assertEqual(result[0]["nome"], "Abbonamento regionale Trenitalia")
 
     def test_unknown_types_are_dropped(self):
         self.assertEqual(passes_service.normalize_passes(["inesistente"]), [])
@@ -137,12 +137,9 @@ class CoverageTests(unittest.TestCase):
 
 
 class ApplyTests(unittest.TestCase):
-    def test_covered_offer_has_zero_net_cost(self):
+    def test_fully_covered_offer_has_zero_net_cost(self):
         offer = make_train(price=22.4)
-        passes_service.apply_passes(
-            [{"tipo": "trenitalia_regionale", "nome": "Abbonamento Trenitalia (regionale)"}],
-            offer,
-        )
+        passes_service.apply_passes([{"tipo": "trenitalia_tutti"}], offer)
         self.assertEqual(offer.net_cost, 0.0)
         # Il prezzo reale resta: sono due cose diverse.
         self.assertEqual(offer.price, 22.4)
@@ -153,12 +150,22 @@ class ApplyTests(unittest.TestCase):
         passes_service.apply_passes([{"tipo": "trenitalia_regionale"}], offer)
         self.assertIsNone(offer.net_cost)
 
+    def test_a_regional_pass_covers_only_its_own_region(self):
+        # Un abbonamento regionale copre la parte di viaggio nella sua
+        # regione: il resto si paga.
+        offer = make_train(price=20.0)
+        passes_service.apply_passes([{"tipo": "trenitalia_lombardia"}], offer)
+        self.assertIsNotNone(offer.net_cost)
+        self.assertLess(offer.net_cost, 20.0)
+        self.assertGreater(offer.net_cost, 0.0)
+        self.assertIn("pass_quota", offer.details)
+
 
 class PlannerTests(unittest.TestCase):
     def test_covered_trip_wins_over_the_cheaper_paid_one(self):
         regional = make_train(price=22.4, external_id="reg")
         bus = make_bus(price=9.9, external_id="bus")
-        passes = [{"tipo": "trenitalia_regionale", "nome": "Abbonamento Trenitalia (regionale)"}]
+        passes = [{"tipo": "trenitalia_tutti", "nome": "Abbonamento Trenitalia (tutti)"}]
         for offer in (regional, bus):
             passes_service.apply_passes(passes, offer)
 
@@ -169,6 +176,20 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(best.net_total, 0.0)
         self.assertTrue(best.covered)
         self.assertEqual(best.effective_cost, 0.0)
+
+    def test_a_partly_covered_trip_still_beats_a_full_price_one(self):
+        # Copre meta': il treno resta piu' conveniente del bus, ma non e' gratis.
+        regional = make_train(price=20.0, external_id="reg")
+        bus = make_bus(price=15.0, external_id="bus")
+        for offer in (regional, bus):
+            passes_service.apply_passes([{"tipo": "trenitalia_lombardia"}], offer)
+
+        candidates = build_candidates([regional, bus], make_ctx(max_price=15))
+        self.assertTrue(candidates)
+        best = candidates[0]
+        self.assertEqual(best.legs[0].external_id, "reg")
+        self.assertLess(best.net_total, 20.0)
+        self.assertTrue(best.covered)
 
     def test_without_passes_the_cheapest_wins(self):
         regional = make_train(price=22.4, external_id="reg")

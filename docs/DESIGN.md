@@ -212,6 +212,39 @@ Per questo `query_starts()` interroga l'API due volte:
 
 Le soluzioni vengono unite e deduplicate per codice e per orario.
 
+### Gli abbonamenti: il catalogo reale
+
+`app/services/passes.py` contiene gli abbonamenti **verificati** (dati
+ufficiali 2026), non un generico "abbonamento regionale":
+
+| abbonamento | copre |
+|---|---|
+| altoadigemobilita (250 €/anno, 39 €/mese, U26 153 €/21 €, U19 max 21 €) | tutti i mezzi di sudtirolmobil: treni regionali delle 4 linee (Brennero-Bolzano-Trento, Val Venosta, Merano-Bolzano, Val Pusteria), autobus urbani ed extraurbani, impianti di risalita, trenino del Renon, funicolare della Mendola |
+| Euregio Ticket (750 €/anno) | Trentino, Alto Adige, Tirolo: treni regionali, autobus urbani e regionali, funivie; in Tirolo tutta la rete VVT |
+| abbonamento provinciale Trentino | tutta la rete provinciale: autobus Trentino Trasporti, Trento-Male, Valsugana, Brennero (Borghetto-Ora), funivia Trento-Sardagna |
+| Guest Card Trentino / Val di Sole | gratis sul trenino Trento-Male e sui bus del Trentino |
+| abbonamento regionale Trenitalia (uno per regione) | treni regionali della regione (tariffe 40/xx/REGIONE) |
+| IVOL (Lombardia) | tutti i mezzi pubblici della Lombardia |
+| Salta Su (Emilia-Romagna) | Card Unica + abbonamento ferroviario regionale; "Mi Muovo Tutto Treno" apre gli Intercity sulla tratta del proprio abbonamento |
+| AUR / Formula (Piemonte), CIS settimanale (Lazio, 29 €/7 giorni), Toscana, Veneto, FVG, Carnet | i rispettivi networks |
+
+**La copertura è parziale**, e questo è il punto: un abbonamento regionale
+copre solo la parte di viaggio nella sua area. Il calcolo è fatto **tratto per
+tratto** sulle tappe del viaggio, quindi un treno che entra in Trentino a
+metà percorso (linea del Brennero) risulta coperto solo da lì:
+
+```
+treno Thiene -> Trento (via Brennero), altoadigemobilita
+  quota coperta 36%  ->  7,65 EUR invece di 11,90 EUR
+treno Thiene -> Trento (via Bassano), altoadigemobilita
+  quota coperta 56%  ->  5,27 EUR invece di 11,90 EUR
+```
+
+Il prezzo di listino non viene mai cancellato: accanto al costo effettivo
+resta sempre quanto costerebbe senza abbonamento, con la percentuale
+coperta. Il "trenitalia_regionale" generico deduce la regione dal punto di
+partenza (quello di casa).
+
 ### Il tempo, i cambi e le priorità
 
 Il punteggio (`app/scoring.py`) pesa sei fattori, non solo il prezzo:

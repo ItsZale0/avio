@@ -72,16 +72,41 @@ const ALT_PROFILE = {
   proposta: "Proposta",
 };
 
-// Gli abbonamenti che l'agente conosce: se la tratta e' coperta, il
-// biglietto non lo paghi.
+// Gli abbonamenti che l'agente conosce (dati ufficiali 2026): se la tratta
+// e' coperta, il biglietto non lo paghi.
 const PASS_TYPES = [
-  { id: "trenitalia_regionale", label: "Trenitalia regionale", hint: "Abbonamento o carnet regionale Trenitalia" },
-  { id: "trenitalia_tutti", label: "Trenitalia (tutti i treni)", hint: "Abbonamento annuale Trenitalia, anche Frecce" },
-  { id: "carnet_regionale", label: "Carnet 10 biglietti regionali", hint: "Consuma 1 biglietto del carnet" },
-  { id: "carnet_bus", label: "Carnet bus regionali", hint: "Consuma 1 biglietto del carnet" },
-  { id: "abbonamento_unico", label: "Abbonamento regionale unico", hint: "Treni e bus regionali" },
-  { id: "urbano", label: "Abbonamento urbano", hint: "Bus, metro e tram cittadini" },
-  { id: "carnet_urbano", label: "Carnet 10 biglietti urbani", hint: "Consuma 1 biglietto del carnet" },
+  { id: "altoadigemobilita", label: "altoadigemobilita (Alto Adige)", hint: "Tutti i mezzi di sudtirolmobil: treni regionali (anche Brennero-Trento), autobus, funivie" },
+  { id: "euregio_ticket", label: "Euregio Ticket", hint: "Trentino, Alto Adige e Tirolo: treni regionali, autobus, funivie" },
+  { id: "trentino_provinciale", label: "Abbonamento provinciale Trentino", hint: "Autobus Trentino Trasporti, Trento-Male, Valsugana, funivia Sardagna" },
+  { id: "guest_card_trentino", label: "Guest Card Trentino / Val di Sole", hint: "Gratis sul trenino Trento-Male e sui bus del Trentino" },
+  { id: "trenitalia_regionale", label: "Abbonamento regionale Trenitalia", hint: "Treni regionali della regione in cui e' preso (copre solo quella parte)" },
+  { id: "trenitalia_tutti", label: "Abbonamento Trenitalia (tutti i treni)", hint: "Copre anche Frecce e Intercity" },
+  { id: "carnet_regionale", label: "Carnet 10 biglietti regionali", hint: "Consuma 1 biglietto a ogni viaggio" },
+  { id: "ivol_lombardia", label: "IVOL (Lombardia)", hint: "Tutti i mezzi pubblici della Lombardia" },
+  { id: "salta_su_emilia", label: "Salta Su (Emilia-Romagna)", hint: "Card Unica con abbonamento ferroviario regionale" },
+  { id: "aur_piemonte", label: "AUR / Formula (Piemonte)", hint: "Abbonamento unico regionale" },
+  { id: "cis_lazio", label: "CIS settimanale (Lazio)", hint: "7 giorni, viaggi illimitati" },
+  { id: "toscana_regionale", label: "Abbonamento regionale Toscana", hint: "Treni regionali e autobus" },
+  { id: "veneto_regionale", label: "Abbonamento regionale Veneto", hint: "Treni regionali e autobus del Veneto" },
+  { id: "fvg_unico", label: "Abbonamento unico FVG", hint: "Treni Trenitalia + autobus extraurbani" },
+  { id: "urbano", label: "Abbonamento urbano (bus/metro)", hint: "Bus, metro e tram della citta'" },
+  { id: "carnet_urbano", label: "Carnet 10 biglietti urbani", hint: "Consuma 1 biglietto a ogni viaggio" },
+  { id: "trenitalia_veneto", label: "Abbonamento reg. Trenitalia Veneto", hint: "Treni regionali del Veneto" },
+  { id: "trenitalia_trentino", label: "Abbonamento reg. Trenitalia Trentino", hint: "Treni regionali del Trentino" },
+  { id: "trenitalia_lombardia", label: "Abbonamento reg. Trenitalia Lombardia", hint: "Treni regionali della Lombardia" },
+  { id: "trenitalia_piemonte", label: "Abbonamento reg. Trenitalia Piemonte", hint: "Treni regionali del Piemonte" },
+  { id: "trenitalia_emilia", label: "Abbonamento reg. Trenitalia Emilia", hint: "Treni regionali dell'Emilia" },
+  { id: "trenitalia_toscana", label: "Abbonamento reg. Trenitalia Toscana", hint: "Treni regionali della Toscana" },
+  { id: "trenitalia_lazio", label: "Abbonamento reg. Trenitalia Lazio", hint: "Treni regionali del Lazio" },
+  { id: "trenitalia_campania", label: "Abbonamento reg. Trenitalia Campania", hint: "Treni regionali della Campania" },
+  { id: "trenitalia_calabria", label: "Abbonamento reg. Trenitalia Calabria", hint: "Treni regionali della Calabria" },
+  { id: "trenitalia_puglia", label: "Abbonamento reg. Trenitalia Puglia", hint: "Treni regionali della Puglia" },
+  { id: "trenitalia_sicilia", label: "Abbonamento reg. Trenitalia Sicilia", hint: "Treni regionali della Sicilia" },
+  { id: "trenitalia_sardegna", label: "Abbonamento reg. Trenitalia Sardegna", hint: "Treni regionali della Sardegna" },
+  { id: "trenitalia_umbria", label: "Abbonamento reg. Trenitalia Umbria", hint: "Treni regionali dell'Umbria" },
+  { id: "trenitalia_marche", label: "Abbonamento reg. Trenitalia Marche", hint: "Treni regionali delle Marche" },
+  { id: "trenitalia_abruzzo", label: "Abbonamento reg. Trenitalia Abruzzo", hint: "Treni regionali dell'Abruzzo" },
+  { id: "trenitalia_fvg", label: "Abbonamento reg. Trenitalia FVG", hint: "Treni regionali del Friuli" },
 ];
 
 function fmtDuration(minutes) {
@@ -1098,9 +1123,13 @@ function offerCard(offer, suppressNew = false) {
     );
   }
   if (offer.details?.pass) {
-    const nota = offer.details.pass_note ? ` (${offer.details.pass_note})` : "";
+    const quota = offer.details.pass_quota;
+    const quanto = quota != null && quota < 100 ? ` al ${quota}%` : "";
+    const parz = offer.details.pass_note_parziale
+      ? ` · ${offer.details.pass_note_parziale}`
+      : "";
     detailBits.push(
-      `🎟️ coperto da ${esc(offer.details.pass)}${nota}: non lo paghi`
+      `🎟️ coperto${quanto} da ${esc(offer.details.pass)}${parz}: non lo paghi`
     );
   }
 

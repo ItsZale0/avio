@@ -309,20 +309,30 @@ def _pass_question(prefs: dict[str, Any]) -> list[dict]:
         {
             "key": "abbonamenti",
             "text": (
-                "Hai qualche abbonamento o carnet in corso (Trenitalia, bus/metro "
-                "cittadino, carnet da 10 biglietti)? Se la tratta e' coperta il "
-                "biglietto non lo paghi: il piano migliore puo' cambiare del tutto."
+                "Hai qualche abbonamento o carnet in corso? Se la tratta e' coperta "
+                "il biglietto non lo paghi (o lo paghi solo in parte): il piano "
+                "migliore puo' cambiare del tutto."
             ),
             "options": [
                 {
-                    "id": "trenitalia_regionale",
-                    "label": "Abbonamento Trenitalia (regionale)",
-                    "prefs": {"add_pass": "trenitalia_regionale"},
+                    "id": "altoadigemobilita",
+                    "label": "altoadigemobilita (Alto Adige)",
+                    "prefs": {"add_pass": "altoadigemobilita"},
                 },
                 {
-                    "id": "trenitalia_tutti",
-                    "label": "Abbonamento Trenitalia (tutti i treni)",
-                    "prefs": {"add_pass": "trenitalia_tutti"},
+                    "id": "euregio_ticket",
+                    "label": "Euregio Ticket (Trentino/Alto Adige)",
+                    "prefs": {"add_pass": "euregio_ticket"},
+                },
+                {
+                    "id": "trentino_provinciale",
+                    "label": "Abbonamento provinciale Trentino",
+                    "prefs": {"add_pass": "trentino_provinciale"},
+                },
+                {
+                    "id": "trenitalia_regionale",
+                    "label": "Abbonamento regionale Trenitalia",
+                    "prefs": {"add_pass": "trenitalia_regionale"},
                 },
                 {
                     "id": "carnet_regionale",
@@ -330,9 +340,9 @@ def _pass_question(prefs: dict[str, Any]) -> list[dict]:
                     "prefs": {"add_pass": "carnet_regionale"},
                 },
                 {
-                    "id": "urbano",
-                    "label": "Abbonamento bus/metro cittadino",
-                    "prefs": {"add_pass": "urbano"},
+                    "id": "altro",
+                    "label": "Un altro (scrivilo sotto)",
+                    "prefs": {"notes": "Ho un abbonamento regionale da specificare."},
                 },
                 {
                     "id": "none",
