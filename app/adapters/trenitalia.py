@@ -54,26 +54,95 @@ def _candidates(place: str, lat: float | None, lon: float | None) -> list[tuple[
     return names
 
 
-async def _lookup_station(client: httpx.AsyncClient, name: str) -> dict | None:
+# Stazioni secondarie: non servono per un viaggio in treno.
+SECONDARY_STATIONS = (
+    "aeroporto",
+    " bus",
+    "ospedale",
+    "fiera",
+    "castel",
+    "policlinico",
+    "deposito",
+    "mobil",
+)
+# Nomi delle stazioni principali (le preferite).
+MAIN_STATIONS = ("centrale", "porta nuova", "tutte le stazioni")
+
+
+def _choose_station(
+    items: list[dict], key: str, lat: float | None = None, lon: float | None = None
+) -> dict | None:
+    """Sceglie la stazione giusta fra quelle restituite dall'API.
+
+    "Verona" non deve diventare "VERONA AEROPORTO" o "VERONA BUS" (i treni
+    da li' sono radi e costano di piu'): meglio "Verona Porta Nuova". Fra le
+    stazioni rimaste si sceglie la piu' vicina al centro della citta'.
+    """
+
+    def name_of(item: dict) -> str:
+        return str(item.get("name") or "")
+
+    if not items:
+        return None
+    exact = [i for i in items if name_of(i).lower() == key]
+    if exact:
+        return exact[0]
+
+    pool = items
+    if "aeroport" not in key:
+        senza = [
+            i
+            for i in items
+            if not any(mark in name_of(i).lower() for mark in SECONDARY_STATIONS)
+        ]
+        if senza:
+            pool = senza
+
+    # Le stazioni principali hanno la precedenza.
+    principali = [
+        i for i in pool if any(hint in name_of(i).lower() for hint in MAIN_STATIONS)
+    ]
+    if principali:
+        pool = principali
+
+    # Se non c'e' un nome chiaro, la stazione piu' vicina al centro citta'.
+    if lat is not None and lon is not None:
+        from ..geo import haversine_km
+
+        def distanza(item: dict) -> float:
+            coords = item.get("geographicCoordinates") or {}
+            clat = coords.get("latitude")
+            clon = coords.get("longitude")
+            if clat is None or clon is None:
+                return 1e9
+            return haversine_km(lat, lon, float(clat), float(clon)) or 1e9
+
+        return min(pool, key=distanza)
+    return pool[0]
+
+
+async def _lookup_station(
+    client: httpx.AsyncClient, name: str, lat: float | None = None, lon: float | None = None
+) -> dict | None:
     """Cerca la stazione omonima. None = non trovata (o API irraggiungibile).
 
     I risultati "non trovato" vengono messi in cache, i fallimenti di rete no:
     cosi' un timeout momentaneo non blocca le ricerche successive.
     """
     key = name.strip().lower()
-    if key in _station_cache:
-        return _station_cache[key]
+    cache_key = f"{key}|{lat}|{lon}"
+    if cache_key in _station_cache:
+        return _station_cache[cache_key]
     result: dict | None = None
     confirmed = False
     for attempt in range(LOOKUP_ATTEMPTS):
         try:
-            response = await client.get(LOCATIONS_URL, params={"name": name, "limit": "5"})
+            response = await client.get(LOCATIONS_URL, params={"name": name, "limit": "8"})
             response.raise_for_status()
             items = response.json()
             confirmed = True
             if isinstance(items, list):
-                exact = [i for i in items if str(i.get("name", "")).lower() == key]
-                chosen = (exact or items or [None])[0]
+                chosen = _choose_station(items, key, lat, lon)
                 if chosen and chosen.get("locationId"):
                     result = {"id": chosen["locationId"], "name": chosen.get("name") or name}
             break
@@ -82,7 +151,7 @@ async def _lookup_station(client: httpx.AsyncClient, name: str) -> dict | None:
             if attempt + 1 < LOOKUP_ATTEMPTS:
                 await asyncio.sleep(0.7 * (attempt + 1))
     if confirmed:
-        _station_cache[key] = result
+        _station_cache[cache_key] = result
     return result
 
 

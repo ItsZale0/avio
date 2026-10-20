@@ -785,6 +785,41 @@ function renderDetail() {
 /* ------------------------------------------------------------------ */
 /* Piano AI + domande                                                 */
 /* ------------------------------------------------------------------ */
+function renderConfronti(confronti) {
+  // "Tratte singole": quanto cambia davvero a spezzare il viaggio.
+  if (!confronti || !confronti.length) return "";
+  const righe = confronti
+    .map((c) => {
+      const deltaPrezzo = Number(c.delta_prezzo || 0);
+      const deltaMinuti = Number(c.delta_minuti || 0);
+      constConveniente = deltaPrezzo < -0.01;
+      const tempo = deltaMinuti > 0 ? `+${deltaMinuti} min` : `${deltaMinuti} min`;
+      const soldi = deltaPrezzo > 0
+        ? `+${euro(deltaPrezzo)}`
+        : deltaPrezzo < 0 ? `-${euro(Math.abs(deltaPrezzo))}` : "uguale";
+      const tratte = (c.tratte || [])
+        .map((t) => `${esc(t.da)}→${esc(t.a)} ${euro(t.prezzo)}`)
+        .join(" + ");
+      return `<div class="conf-row ${deltaPrezzo < -0.01 ? "ok" : "no"}">
+        <span class="conf-via">via ${esc(c.via || "")}</span>
+        <span class="conf-tratte">${tratte}</span>
+        <span class="conf-delta">
+          <b>${euro(c.totale)}</b>
+          <span class="vs">diretto ${euro(c.diretto_prezzo)}</span>
+          <span class="pill ${deltaPrezzo < -0.01 ? "good" : deltaPrezzo > 0.01 ? "bad" : ""}">
+            ${soldi} · ${tempo}
+          </span>
+        </span>
+      </div>`;
+    })
+    .join("");
+  return `<div class="confronti">
+    <h4>🪓 Tratte singole invece del biglietto unico</h4>
+    ${righe}
+    <small>Confronto reale sui prezzi Trenitalia: quanto costa e quanto tempo cambia spezzando il viaggio.</small>
+  </div>`;
+}
+
 function renderPlan() {
   const box = $("#planCard");
   const plan = state.plan;
@@ -900,6 +935,7 @@ function renderPlan() {
         : `<span>🔁 ${(plan.steps || []).length} tratte</span>`}
     </div>
     ${watchouts ? `<div class="plan-watchouts">${watchouts}</div>` : ""}
+    ${renderConfronti(plan.confronti)}
     ${alts}`;
 }
 

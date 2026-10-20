@@ -233,7 +233,8 @@ CREATE TABLE IF NOT EXISTS plans (
     ai                INTEGER NOT NULL DEFAULT 0,
     net_total_price   REAL,
     covered           INTEGER NOT NULL DEFAULT 0,
-    passes            TEXT NOT NULL DEFAULT '[]'
+    passes            TEXT NOT NULL DEFAULT '[]',
+    confronti         TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE INDEX IF NOT EXISTS idx_plans_watch ON plans(watch_id, is_current);
@@ -295,6 +296,8 @@ MIGRATIONS = [
     ("plans", "net_total_price", "REAL"),
     ("plans", "covered", "INTEGER NOT NULL DEFAULT 0"),
     ("plans", "passes", "TEXT NOT NULL DEFAULT '[]'"),
+    # Confronto fra tratte singole e biglietto diretto.
+    ("plans", "confronti", "TEXT NOT NULL DEFAULT '[]'"),
 ]
 
 # Indici sulle colonne introdotte dalle migrazioni: si creano dopo, quando

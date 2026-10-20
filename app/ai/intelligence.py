@@ -591,6 +591,7 @@ async def analyze(
     ranked: dict[str, dict] | None = None,
     run_id: int | None = None,
     raw_offers: list[Offer] | None = None,
+    confronti: list[dict[str, Any]] | None = None,
 ) -> IntelligenceResult:
     prefs = prefs_of(watch)
     flexible_minutes = int(prefs.get("flexible_days", 0) or 0) * 1440
@@ -641,6 +642,8 @@ async def analyze(
                     + _constraints_text(watch, prefs)
                     + "\n\nCOMBINAZIONI CANDIDATE (JSON)\n"
                     + json.dumps(_candidates_payload(candidates), ensure_ascii=False)
+                    + "\n\nCONFRONTI TRA TRATTE SINGOLE E BIGLIETTO DIRETTO (JSON)\n"
+                    + json.dumps(confronti or [], ensure_ascii=False)
                     + "\n\nScegli il piano più economico e rispondi in JSON."
                 ),
             },
@@ -707,6 +710,9 @@ async def analyze(
         ai=result.used_ai,
         profile=_profile_of(chosen, candidates),
     )
+    # Il confronto fra tratte singole e biglietto diretto: quanto cambia
+    # davvero (prezzo e tempo) a spezzare il viaggio.
+    plan["confronti"] = list(confronti or [])[:4]
     result.plan = plan
     result.alternatives = [
         _plan_from_candidate(

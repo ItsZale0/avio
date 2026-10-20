@@ -1,4 +1,4 @@
-"""Spezzatura dei biglietti: pagare meno con due biglietti invece di uno.
+"""Spezzatura dei biglietti: pagare meno (o sapere quanto costa) con due biglietti.
 
 Su molte tratte italiane il biglietto unico costa piu' di due biglietti
 partenziali: un regionale fino a una citta' intermedia e un secondo
@@ -9,14 +9,17 @@ Regole:
 - si valutano solo i viaggi ferroviari con tappe note (l'itinerario reale);
 - per ogni punto di spezzatura si chiedono i prezzi dei due segmenti;
 - la spezzatura entra nel confronto **solo se e' piu' economica** del
-  biglietto diretto: mai un piano con prezzi inventati o gonfiati.
+  biglietto diretto: mai un piano con prezzi inventati o gonfiati;
+- ma **tutte** le spezzature vengono riportate come confronto ("quanto
+  cambia"): prezzo, tempo e numero di cambi rispetto al diretto. Serve a
+  decidere con tutti i numeri davanti, non solo con il piu' economico.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
@@ -28,16 +31,24 @@ from ..adapters.trenitalia import (
     _lookup_station,
     query_starts,
 )
-from ..timeutil import ROME, parse_dt
+from ..timeutil import ROME, iso, parse_dt
 
 log = logging.getLogger("carpool.split")
 
 # Un segmento deve partire almeno dopo che il precedente e' arrivato.
 MIN_TRANSFER_MIN = 25
+# Quanti segmenti di partenza si provano per ogni nodo: il piu' economico
+# potrebbe non permettere il cambio, il secondo potrebbe costare poco di piu'.
+MAX_FIRST_LEGS = 4
 # Quanti punti di spezzatura si provano per viaggio.
-MAX_SPLIT_POINTS = 4
+MAX_SPLIT_POINTS = 5
+# Con "preferisco arrivare prima", una spezzatura che arriva almeno
+# MIN_FASTER_MINUTES prima entra nel confronto anche se costa di piu'.
+MIN_FASTER_MINUTES = 30
+# Quanto puo' costare in piu' una spezzatura piu' veloce per essere scelta.
+MAX_EXTRA_PRICE = 8.0
 # Quanti viaggi si provano a spezzare (i piu' economici diretti).
-MAX_SPLIT_OFFERS = 1
+MAX_SPLIT_OFFERS = 2
 
 # I nodi ferroviari italiani, in ordine di importanza: e' li' che la
 # spezzatura conviene, perche' offrono regionali economici che il treno
@@ -117,6 +128,17 @@ async def _segment_price(
     return sorted(found, key=lambda s: s["price"])
 
 
+def _is_endpoint(hub: str, ctx: SearchContext) -> bool:
+    """True se l'hub coincide con la partenza o l'arrivo."""
+    for place in (ctx.from_place or "", ctx.to_place or ""):
+        place = place.strip().lower()
+        if not place:
+            continue
+        if hub in place or place in hub:
+            return True
+    return False
+
+
 def _split_points(offer: Offer, ctx: SearchContext) -> list[str]:
     """Le citta' dove provare a spezzare il biglietto, in ordine di promessa.
 
@@ -133,22 +155,12 @@ def _split_points(offer: Offer, ctx: SearchContext) -> list[str]:
     if None not in (ctx.from_lat, ctx.from_lon, ctx.to_lat, ctx.to_lon):
         from ..geo import CITIES, haversine_km
 
-        def _is_endpoint(hub: str) -> bool:
-            """True se l'hub coincide con la partenza o l'arrivo."""
-            for place in (ctx.from_place or "", ctx.to_place or ""):
-                place = place.strip().lower()
-                if not place:
-                    continue
-                if hub in place or place in hub:
-                    return True
-            return False
-
         direct = haversine_km(ctx.from_lat, ctx.from_lon, ctx.to_lat, ctx.to_lon)  # type: ignore[arg-type]
         if direct:
             on_the_way: list[tuple[int, str]] = []
             for priority, hub in enumerate(RAIL_HUBS):
                 coords = CITIES.get(hub)
-                if not coords or _is_endpoint(hub):
+                if not coords or _is_endpoint(hub, ctx):
                     continue
                 first = haversine_km(ctx.from_lat, ctx.from_lon, coords[0], coords[1])  # type: ignore[arg-type]
                 second = haversine_km(coords[0], coords[1], ctx.to_lat, ctx.to_lon)  # type: ignore[arg-type]
@@ -178,11 +190,173 @@ def _split_points(offer: Offer, ctx: SearchContext) -> list[str]:
     return [p for p in points if p.lower() not in (start, end)]
 
 
-async def find_splits(offers: list[Offer], ctx: SearchContext) -> list[Offer]:
-    """Cerca biglietti spezzati piu' economici del viaggio diretto.
+def _duration(depart: datetime | None, arrive: datetime | None) -> int:
+    if not depart or not arrive:
+        return 0
+    return max(0, int((arrive - depart).total_seconds() // 60))
 
-    Restituisce le offerte "spezzate" (una per ogni spezzatura che batte
-    il prezzo diretto).
+
+async def _split_via(
+    client: httpx.AsyncClient,
+    offer: Offer,
+    ctx: SearchContext,
+    origin: dict,
+    destination: dict,
+    point: str,
+) -> dict[str, Any] | None:
+    """Calcola lo spezzamento attraverso un nodo e il confronto col diretto."""
+    # Il nodo puo' essere una citta' ("Verona") o una stazione vera
+    # ("Verona Porta Nuova"): per le citta' si passano le coordinate del
+    # centro, cosi' l'API non viene scambiata per l'aeroporto o la stazione
+    # dei bus.
+    from ..geo import CITIES
+
+    coords = CITIES.get(point.strip().lower())
+    middle = await _lookup_station(
+        client,
+        point,
+        coords[0] if coords else None,
+        coords[1] if coords else None,
+    )
+    if not middle or middle["id"] in (origin["id"], destination["id"]):
+        return None
+
+    # Il primo biglietto parte dall'inizio della finestra di ricerca,
+    # non dall'ora del treno diretto: altrimenti si perdono i regionali
+    # mattutini, che sono quelli economici (e' il trucco).
+    # Si provano piu' partenze (sera prima e giorno di arrivo): l'API
+    # restituisce solo una decina di soluzioni per richiesta.
+    # E non basta il segmento piu' economico: se arriva troppo tardi per
+    # fare il cambio, si prova il secondo, il terzo, e cosi' via. Un
+    # segmento 50 centesimi piu' caro puo' far risparmiare l'intero
+    # spezzamento.
+    best: tuple[dict[str, Any], dict[str, Any], float] | None = None
+    for start in query_starts(ctx):
+        first = await _segment_price(client, origin["id"], middle["id"], start)
+        if not first:
+            continue
+        # Candidati: la prima tratta deve arrivare nel giorno richiesto,
+        # altrimenti si aspetta una notte in stazione (che non e' un
+        # viaggio). Un treno notturno che parte la sera prima e arriva
+        # dopo mezzanotte resta valido.
+        candidati = [
+            leg1
+            for leg1 in first[:MAX_FIRST_LEGS]
+            if leg1["arrive_at"] >= ctx.arrival_day_start
+            and leg1["depart_at"] >= ctx.window_start - timedelta(minutes=15)
+        ]
+        if not candidati:
+            continue
+        # I secondi segmenti si cercano in parallelo: ogni candidato
+        # arriva in un momento diverso, ma le richieste non dipendono
+        # l'una dall'altra.
+        secondi = await asyncio.gather(
+            *(
+                _segment_price(
+                    client,
+                    middle["id"],
+                    destination["id"],
+                    leg1["arrive_at"] + timedelta(minutes=MIN_TRANSFER_MIN),
+                )
+                for leg1 in candidati
+            ),
+            return_exceptions=True,
+        )
+        for leg1, second in zip(candidati, secondi):
+            if isinstance(second, Exception) or not second:
+                continue
+            # Il secondo biglietto deve arrivare nel giorno giusto E in
+            # tempo: si sceglie il piu' economico fra quelli che valgono.
+            utili = [
+                s
+                for s in second
+                if ctx.arrival_day_start
+                <= s["arrive_at"]
+                <= ctx.arrive_by + timedelta(minutes=10)
+            ]
+            if not utili:
+                continue
+            leg2 = utili[0]
+            total = round(leg1["price"] + leg2["price"], 2)
+            if best is None or total < best[2]:
+                best = (leg1, leg2, total)
+
+    if best is None:
+        return None
+    leg1, leg2, total = best
+
+    if leg2["arrive_at"] > ctx.arrive_by + timedelta(minutes=10):
+        return None  # arriva oltre il limite
+    if leg2["arrive_at"] < ctx.arrival_day_start:
+        return None  # arriva il giorno prima
+    if leg1["depart_at"] < ctx.window_start - timedelta(minutes=15):
+        return None  # parte prima della finestra
+
+    diretto = offer.price or 0.0
+    durata = _duration(leg1["depart_at"], leg2["arrive_at"])
+    durata_diretto = offer.duration_min or _duration(offer.depart_at, offer.arrive_at)
+    return {
+        "via": middle["name"],
+        "tratte": [
+            {
+                "da": leg1["origin"] or origin["name"],
+                "a": leg1["destination"] or middle["name"],
+                "prezzo": leg1["price"],
+                "partenza": iso(leg1["depart_at"]),
+                "arrivo": iso(leg1["arrive_at"]),
+                "durata_min": _duration(leg1["depart_at"], leg1["arrive_at"]),
+            },
+            {
+                "da": leg2["origin"] or middle["name"],
+                "a": leg2["destination"] or destination["name"],
+                "prezzo": leg2["price"],
+                "partenza": iso(leg2["depart_at"]),
+                "arrivo": iso(leg2["arrive_at"]),
+                "durata_min": _duration(leg2["depart_at"], leg2["arrive_at"]),
+            },
+        ],
+        "totale": total,
+        "diretto_prezzo": diretto,
+        # Positivo = la spezzatura costa di piu' del diretto.
+        "delta_prezzo": round(total - diretto, 2),
+        "durata_min": durata,
+        "diretto_durata_min": durata_diretto,
+        # Positivo = la spezzatura ci mette di piu'.
+        "delta_minuti": durata - durata_diretto,
+        "partenza": iso(leg1["depart_at"]),
+        "arrivo": iso(leg2["arrive_at"]),
+        "diretto_partenza": iso(offer.depart_at),
+        "diretto_arrivo": iso(offer.arrive_at),
+        "cambi": 1,
+        "conveniente": total < diretto,
+        "leg1": leg1,
+        "leg2": leg2,
+        "origin": origin,
+        "middle": middle,
+        "destination": destination,
+        "offer": offer,
+    }
+
+
+def _comparison(confronto: dict[str, Any]) -> dict[str, Any]:
+    """Il confronto, senza i dati interni (per la UI e per l'AI)."""
+    return {
+        k: v
+        for k, v in confronto.items()
+        if k not in ("leg1", "leg2", "origin", "middle", "destination", "offer")
+    }
+
+
+async def analyze_splits(
+    offers: list[Offer], ctx: SearchContext, *, prefer_fast: bool = False
+) -> tuple[list[Offer], list[dict[str, Any]]]:
+    """Spezza il viaggio e confronta ogni spezzatura col diretto.
+
+    Restituisce due cose:
+    - le offerte "spezzate" che BATONO il diretto (entrano nel pool e
+      competono con le altre);
+    - l'elenco dei confronti (anche di quelli che costano di piu'): serve a
+      mostrare quanto cambia davvero, prezzo e tempo.
     """
     candidates = [
         offer
@@ -190,95 +364,67 @@ async def find_splits(offers: list[Offer], ctx: SearchContext) -> list[Offer]:
         if offer.mode == "train" and offer.price and (offer.details.get("tappe") or [])
     ]
     if not candidates:
-        return []
+        return [], []
 
     # Il viaggio da battere e' il piu' economico in assoluto: e' quello su
     # cui la spezzatura ha piu' margine.
     candidates.sort(key=lambda o: o.price or 0)
     candidates = candidates[:MAX_SPLIT_OFFERS]
 
-    results: list[Offer] = []
+    comparisons: list[dict[str, Any]] = []
     try:
         async with httpx.AsyncClient(timeout=25, headers=HEADERS) as client:
             for offer in candidates:
-                results.extend(await _split_one(client, offer, ctx))
+                origin = await _lookup_station(
+                    client, offer.pickup_name or ctx.from_place
+                )
+                destination = await _lookup_station(
+                    client, offer.dropoff_name or ctx.to_place
+                )
+                if not origin or not destination:
+                    continue
+                points = _split_points(offer, ctx)[:MAX_SPLIT_POINTS]
+                # I nodi si provano in parallelo: ogni punto costa due
+                # richieste all'API e la ricerca non puo' durare troppo.
+                results = await asyncio.gather(
+                    *(
+                        _split_via(client, offer, ctx, origin, destination, point)
+                        for point in points
+                    ),
+                    return_exceptions=True,
+                )
+                for result in results:
+                    if isinstance(result, dict):
+                        comparisons.append(result)
     except Exception as exc:  # noqa: BLE001
         log.debug("spezzatura non disponibile: %s", exc)
-    # Tiene solo la spezzatura piu' vantaggiosa per ogni viaggio.
-    best: dict[str, Offer] = {}
-    for split in results:
-        key = f"{split.pickup_name}->{split.dropoff_name}"
-        if key not in best or (split.price or 0) < (best[key].price or 0):
-            best[key] = split
-    return list(best.values())
+        return [], []
 
+    # Solo una spezzatura per nodo: quella col costo migliore.
+    best_per_via: dict[str, dict[str, Any]] = {}
+    for confronto in comparisons:
+        key = str(confronto["via"]).lower()
+        current = best_per_via.get(key)
+        if current is None or confronto["totale"] < current["totale"]:
+            best_per_via[key] = confronto
+    comparisons = list(best_per_via.values())
 
-async def _split_one(
-    client: httpx.AsyncClient, offer: Offer, ctx: SearchContext
-) -> list[Offer]:
-    """Prova a spezzare un viaggio e tieni solo se conviene."""
-    if not offer.depart_at or not offer.arrive_at:
-        return []
-
-    origin = await _lookup_station(client, offer.pickup_name or ctx.from_place)
-    destination = await _lookup_station(client, offer.dropoff_name or ctx.to_place)
-    if not origin or not destination:
-        return []
-
-    out: list[Offer] = []
-    for point in _split_points(offer, ctx)[:MAX_SPLIT_POINTS]:
-        middle = await _lookup_station(client, point)
-        if not middle:
-            continue
-        if middle["id"] in (origin["id"], destination["id"]):
-            continue
-
-        # Il primo biglietto parte dall'inizio della finestra di ricerca,
-        # non dall'ora del treno diretto: altrimenti si perdono i regionali
-        # mattutini, che sono quelli economici (e' il trucco).
-        # Si provano piu' partenze (sera prima e giorno di arrivo): l'API
-        # restituisce solo una decina di soluzioni per richiesta.
-        best: tuple[dict[str, Any], dict[str, Any], float] | None = None
-        for start in query_starts(ctx):
-            first = await _segment_price(client, origin["id"], middle["id"], start)
-            if not first:
+    # Le offerte: quelle che battono il diretto. Se l'utente preferisce
+    # arrivare prima, entra anche la spezzatura piu' veloce (arriva prima
+    # anche se costa qualcosa in piu'): e' un piano, non solo un dato.
+    spezzate: list[Offer] = []
+    for confronto in comparisons:
+        if not confronto["conveniente"]:
+            if not (
+                prefer_fast
+                and confronto["delta_minuti"] <= -MIN_FASTER_MINUTES
+                and confronto["delta_prezzo"] <= MAX_EXTRA_PRICE
+            ):
                 continue
-            leg1 = first[0]
-
-            # Il secondo biglietto parte dopo l'arrivo del primo (cambio
-            # fattibile: almeno MIN_TRANSFER_MIN di attesa).
-            when2 = leg1["arrive_at"] + timedelta(minutes=MIN_TRANSFER_MIN)
-            second = await _segment_price(client, middle["id"], destination["id"], when2)
-            if not second:
-                continue
-            leg2 = second[0]
-
-            total = round(leg1["price"] + leg2["price"], 2)
-            if best is None or total < best[2]:
-                best = (leg1, leg2, total)
-
-        if best is None:
-            continue
-        leg1, leg2, total = best
-
-        log.debug(
-            "spezzatura %s: %.2f + %.2f = %.2f (diretto %.2f) arrivo %s",
-            middle["name"], leg1["price"], leg2["price"], total, offer.price or 0,
-            leg2["arrive_at"],
-        )
-        if total >= (offer.price or 0):
-            continue  # non conviene: il diretto resta migliore
-        if leg2["arrive_at"] > ctx.arrive_by + timedelta(minutes=10):
-            log.debug("  scartata: arriva dopo il limite")
-            continue
-        if leg2["arrive_at"] < ctx.arrival_day_start:
-            log.debug("  scartata: arriva il giorno prima")
-            continue
-        if leg1["depart_at"] < ctx.window_start - timedelta(minutes=15):
-            log.debug("  scartata: parte prima della finestra")
-            continue
-
-        out.append(
+        leg1 = confronto["leg1"]
+        leg2 = confronto["leg2"]
+        offer = confronto["offer"]
+        spezzate.append(
             Offer(
                 source="spezzatura",
                 external_id=f"split:{leg1['id']}+{leg2['id']}",
@@ -286,41 +432,61 @@ async def _split_one(
                 operator="Trenitalia (2 biglietti)",
                 depart_at=leg1["depart_at"],
                 arrive_at=leg2["arrive_at"],
-                price=total,
-                pickup_name=offer.pickup_name,
-                dropoff_name=offer.dropoff_name,
+                price=confronto["totale"],
+                pickup_name=confronto["tratte"][0]["da"],
+                dropoff_name=confronto["tratte"][1]["a"],
                 pickup_lat=offer.pickup_lat,
                 pickup_lon=offer.pickup_lon,
                 dropoff_lat=offer.dropoff_lat,
                 dropoff_lon=offer.dropoff_lon,
-                duration_min=int((leg2["arrive_at"] - leg1["depart_at"]).total_seconds() // 60),
+                duration_min=confronto["durata_min"],
                 deeplink="https://www.trenitalia.com/it.html",
                 details={
                     "fonte": "Trenitalia",
                     "spezzatura": True,
-                    "prezzo_diretto": offer.price,
-                    "risparmio": round((offer.price or 0) - total, 2),
+                    "prezzo_diretto": confronto["diretto_prezzo"],
+                    "risparmio": abs(confronto["delta_prezzo"]),
+                    "delta_minuti": confronto["delta_minuti"],
                     "biglietti": 2,
                     "cambi": 0,
                     "treni": "2 biglietti regionali",
                     "tappe": [
                         tappa(
-                            leg1["origin"] or origin["name"],
-                            leg1["destination"] or middle["name"],
+                            confronto["tratte"][0]["da"],
+                            confronto["tratte"][0]["a"],
                             leg1["depart_at"],
                             leg1["arrive_at"],
                             "Trenitalia",
                         ),
                         tappa(
-                            leg2["origin"] or middle["name"],
-                            leg2["destination"] or destination["name"],
+                            confronto["tratte"][1]["da"],
+                            confronto["tratte"][1]["a"],
                             leg2["depart_at"],
                             leg2["arrive_at"],
                             "Trenitalia",
                         ),
                     ],
-                    "durata": f"{int((leg2['arrive_at'] - leg1['depart_at']).total_seconds() // 60)} min",
+                    "durata": f"{confronto['durata_min']} min",
                 },
             )
         )
-    return out
+
+    # I confronti: prima quelli che fanno risparmiare, poi i piu' vicini.
+    comparisons.sort(
+        key=lambda c: (not c["conveniente"], abs(c["delta_prezzo"]), abs(c["delta_minuti"]))
+    )
+    return spezzate, [_comparison(c) for c in comparisons]
+
+
+async def find_splits(
+    offers: list[Offer], ctx: SearchContext, *, prefer_fast: bool = False
+) -> list[Offer]:
+    """Le spezzature che battono il diretto (o che arrivano prima, se preferito)."""
+    spezzate, _ = await analyze_splits(offers, ctx, prefer_fast=prefer_fast)
+    return spezzate
+
+
+async def split_comparisons(offers: list[Offer], ctx: SearchContext) -> list[dict[str, Any]]:
+    """Tutti i confronti fra spezzatura e diretto (anche se costano di piu')."""
+    _, confronti = await analyze_splits(offers, ctx)
+    return confronti

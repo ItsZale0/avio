@@ -61,6 +61,95 @@ def make_train_offer(price=87.5, tappe=None):
     )
 
 
+class StationChoiceTests(unittest.TestCase):
+    """La stazione giusta: niente aeroporti, niente stazioni dei bus."""
+
+    ITEMS = [
+        {"name": "VERONA AEROPORTO", "locationId": "1",
+         "geographicCoordinates": {"latitude": 45.4384, "longitude": 10.9075}},
+        {"name": "VERONA BUS", "locationId": "2",
+         "geographicCoordinates": {"latitude": 45.4305, "longitude": 10.9873}},
+        {"name": "VERONA OSPEDALE BORGO TRENTO", "locationId": "3",
+         "geographicCoordinates": {"latitude": 45.4460, "longitude": 10.9950}},
+        {"name": "Verona Porta Nuova", "locationId": "4",
+         "geographicCoordinates": {"latitude": 45.9983, "longitude": 10.9824}},
+    ]
+
+    def test_city_resolves_to_the_main_station(self):
+        from app.adapters.trenitalia import _choose_station
+
+        chosen = _choose_station(self.ITEMS, "verona", 45.4384, 10.9916)
+        self.assertEqual(chosen["name"], "Verona Porta Nuova")
+
+    def test_exact_match_wins(self):
+        from app.adapters.trenitalia import _choose_station
+
+        chosen = _choose_station(self.ITEMS, "verona bus")
+        self.assertEqual(chosen["name"], "VERONA BUS")
+
+    def test_airport_requested_explicitly(self):
+        from app.adapters.trenitalia import _choose_station
+
+        chosen = _choose_station(self.ITEMS, "verona aeroporto")
+        self.assertEqual(chosen["name"], "VERONA AEROPORTO")
+
+
+class ComparisonTests(unittest.TestCase):
+    """Il confronto fra tratte singole e biglietto diretto."""
+
+    def _confronto(self, **overrides):
+        base = {
+            "via": "Verona Porta Nuova",
+            "tratte": [
+                {"da": "Thiene", "a": "Verona Porta Nuova", "prezzo": 7.9,
+                 "partenza": "2026-10-22T04:21:00+00:00",
+                 "arrivo": "2026-10-22T05:40:00+00:00", "durata_min": 79},
+                {"da": "Verona Porta Nuova", "a": "Trento", "prezzo": 7.85,
+                 "partenza": "2026-10-22T06:06:00+00:00",
+                 "arrivo": "2026-10-22T07:30:00+00:00", "durata_min": 84},
+            ],
+            "totale": 15.75,
+            "diretto_prezzo": 11.90,
+            "delta_prezzo": 3.85,
+            "durata_min": 189,
+            "diretto_durata_min": 248,
+            "delta_minuti": -59,
+            "partenza": "2026-10-22T04:21:00+00:00",
+            "arrivo": "2026-10-22T07:30:00+00:00",
+            "diretto_partenza": "2026-10-22T06:21:00+00:00",
+            "diretto_arrivo": "2026-10-22T10:29:00+00:00",
+            "cambi": 1,
+            "conveniente": False,
+        }
+        base.update(overrides)
+        return base
+
+    def test_delta_price_is_positive_when_it_costs_more(self):
+        confronto = self._confronto()
+        self.assertGreater(confronto["delta_prezzo"], 0)
+        self.assertFalse(confronto["conveniente"])
+
+    def test_delta_minutes_is_negative_when_it_arrives_earlier(self):
+        confronto = self._confronto()
+        self.assertLess(confronto["delta_minuti"], 0)
+        self.assertLess(confronto["durata_min"], confronto["diretto_durata_min"])
+
+    def test_internal_data_is_not_exposed(self):
+        from app.services.split_tickets import _comparison
+
+        confronto = self._confronto(leg1={"a": 1}, offer={"b": 2})
+        pubblico = _comparison(confronto)
+        self.assertNotIn("leg1", pubblico)
+        self.assertNotIn("offer", pubblico)
+        self.assertIn("delta_prezzo", pubblico)
+        self.assertIn("tratte", pubblico)
+
+    def test_sum_of_the_two_legs(self):
+        confronto = self._confronto()
+        somma = sum(t["prezzo"] for t in confronto["tratte"])
+        self.assertAlmostEqual(somma, confronto["totale"], places=2)
+
+
 class SplitPointTests(unittest.TestCase):
     def test_hubs_on_the_way_come_first(self):
         ctx = make_ctx()

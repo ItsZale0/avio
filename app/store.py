@@ -301,6 +301,7 @@ def _plan_to_dict(row) -> dict[str, Any]:
     item["steps"] = db.load_json(item.get("steps"), [])
     item["watchouts"] = db.load_json(item.get("watchouts"), [])
     item["passes"] = db.load_json(item.get("passes"), [])
+    item["confronti"] = db.load_json(item.get("confronti"), [])
     item["is_current"] = bool(item.get("is_current"))
     item["partial"] = bool(item.get("partial"))
     item["ai"] = bool(item.get("ai"))
@@ -330,8 +331,8 @@ def save_plans(
                 INSERT INTO plans(watch_id, run_id, kind, title, total_price, total_duration_min,
                     steps, explanation, watchouts, confidence, fingerprint, created_at, is_current,
                     profile, changes, effective_cost, access_cost, depart_at, arrive_at,
-                    transfer_km, partial, ai, net_total_price, covered, passes)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?)
+                    transfer_km, partial, ai, net_total_price, covered, passes, confronti)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     watch_id,
@@ -358,6 +359,7 @@ def save_plans(
                     item.get("net_total_price"),
                     1 if item.get("covered") else 0,
                     db.dump_json(item.get("passes") or []),
+                    db.dump_json(item.get("confronti") or []),
                 ),
             )
 

@@ -171,8 +171,14 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
         gathered = _dedupe(offers)
 
         # Spezzatura: due biglietti invece di uno possono costare meno.
+        # Si calcolano TUTTI i confronti (anche quelli che costano di piu'):
+        # serve a mostrare quanto cambia davvero a spezzare il viaggio.
+        confronti: list[dict[str, Any]] = []
         try:
-            splits = await split_tickets.find_splits(gathered, ctx)
+            prefer_fast = bool(prefs.get("prefer_fast"))
+            splits, confronti = await split_tickets.analyze_splits(
+                gathered, ctx, prefer_fast=prefer_fast
+            )
             if splits:
                 gathered = _dedupe(gathered + splits)
                 for split in splits:
@@ -188,6 +194,15 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
                         f"{details.get('prezzo_diretto', 0):.2f} "
                         f"(risparmi {details.get('risparmio', 0):.2f} EUR)."
                     )
+            if confronti:
+                hints.append(
+                    "Confronto tratte singole: "
+                    + " | ".join(
+                        f"via {c['via']} {c['totale']:.2f} EUR "
+                        f"({c['delta_prezzo']:+.2f} EUR, {c['delta_minuti']:+d} min)"
+                        for c in confronti[:3]
+                    )
+                )
         except Exception as exc:  # noqa: BLE001
             errors.append(f"split: {type(exc).__name__}: {exc}")
 
@@ -221,7 +236,13 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
         intel = intelligence.IntelligenceResult()
         try:
             intel = await intelligence.analyze(
-                watch, offers, ctx, ranked=ranked, run_id=run_id, raw_offers=gathered
+                watch,
+                offers,
+                ctx,
+                ranked=ranked,
+                run_id=run_id,
+                raw_offers=gathered,
+                confronti=confronti,
             )
         except Exception as exc:
             errors.append(f"ai: {type(exc).__name__}: {exc}")
