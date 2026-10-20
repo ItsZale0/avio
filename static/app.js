@@ -103,7 +103,7 @@ const BADGES = {
   closest: "Più vicino",
   price_drop: "Ribasso",
   under_budget: "Sotto budget",
-  over_budget: "Sopra budget",
+  spezzato: "2 biglietti",
   estimate: "Stima",
   orario: "Orario",
 };
@@ -667,6 +667,18 @@ function renderPlan() {
     const link = step.deeplink
       ? ` <a href="${esc(step.deeplink)}" target="_blank" rel="noreferrer">apri ↗</a>`
       : "";
+    // Spezzatura: un passo che racchiude due biglietti.
+    const biglietti = step.spezzatura && step.biglietti && step.biglietti.length
+      ? `<div class="ps-split">${step.biglietti.map((b, i) => `
+           <div class="ps-ticket">
+             <span class="tk">${i + 1}</span>
+             <span>${esc(b.da || "")} → ${esc(b.a || "")}</span>
+             <span class="tk-time">${b.partenza ? fmtTime(b.partenza) : ""} → ${b.arrivo ? fmtTime(b.arrivo) : ""}</span>
+           </div>`).join("")}
+           <div class="ps-save">🎫 risparmi ${euro(step.risparmio)} rispetto al biglietto unico (${euro(step.prezzo_diretto)})</div>
+         </div>`
+      : "";
+
     return `
       <div class="plan-step">
         <span class="idx">${step.leg || 1}</span>
@@ -674,6 +686,7 @@ function renderPlan() {
           <b>${esc(step.operator || step.source || "")}</b>
           <small>${esc(MODE_LABEL[step.mode] || step.mode || "")} · ${dep} → ${arr} ${day} ·
             ${esc(step.pickup_name || "")} → ${esc(step.dropoff_name || "")}${step.price_is_estimate ? " · stima" : ""}</small>
+          ${biglietti}
         </div>
         <span class="ps-price">${price}${link}</span>
       </div>`;
@@ -813,9 +826,10 @@ function offerCard(offer, suppressNew = false) {
   }
   if (offer.details?.tariffa) detailBits.push(esc(offer.details.tariffa));
   if (offer.details?.disponibilita) detailBits.push(esc(offer.details.disponibilita));
-  if (offer.details?.sopra_budget && offer.details?.eccesso != null) {
+  if (offer.details?.spezzatura) {
     detailBits.push(
-      `💸 ${euro(offer.details.eccesso)} oltre il tuo budget di ${euro(offer.details.budget)}`
+      `🎫 2 biglietti invece di 1: risparmi ${euro(offer.details.risparmio)} ` +
+      `(diretto ${euro(offer.details.prezzo_diretto)})`
     );
   }
 

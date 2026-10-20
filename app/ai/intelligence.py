@@ -68,19 +68,23 @@ def _candidates_payload(candidates: list[Candidate]) -> list[dict[str, Any]]:
     for candidate in candidates[:MAX_CANDIDATES_IN_PROMPT]:
         legs = []
         for leg in candidate.legs:
-            legs.append(
-                {
-                    "mode": leg.mode,
-                    "operator": leg.operator or leg.source,
-                    "from": leg.pickup_name,
-                    "to": leg.dropoff_name,
-                    "depart": human_rome(leg.depart_at, "%d/%m %H:%M") if leg.depart_at else None,
-                    "arrive": human_rome(leg.arrive_at, "%d/%m %H:%M") if leg.arrive_at else None,
-                    "price": round(leg.price, 2) if leg.price is not None else None,
-                    "estimate": leg.price_is_estimate,
-                    "link": leg.deeplink,
-                }
-            )
+            leg_info = {
+                "mode": leg.mode,
+                "operator": leg.operator or leg.source,
+                "from": leg.pickup_name,
+                "to": leg.dropoff_name,
+                "depart": human_rome(leg.depart_at, "%d/%m %H:%M") if leg.depart_at else None,
+                "arrive": human_rome(leg.arrive_at, "%d/%m %H:%M") if leg.arrive_at else None,
+                "price": round(leg.price, 2) if leg.price is not None else None,
+                "estimate": leg.price_is_estimate,
+                "link": leg.deeplink,
+            }
+            if leg.details.get("spezzatura"):
+                # Due biglietti: l'AI deve poterlo spiegare.
+                leg_info["spezzatura"] = True
+                leg_info["risparmio"] = leg.details.get("risparmio")
+                leg_info["prezzo_diretto"] = leg.details.get("prezzo_diretto")
+            legs.append(leg_info)
         payload.append(
             {
                 "id": candidate.id,
@@ -125,6 +129,20 @@ def _templated_explanation(candidate: Candidate, watch: dict[str, Any]) -> str:
             f"arrivo {human_rome(candidate.arrive_at, '%a %d %b, %H:%M')}.{partial}"
         )
     leg = candidate.legs[0]
+    if leg.details.get("spezzatura"):
+        # Il caso piu' interessante: due biglietti invece di uno.
+        risparmio = leg.details.get("risparmio")
+        diretto = leg.details.get("prezzo_diretto")
+        tappe = leg.details.get("tappe") or []
+        percorso = " + ".join(
+            f"{step.get('da')}→{step.get('a')}" for step in tappe if isinstance(step, dict)
+        )
+        return (
+            f"Si compra con due biglietti: {percorso}. "
+            f"Totale {candidate.total_price:.2f} EUR invece di {diretto:.2f} EUR "
+            f"del biglietto unico: risparmi {risparmio:.2f} EUR. "
+            f"Arrivo {human_rome(candidate.arrive_at, '%a %d %b, %H:%M')}."
+        )
     return (
         f"Più economico trovato: {leg.operator or leg.source} "
         f"({human_rome(leg.depart_at, '%H:%M')} → {human_rome(leg.arrive_at, '%H:%M')}) "

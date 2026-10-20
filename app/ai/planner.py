@@ -67,23 +67,37 @@ class Candidate:
         steps = []
         for index, leg in enumerate(self.legs, start=1):
             info = (ranked or {}).get(leg.fingerprint, {}).get("details", {})
-            steps.append(
-                {
-                    "leg": index,
-                    "offer_id": leg.fingerprint,
-                    "source": leg.source,
-                    "mode": leg.mode,
-                    "operator": leg.operator,
-                    "depart_at": leg.depart_at.isoformat() if leg.depart_at else None,
-                    "arrive_at": leg.arrive_at.isoformat() if leg.arrive_at else None,
-                    "price": round(leg.price, 2) if leg.price is not None else None,
-                    "price_is_estimate": leg.price_is_estimate,
-                    "pickup_name": leg.pickup_name,
-                    "dropoff_name": leg.dropoff_name,
-                    "deeplink": leg.deeplink,
-                    "access_cost": info.get("costo_accesso_stimato"),
-                }
-            )
+            step = {
+                "leg": index,
+                "offer_id": leg.fingerprint,
+                "source": leg.source,
+                "mode": leg.mode,
+                "operator": leg.operator,
+                "depart_at": leg.depart_at.isoformat() if leg.depart_at else None,
+                "arrive_at": leg.arrive_at.isoformat() if leg.arrive_at else None,
+                "price": round(leg.price, 2) if leg.price is not None else None,
+                "price_is_estimate": leg.price_is_estimate,
+                "pickup_name": leg.pickup_name,
+                "dropoff_name": leg.dropoff_name,
+                "deeplink": leg.deeplink,
+                "access_cost": info.get("costo_accesso_stimato"),
+            }
+            if leg.details.get("spezzatura"):
+                # Spezzatura: un passo che contiene due biglietti.
+                step["spezzatura"] = True
+                step["risparmio"] = leg.details.get("risparmio")
+                step["prezzo_diretto"] = leg.details.get("prezzo_diretto")
+                step["biglietti"] = [
+                    {
+                        "da": t.get("da"),
+                        "a": t.get("a"),
+                        "partenza": t.get("partenza"),
+                        "arrivo": t.get("arrivo"),
+                    }
+                    for t in (leg.details.get("tappe") or [])
+                    if isinstance(t, dict)
+                ]
+            steps.append(step)
         return {
             "candidate_id": self.id,
             "kind": self.kind,

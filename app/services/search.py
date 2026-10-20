@@ -14,6 +14,7 @@ from ..config import HOST, PORT
 from ..scoring import score_offers
 from ..timeutil import from_iso, iso, now_utc, parse_dt
 from . import questions as questions_service
+from . import split_tickets
 
 RUNNING: set[int] = set()
 _lock = asyncio.Lock()
@@ -162,6 +163,28 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
         prefs = intelligence.prefs_of(watch)
         late_minutes = int(prefs.get("flexible_days", 0) or 0) * 1440
         gathered = _dedupe(offers)
+
+        # Spezzatura: due biglietti invece di uno possono costare meno.
+        try:
+            splits = await split_tickets.find_splits(gathered, ctx)
+            if splits:
+                gathered = _dedupe(gathered + splits)
+                for split in splits:
+                    details = split.details or {}
+                    tratto = " + ".join(
+                        f"{step.get('da')}→{step.get('a')}"
+                        for step in (details.get("tappe") or [])
+                        if isinstance(step, dict)
+                    )
+                    hints.append(
+                        f"Spezzatura: 2 biglietti Trenitalia ({tratto}) per "
+                        f"{split.price:.2f} EUR invece di "
+                        f"{details.get('prezzo_diretto', 0):.2f} "
+                        f"(risparmi {details.get('risparmio', 0):.2f} EUR)."
+                    )
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"split: {type(exc).__name__}: {exc}")
+
         offers = _filter_offers(gathered, ctx, late_minutes=late_minutes)
         ranked = score_offers(offers, ctx)
 
