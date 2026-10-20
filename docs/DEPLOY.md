@@ -15,11 +15,24 @@ affittare, nessun IP pubblico, nessuna porta aperta sul router.
 
 ## 0. Avvio con un comando
 
-`start.bat` (o `start.ps1`) avvia **agente + tunnel** insieme:
+`start.bat` (o `start.ps1`) avvia **agente + tunnel** insieme, con la finestra
+del terminale in primo piano (utile per vedere i log mentre si lavora):
 
 ```powershell
 start.bat
 ```
+
+Per farlo girare **in background, senza finestre di terminale**, usa il
+supervisore:
+
+```powershell
+wscript.exe avvia-agente.vbs     # avvia senza finestre
+python scripts\agent_status.py   # stato e ultimi log
+python scripts\stop_agent.py     # ferma tutto
+```
+
+`avvia-agente.vbs` e' gia' installato come collegamento nella cartella di
+avvio (vedi sezione 1): al login l'agente parte da solo, in silenzio.
 
 Il tunnel "quick" assegna un URL nuovo a ogni avvio. Per questo
 `scripts/tunnel.py`, appena avviato, fa tre cose da solo:
@@ -37,17 +50,45 @@ deploy a mano dalla tab *Actions*).
 setx GITHUB_TOKEN "ghp_..."
 ```
 
+### Il supervisore
+
+`scripts/run_agent.py` fa tre cose:
+
+- avvia l'agente e il tunnel **senza finestre** (usa `pythonw.exe`);
+- **rilancia** un processo che muore (crash, blocco, killed);
+- scrive i log in `data/logs/`: `agent.log` (supervisore), `agente.log`,
+  `tunnel.log`.
+
+Per fermarlo: `python scripts\stop_agent.py` (oppure `ferma-agente.bat`).
+Per guardare come sta: `python scripts\agent_status.py`.
+
 ## 1. Avvia l'agente automaticamente
 
 Perche' l'agente cerchi ogni ora anche quando non lo lanci a mano:
 
-**Task Scheduler (consigliato)**
+**Collegamento nella cartella di avvio (consigliato, senza privilegi)**
+
+Gia' fatto: il collegamento *Carpool Hunter.lnk* punta a `avvia-agente.vbs`.
+Per rifarlo:
+
+```powershell
+$startup = [Environment]::GetFolderPath("Startup")
+$shell = New-Object -ComObject WScript.Shell
+$link = $shell.CreateShortcut((Join-Path $startup "Carpool Hunter.lnk"))
+$link.TargetPath = "wscript.exe"
+$link.Arguments = '"C:\percorso\avvia-agente.vbs"'
+$link.WorkingDirectory = "C:\percorso"
+$link.Save()
+```
+
+**Task Scheduler** (per partire anche senza aver fatto il login)
+
 1. Apri *Task Scheduler* → *Create Task*.
 2. *General*: nome `Carpool Hunter`, spunta **Run whether user is logged on or not**.
 3. *Triggers*: **At startup** (o *At log on*), con *Delay 1 minute*.
 4. *Actions* → New:
-   - Program: `powershell.exe`
-   - Arguments: `-NoProfile -ExecutionPolicy Bypass -File "C:\percorso\start.ps1" -NoInstall`
+   - Program: `wscript.exe`
+   - Arguments: `"C:\percorso\avvia-agente.vbs"`
    - Start in: `C:\percorso\`
 5. *Settings*: spunta *If the task fails, restart every 1 minute*.
 
@@ -57,17 +98,6 @@ Oppure, in PowerShell **come amministratore**:
 python scripts\install_autostart.py            # crea la task
 python scripts\install_autostart.py --remove   # la toglie
 ```
-
-**Alternativa senza privilegi di amministratore** (consigliata, funziona subito):
-copia `avvia-agente.bat` nella cartella di avvio dell'utente.
-
-```powershell
-$startup = [Environment]::GetFolderPath("Startup")
-Copy-Item "avvia-agente.bat" $startup
-```
-
-Oppure crea un collegamento a `start.bat` dentro `shell:startup` (Win+R →
-`shell:startup`).
 
 ## 2. Tunnel Cloudflare (URL HTTPS stabile, gratis)
 

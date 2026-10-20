@@ -237,12 +237,30 @@ def main() -> int:
         print("\nChiudo il tunnel.")
     finally:
         if process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
+            _terminate_tree(process)
     return 0
+
+
+def _terminate_tree(process: subprocess.Popen) -> None:
+    """Chiude il tunnel e tutti i suoi processi figli.
+
+    Su Windows `terminate()` uccide solo il processo diretto: cloudflared
+    puo' aver avviato un helper che resta vivo. `taskkill /T` chiude
+    l'intero albero.
+    """
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            capture_output=True,
+            text=True,
+        )
+    else:
+        process.terminate()
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        if os.name != "nt":
+            process.kill()
 
 
 if __name__ == "__main__":

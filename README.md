@@ -24,6 +24,18 @@ dal telefono. Il tunnel "quick" assegna un URL nuovo a ogni avvio: per questo
 `CARPOOL_API_BASE` e rilancia il deploy di GitHub Pages. Per farlo serve un
 token GitHub con scope `repo` in `GITHUB_TOKEN` (`setx GITHUB_TOKEN "ghp_..."`).
 
+**Per farlo girare in background senza finestre di terminale:**
+
+```powershell
+wscript.exe avvia-agente.vbs     # avvia (agente + tunnel) senza finestre
+python scripts\agent_status.py   # stato e ultimi log
+python scripts\stop_agent.py     # ferma tutto
+```
+
+Il collegamento nella cartella di avvio e' gia' installato: al login l'agente
+parte da solo, in silenzio. Il supervisore rilancia un processo che muore e
+scrive i log in `data/logs/`.
+
 Poi:
 
 1. **Crea il tuo account**: al primo avvio compare il form di registrazione.
