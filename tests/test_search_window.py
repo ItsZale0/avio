@@ -110,6 +110,43 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(build_candidates([offer], ctx), [])
 
 
+class QueryStartTests(unittest.TestCase):
+    """L'API Trenitalia dà solo ~10 soluzioni: bisogna interrogarla due volte."""
+
+    def test_two_days_window_asks_also_the_arrival_day(self):
+        from app.adapters.trenitalia import query_starts
+
+        # Arrivo mercoledi 22 alle 11, partenza minima martedi 21 alle 6.
+        ctx = make_ctx(
+            datetime(2026, 10, 22, 11, 0, tzinfo=ROME),
+            depart_after=datetime(2026, 10, 21, 6, 0, tzinfo=ROME),
+        )
+        starts = query_starts(ctx)
+        self.assertEqual(len(starts), 2)
+        # La sera prima (treni notturni) e il giorno di arrivo.
+        self.assertEqual(starts[0], datetime(2026, 10, 21, 18, 0, tzinfo=ROME))
+        self.assertEqual(starts[1], datetime(2026, 10, 22, 0, 0, tzinfo=ROME))
+
+    def test_same_day_departure_asks_once(self):
+        from app.adapters.trenitalia import query_starts
+
+        ctx = make_ctx(
+            datetime(2026, 10, 22, 11, 0, tzinfo=ROME),
+            depart_after=datetime(2026, 10, 22, 6, 0, tzinfo=ROME),
+        )
+        starts = query_starts(ctx)
+        self.assertEqual(len(starts), 1)
+        self.assertEqual(starts[0], datetime(2026, 10, 22, 6, 0, tzinfo=ROME))
+
+    def test_without_departure_asks_the_arrival_day(self):
+        from app.adapters.trenitalia import query_starts
+
+        ctx = make_ctx(datetime(2026, 10, 22, 11, 0, tzinfo=ROME))
+        starts = query_starts(ctx)
+        self.assertEqual(len(starts), 1)
+        self.assertEqual(starts[0], datetime(2026, 10, 22, 0, 0, tzinfo=ROME))
+
+
 class RelaxQuestionTests(unittest.TestCase):
     """Le domande citano il prezzo reale quando il budget e' troppo basso."""
 

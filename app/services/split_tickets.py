@@ -16,12 +16,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import timedelta
 from typing import Any
 
 import httpx
 
 from ..adapters.base import Offer, SearchContext, tappa
-from ..adapters.trenitalia import HEADERS, SOLUTIONS_URL, _lookup_station
+from ..adapters.trenitalia import (
+    HEADERS,
+    SOLUTIONS_URL,
+    _lookup_station,
+    query_starts,
+)
 from ..timeutil import ROME, parse_dt
 
 log = logging.getLogger("carpool.split")
@@ -230,24 +236,31 @@ async def _split_one(
         # Il primo biglietto parte dall'inizio della finestra di ricerca,
         # non dall'ora del treno diretto: altrimenti si perdono i regionali
         # mattutini, che sono quelli economici (e' il trucco).
-        first = await _segment_price(
-            client, origin["id"], middle["id"], ctx.window_start
-        )
-        if not first:
+        # Si provano piu' partenze (sera prima e giorno di arrivo): l'API
+        # restituisce solo una decina di soluzioni per richiesta.
+        best: tuple[dict[str, Any], dict[str, Any], float] | None = None
+        for start in query_starts(ctx):
+            first = await _segment_price(client, origin["id"], middle["id"], start)
+            if not first:
+                continue
+            leg1 = first[0]
+
+            # Il secondo biglietto parte dopo l'arrivo del primo (cambio
+            # fattibile: almeno MIN_TRANSFER_MIN di attesa).
+            when2 = leg1["arrive_at"] + timedelta(minutes=MIN_TRANSFER_MIN)
+            second = await _segment_price(client, middle["id"], destination["id"], when2)
+            if not second:
+                continue
+            leg2 = second[0]
+
+            total = round(leg1["price"] + leg2["price"], 2)
+            if best is None or total < best[2]:
+                best = (leg1, leg2, total)
+
+        if best is None:
             continue
-        leg1 = first[0]
+        leg1, leg2, total = best
 
-        # Il secondo biglietto parte dopo l'arrivo del primo (cambio
-        # fattibile: almeno MIN_TRANSFER_MIN di attesa).
-        from datetime import timedelta
-
-        when2 = leg1["arrive_at"] + timedelta(minutes=MIN_TRANSFER_MIN)
-        second = await _segment_price(client, middle["id"], destination["id"], when2)
-        if not second:
-            continue
-        leg2 = second[0]
-
-        total = round(leg1["price"] + leg2["price"], 2)
         log.debug(
             "spezzatura %s: %.2f + %.2f = %.2f (diretto %.2f) arrivo %s",
             middle["name"], leg1["price"], leg2["price"], total, offer.price or 0,
@@ -260,6 +273,9 @@ async def _split_one(
             continue
         if leg2["arrive_at"] < ctx.arrival_day_start:
             log.debug("  scartata: arriva il giorno prima")
+            continue
+        if leg1["depart_at"] < ctx.window_start - timedelta(minutes=15):
+            log.debug("  scartata: parte prima della finestra")
             continue
 
         out.append(

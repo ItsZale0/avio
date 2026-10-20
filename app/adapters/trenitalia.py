@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timedelta
 
 import httpx
 
@@ -94,6 +95,25 @@ async def _resolve(client: httpx.AsyncClient, place: str, lat: float | None, lon
     return None, 0.0, False
 
 
+def query_starts(ctx: SearchContext) -> list[datetime]:
+    """Da quando interrogare l'API, per non perdere il giorno di arrivo.
+
+    L'API restituisce circa dieci soluzioni ordinate per orario di partenza:
+    se si interroga dal giorno prima, i treni del giorno di arrivo non
+    arrivano MAI nella lista (e vengono scartati come "arrivati il giorno
+    prima"). Per questo si interroga due volte: la sera prima (treni
+    notturni e lunghi) e il giorno di arrivo.
+    """
+    giorno = ctx.arrival_day_start
+    sera = giorno - timedelta(hours=6)
+    starts: list[datetime] = []
+    for candidate in (sera, giorno):
+        start = max(candidate, ctx.window_start)
+        if all(abs((start - other).total_seconds()) > 1800 for other in starts):
+            starts.append(start)
+    return starts or [ctx.window_start]
+
+
 async def _post_solutions(
     client: httpx.AsyncClient, body: dict, attempts: int = 3
 ) -> dict:
@@ -144,24 +164,55 @@ class TrenitaliaAdapter(Adapter):
                         f"Trenitalia: {ctx.to_place} non servita, ho cercato fino a {to_st['name']} (~{to_km:.0f} km)."
                     )
 
-                body = {
-                    "departureLocationId": from_st["id"],
-                    "arrivalLocationId": to_st["id"],
-                    "departureTime": ctx.window_start.astimezone(ROME).strftime("%Y-%m-%dT%H:%M:%S.000"),
-                    "adults": ctx.passengers,
-                    "children": 0,
-                    "criteria": {
-                        "frecceOnly": False,
-                        "regionalOnly": False,
-                        "intercityOnly": False,
-                        "noChanges": False,
-                        "order": "DEPARTURE_DATE",
-                        "offset": 0,
-                        "limit": 15,
-                    },
-                    "advancedSearchRequest": {"bestFare": False, "bikeFilter": False},
-                }
-                data = await _post_solutions(client, body)
+                # L'API dà solo una decina di soluzioni: si interroga due
+                # volte per coprire sia la sera prima che il giorno di arrivo.
+                payload: list[dict] = []
+                seen_ids: set[str] = set()
+                seen_times: set[tuple[str, str, float]] = set()
+                for start in query_starts(ctx):
+                    body = {
+                        "departureLocationId": from_st["id"],
+                        "arrivalLocationId": to_st["id"],
+                        "departureTime": start.astimezone(ROME).strftime("%Y-%m-%dT%H:%M:%S.000"),
+                        "adults": ctx.passengers,
+                        "children": 0,
+                        "criteria": {
+                            "frecceOnly": False,
+                            "regionalOnly": False,
+                            "intercityOnly": False,
+                            "noChanges": False,
+                            "order": "DEPARTURE_DATE",
+                            "offset": 0,
+                            "limit": 15,
+                        },
+                        "advancedSearchRequest": {"bestFare": False, "bikeFilter": False},
+                    }
+                    data = await _post_solutions(client, body)
+                    for entry in data.get("solutions") or []:
+                        solution = entry.get("solution") if isinstance(entry, dict) else None
+                        if not isinstance(solution, dict):
+                            continue
+                        key = str(solution.get("id") or "")
+                        if key and key in seen_ids:
+                            continue
+                        try:
+                            amount = float((solution.get("price") or {}).get("amount"))
+                        except (TypeError, ValueError):
+                            amount = 0.0
+                        # Due interrogazioni possono ridare la stessa corsa
+                        # con un codice diverso: si tiene una volta sola.
+                        tempo = (
+                            str(solution.get("departureTime") or ""),
+                            str(solution.get("arrivalTime") or ""),
+                            amount,
+                        )
+                        if tempo in seen_times:
+                            continue
+                        seen_times.add(tempo)
+                        if key:
+                            seen_ids.add(key)
+                        payload.append(entry)
+                data = {"solutions": payload}
         except Exception as exc:
             return AdapterResult(hints=[f"Trenitalia non raggiungibile: {type(exc).__name__}"])
         offers = self._parse(

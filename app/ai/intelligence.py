@@ -385,10 +385,35 @@ def _relax_questions(
         if o.arrive_at
         and (ctx.arrival_day_start - timedelta(days=1)) <= o.arrive_at < ctx.arrival_day_start
     ]
-    questions: list[dict] = []
+    # Ordine di priorita' delle domande (al massimo due vanno avanti):
+    # 1. gli abbonamenti: se la tratta e' coperta, il budget non e' un problema;
+    # 2. il budget: il prezzo reale della soluzione piu' economica;
+    # 3. la sera prima e il giorno dopo.
+    ordinate: list[dict] = []
+    ordinate.extend(_pass_question(prefs))
+    if over_budget and ctx.max_price:
+        cheapest = min(over_budget, key=lambda o: o.price or 0)
+        suggested = round((cheapest.price or 0) * 1.1, 2)
+        ordinate.append(
+            {
+                "key": "budget_flex",
+                "text": (
+                    f"La soluzione più economica costa {cheapest.price:.2f} EUR, sopra il budget "
+                    f"di {ctx.max_price:.2f} EUR. Vuoi alzare il budget?"
+                ),
+                "options": [
+                    {"id": "keep", "label": "No, resto sul budget", "prefs": {}},
+                    {
+                        "id": "raise",
+                        "label": f"Alzo a {suggested:.0f} EUR",
+                        "prefs": {"budget_raise": suggested},
+                    },
+                ],
+            }
+        )
     if sera_prima and not prefs.get("arrivo_giorno_prima"):
         presto = max(sera_prima, key=lambda o: o.arrive_at or ctx.arrival_day_start)
-        questions.append(
+        ordinate.append(
             {
                 "key": "arrivo_giorno_prima",
                 "text": (
@@ -412,7 +437,7 @@ def _relax_questions(
         )
     if late and not prefs.get("flexible_days"):
         soonest = min(late, key=lambda o: o.arrive_at or latest)
-        questions.append(
+        ordinate.append(
             {
                 "key": "flexible_days",
                 "text": (
@@ -426,29 +451,7 @@ def _relax_questions(
                 ],
             }
         )
-    if over_budget and ctx.max_price:
-        cheapest = min(over_budget, key=lambda o: o.price or 0)
-        suggested = round((cheapest.price or 0) * 1.1, 2)
-        questions.append(
-            {
-                "key": "budget_flex",
-                "text": (
-                    f"La soluzione più economica costa {cheapest.price:.2f} EUR, sopra il budget "
-                    f"di {ctx.max_price:.2f} EUR. Vuoi alzare il budget?"
-                ),
-                "options": [
-                    {"id": "keep", "label": "No, resto sul budget", "prefs": {}},
-                    {
-                        "id": "raise",
-                        "label": f"Alzo a {suggested:.0f} EUR",
-                        "prefs": {"budget_raise": suggested},
-                    },
-                ],
-            }
-        )
-    # La domanda sugli abbonamenti viene dopo: le altre sbloccano subito un
-    # piano, questa arriva quando c'e' spazio.
-    return (questions + _pass_question(prefs))[:2]
+    return ordinate[:2]
 
 
 def _priority_question(candidates: list[Candidate]) -> list[dict]:
@@ -714,11 +717,10 @@ async def analyze(
         )
         for candidate in alternatives[:3]
     ]
-    # Le domande dell'AI hanno la precedenza; se non ce ne sono, si propone
-    # la domanda sugli abbonamenti (cambia il piano) e poi quella sul
-    # trade-off tempo/prezzo (il tipico gesto del travel agent).
+    # Le domande dell'AI hanno la precedenza, ma la domanda sugli
+    # abbonamenti resta: se la tratta e' coperta cambia il piano.
     if ai_questions:
-        result.questions = ai_questions
+        result.questions = (ai_questions + _pass_question(prefs))[:2]
     else:
         result.questions = (_pass_question(prefs) + _priority_question(candidates))[:2]
     parziale = " (prezzo parziale)" if plan.get("partial") else ""

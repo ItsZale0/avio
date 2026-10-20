@@ -308,7 +308,10 @@ class IntelligenceFallbackTests(unittest.IsolatedAsyncioTestCase):
         result = await intelligence.analyze(watch, [late], ctx)
         self.assertIsNone(result.plan)
         self.assertTrue(any(q["key"] == "flexible_days" for q in result.questions))
-        self.assertTrue(result.questions[0]["options"][0].get("prefs") == {"flexible_days": 0})
+        # La domanda sugli abbonamenti ha la precedenza (se la tratta e'
+        # coperta il budget non e' un problema).
+        flessione = next(q for q in result.questions if q["key"] == "flexible_days")
+        self.assertTrue(flessione["options"][0].get("prefs") == {"flexible_days": 0})
 
     async def test_parse_without_key_is_graceful(self):
         result = await intelligence.parse_trip_text("Milano -> Roma domani")

@@ -196,6 +196,22 @@ biglietti, risparmi X €") e la card mostra i due ticket con i rispettivi
 orari. Il trucco esiste anche fra operatori diversi: il planner mette già in
 concorrenza le tratte di fonti diverse (Trenitalia + bus, auto + treno).
 
+### La finestra di ricerca: due interrogazioni, non una
+
+L'API Trenitalia restituisce **una decina di soluzioni ordinate per orario di
+partenza**, non tutto quello che c'è. Se si interroga dal giorno prima
+("parto dopo le 6 di martedì, devo essere a Trento mercolì alle 11"), la
+risposta contiene solo i treni di martedì: quelli di mercoledì non arrivano
+**mai** in lista e vengono scartati come "arrivati il giorno prima".
+
+Per questo `query_starts()` interroga l'API due volte:
+
+1. la sera del giorno prima (6 ore prima di mezzanotte): treni notturni e
+   viaggi lunghi;
+2. il giorno di arrivo: i treni della giornata.
+
+Le soluzioni vengono unite e deduplicate per codice e per orario.
+
 ### Il tempo, i cambi e le priorità
 
 Il punteggio (`app/scoring.py`) pesa sei fattori, non solo il prezzo:
