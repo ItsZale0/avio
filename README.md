@@ -127,6 +127,36 @@ L'agente non si limita al prezzo più basso in assoluto: cerca anche i modi
   (“arrivo la sera prima va bene?”, “alzo il budget a 13 €?”, “meglio il
   giorno dopo?”) e poi ricalcola.
 
+### I punti di ritrovo e il tempo a piedi
+
+Un viaggio non finisce alla stazione: finisce alla **porta**. Ogni ricerca puo' avere
+due punti esatti ("Stazione di Thiene" -> "Piazza Duomo, Trento") oltre alle citta'.
+L'app li geolocalizza e calcola il **tempo porta a porta**: cammino + mezzo + cammino.
+
+```
+Treno regionale    4h 08m di viaggio  +  74 min a piedi  =  5h 22m porta a porta
+Passaggio in auto  59 min porta a porta,  ~7 EUR (stima) =  59 min
+```
+
+Senza punti esatti l'app **te lo chiede** (domanda "Dove vuoi essere preso
+esattamente?") e la risposta libera vale: scrivi "Piazza Vittoria" e il
+punto viene salvato e geolocalizzato.
+
+### BlaBlaCar, senza API
+
+L'API pubblica di BlaBlaCar e' stata dismessa e il sito e' protetto: qui non
+si inventano prezzi. Quello che fa l'app:
+
+- **stima dichiarata** del passaggio (~0,10 EUR/km a posto, minimo 2 EUR) con
+  la distanza stradale stimata: la carta porta sempre il badge *Stima* e
+  l'AI lo dice ("prezzo stimato, non garantito");
+- **tempo di viaggio** realistico (70 km/h + 20 min per l'incontro) e
+  **porta a porta** calcolato dal tuo punto di ritrovo;
+- **link reale** con citta' e data: un tocco e vedi i viaggi veri.
+
+Il punto di ritrovo del passaggio lo sceglie l'autista: se ti allontani dal
+punto che hai indicato, i minuti a piedi crescono e vanno aggiunti a mano.
+
 ### Rispondi a parole
 
 Ogni domanda dell'agente ha i pulsanti **e** una **casella di testo libera**.
