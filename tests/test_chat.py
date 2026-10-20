@@ -105,5 +105,56 @@ class MergeTests(unittest.TestCase):
                 conn.execute("DELETE FROM watches WHERE id = 999")
 
 
+class ChatPersistenceTests(unittest.TestCase):
+    """La conversazione resta: e' salvata, non solo nella pagina."""
+
+    WATCH_ID = 998
+
+    def setUp(self):
+        from app import db
+
+        # La tabella della chat nasce con init_db: il database di sviluppo
+        # puo' essere piu' vecchio (l'agente la crea all'avvio).
+        db.init_db()
+        with db.db() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO watches(id, user_id, name, from_place, to_place, "
+                "arrive_by, max_price, radius_km, passengers, sources, notify, interval_min, "
+                "active, created_at, prefs) VALUES(998, 3, 'test chat', 'Thiene', 'Trento', "
+                "'2026-10-22T09:00:00', 10, 5, 1, '[]', '[]', 60, 1, '2026-10-20T10:00:00', '{}')"
+            )
+        self.addCleanup(self._cleanup)
+
+    def _cleanup(self):
+        from app import db
+
+        with db.db() as conn:
+            conn.execute("DELETE FROM watches WHERE id = 998")
+
+    def test_messages_are_saved_in_order(self):
+        from app import store
+
+        store.add_chat_message(998, "io", "Quanto costa?", user_id=3)
+        store.add_chat_message(
+            998, "agente", "9,99 EUR", ["budget 15.00 EUR"], user_id=3
+        )
+        messaggi = store.list_chat_messages(998)
+        self.assertEqual([m["role"] for m in messaggi], ["io", "agente"])
+        self.assertEqual(messaggi[1]["text"], "9,99 EUR")
+        self.assertEqual(messaggi[1]["changes"], ["budget 15.00 EUR"])
+
+    def test_the_history_can_be_cleared(self):
+        from app import store
+
+        store.add_chat_message(998, "io", "Ciao", user_id=3)
+        self.assertEqual(store.clear_chat_messages(998), 1)
+        self.assertEqual(store.list_chat_messages(998), [])
+
+    def test_the_labels_are_readable(self):
+        etichette = chat._etichette({"max_price": 15.0, "depart_after": "2026-10-22T09:00"})
+        self.assertEqual(etichette[0], "budget 15.00 EUR")
+        self.assertIn("partenza dopo 2026-10-22 09:00", etichette[1])
+
+
 if __name__ == "__main__":
     unittest.main()

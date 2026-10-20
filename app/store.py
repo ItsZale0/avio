@@ -396,6 +396,56 @@ def clear_plans(watch_id: int) -> None:
         conn.execute("UPDATE plans SET is_current = 0 WHERE watch_id = ?", (watch_id,))
 
 
+def add_chat_message(
+    watch_id: int,
+    role: str,
+    text: str,
+    changes: list[str] | None = None,
+    user_id: int | None = None,
+) -> dict[str, Any]:
+    """Salva un messaggio della conversazione con l'agente."""
+    with db.db() as conn:
+        cur = conn.execute(
+            "INSERT INTO chat_messages(watch_id, user_id, role, text, changes, created_at) "
+            "VALUES(?,?,?,?,?,?)",
+            (
+                watch_id,
+                user_id,
+                role,
+                text,
+                json.dumps(changes or [], ensure_ascii=False),
+                now_utc().isoformat(),
+            ),
+        )
+        row = conn.execute(
+            "SELECT * FROM chat_messages WHERE id = ?", (cur.lastrowid,)
+        ).fetchone()
+    return _chat_to_dict(row)
+
+
+def list_chat_messages(watch_id: int, limit: int = 200) -> list[dict[str, Any]]:
+    """Gli ultimi messaggi della ricerca, dal piu' vecchio al piu' recente."""
+    with db.db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM (SELECT * FROM chat_messages WHERE watch_id = ? "
+            "ORDER BY id DESC LIMIT ?) ORDER BY id ASC",
+            (watch_id, limit),
+        ).fetchall()
+    return [_chat_to_dict(row) for row in rows]
+
+
+def clear_chat_messages(watch_id: int) -> int:
+    with db.db() as conn:
+        cur = conn.execute("DELETE FROM chat_messages WHERE watch_id = ?", (watch_id,))
+    return int(cur.rowcount or 0)
+
+
+def _chat_to_dict(row) -> dict[str, Any]:
+    item = db.row_to_dict(row) or {}
+    item["changes"] = db.load_json(item.get("changes"), [])
+    return item
+
+
 def update_ai_fields(
     watch_id: int,
     *,

@@ -606,6 +606,7 @@ function bindEvents() {
   });
 
   $("#btnRunNow")?.addEventListener("click", runNow);
+  $("#chatFab")?.addEventListener("click", apriChat);
   $("#btnToggleWatch")?.addEventListener("click", toggleWatch);
   $("#btnEditWatch")?.addEventListener("click", () => openWatchModal(state.watch));
   $("#btnDeleteWatch")?.addEventListener("click", deleteWatch);
@@ -2364,9 +2365,51 @@ async function testTelegram() {
 /* ------------------------------------------------------------------ */
 /* Chiedi all'agente                                                  */
 /* ------------------------------------------------------------------ */
+const CHAT_CARICATA = new Set();
+
+// Lo storico arriva dal server: la conversazione resta anche dopo il ricarico.
+async function loadChatHistory(watchId) {
+  try {
+    const dati = await api(`/api/watches/${watchId}/chat`);
+    CHAT[watchId] = (dati.messages || []).map((m) => ({
+      ruolo: m.role === "io" ? "io" : "agente",
+      testo: m.text || "",
+      cambiamenti: m.changes || [],
+    }));
+  } catch (error) {
+    CHAT[watchId] = CHAT[watchId] || [];
+  }
+  CHAT_CARICATA.add(Number(watchId));
+  if (
+    state.watch &&
+    Number(state.watch.id) === Number(watchId) &&
+    state.tab === "ask"
+  ) {
+    renderTab();
+  }
+}
+
+// Il pulsante flottante: la chat e' a portata di mano da qualsiasi scheda.
+function apriChat() {
+  if (!state.watch) {
+    toast("Scegli prima una ricerca: poi potrai chiedermi quello che vuoi.");
+    return;
+  }
+  state.tab = "ask";
+  $$(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === "ask"));
+  renderTab();
+  $("#tabs")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  setTimeout(() => $("#chatText")?.focus(), 150);
+}
+
 function renderChat(panel) {
   const watch = state.watch;
   if (!watch) return;
+  if (!CHAT_CARICATA.has(Number(watch.id))) {
+    panel.innerHTML = `<div class="loading">Carico la conversazione…</div>`;
+    loadChatHistory(watch.id);
+    return;
+  }
   const messaggi = CHAT[watch.id] || [];
   const esempi = [
     "Quanto costa il viaggio piu' economico?",
@@ -2378,7 +2421,14 @@ function renderChat(panel) {
   panel.innerHTML = `
     <div class="chat">
       <div class="chat-head">
-        <strong>💬 Chiedi all'agente</strong>
+        <div class="chat-head-row">
+          <strong>💬 Chiedi all'agente</strong>
+          ${
+            messaggi.length
+              ? `<button class="btn ghost tiny" type="button" id="chatPulisci">Azzera</button>`
+              : ""
+          }
+        </div>
         <small class="field-hint">
           Fai una domanda sui viaggi trovati o cambia la ricerca a parole
           (budget, orario, mezzo, abbonamento, punto di ritrovo). Le risposte
@@ -2437,6 +2487,15 @@ function renderChat(panel) {
   panel.querySelectorAll(".chat-esempio").forEach((bottone) => {
     bottone.addEventListener("click", () => chiediAllAgente(bottone.dataset.esempio));
   });
+  $("#chatPulisci")?.addEventListener("click", async () => {
+    try {
+      await api(`/api/watches/${watch.id}/chat`, { method: "DELETE" });
+    } catch (error) {
+      /* se lo storico non si azzera, si riprova al prossimo giro */
+    }
+    CHAT[watch.id] = [];
+    renderChat($("#tabPanel"));
+  });
   const scatola = $("#chatMessaggi");
   if (scatola) scatola.scrollTop = scatola.scrollHeight;
 }
@@ -2456,14 +2515,7 @@ async function chiediAllAgente(testo) {
       method: "POST",
       body: JSON.stringify({ text: testo }),
     });
-    const cambiamenti = Object.entries(risultato.changes || {}).map(([chiave, valore]) => {
-      if (chiave === "max_price") return `budget ${Number(valore).toFixed(2)} EUR`;
-      if (chiave === "from_point") return `partenza da ${valore || "centro citta'"}`;
-      if (chiave === "to_point") return `arrivo a ${valore || "centro citta'"}`;
-      if (chiave === "depart_after") return `partenza dopo ${valore || "-"}`;
-      if (chiave === "arrive_by") return `arrivo entro ${valore || "-"}`;
-      return `${chiave}: ${valore}`;
-    });
+    const cambiamenti = risultato.changes_labels || [];
     lista.push({
       ruolo: "agente",
       testo: risultato.reply || "Non ho capito la richiesta.",

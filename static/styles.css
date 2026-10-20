@@ -828,3 +828,20 @@ select { cursor: pointer; }
 .chat-esempio { cursor: pointer; font-size: 12.5px; }
 .chat-input { display: flex; gap: 8px; }
 .chat-input input { flex: 1; }
+.chat-head-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+
+/* Il pulsante flottante: la chat si apre da qualsiasi scheda. */
+.chat-fab {
+  position: fixed; right: 18px; bottom: 18px; z-index: 60;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 11px 16px; border-radius: 999px; cursor: pointer;
+  font: inherit; font-size: 14px; font-weight: 600;
+  color: #06251c; background: var(--accent, #6ee7b7);
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.chat-fab:hover { filter: brightness(1.06); }
+.chat-fab:active { transform: translateY(1px); }
+@media (max-width: 600px) {
+  .chat-fab { right: 12px; bottom: 12px; padding: 10px 14px; }
+}

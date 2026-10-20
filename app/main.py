@@ -799,6 +799,26 @@ async def ai_parse(payload: ParseRequest):
     return result
 
 
+@app.get("/api/watches/{watch_id}/chat")
+async def chat_history(watch_id: int, request: Request):
+    """La conversazione salvata con l'agente per questa ricerca."""
+    user = deps.require_user(request)
+    uid = int(user["id"])
+    if not store.get_watch(watch_id, user_id=uid):
+        raise HTTPException(status_code=404, detail="Ricerca non trovata")
+    return {"messages": store.list_chat_messages(watch_id)}
+
+
+@app.delete("/api/watches/{watch_id}/chat")
+async def chat_clear(watch_id: int, request: Request):
+    """Azzera la conversazione (i messaggi della ricerca, non la ricerca)."""
+    user = deps.require_user(request)
+    uid = int(user["id"])
+    if not store.get_watch(watch_id, user_id=uid):
+        raise HTTPException(status_code=404, detail="Ricerca non trovata")
+    return {"ok": True, "removed": store.clear_chat_messages(watch_id)}
+
+
 @app.post("/api/watches/{watch_id}/ask")
 async def ask_agent(watch_id: int, payload: AskIn, request: Request):
     """Domanda o richiesta libera all'agente, con i dati reali della ricerca.

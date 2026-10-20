@@ -19,7 +19,7 @@ from typing import Any
 
 from ..services import passes as passes_service
 from ..services import questions as questions_service
-from ..store import current_plans, get_watch
+from ..store import add_chat_message, current_plans, get_watch, list_chat_messages
 from ..timeutil import ROME, now_utc
 from .groq import ai_enabled, client_from_settings, log_call
 
@@ -49,6 +49,9 @@ SYSTEM = """Sei l'agente di viaggio di un'app italiana. Rispondi in italiano, br
 
 Dati che hai davanti (SONO REALI, non inventare altri):
 {contesto}
+
+Conversazione finora (serve a capire "quello", "e per domani?"):
+{storico}
 
 Cosa ti chiede l'utente:
 "{richiesta}"
@@ -231,6 +234,38 @@ def _risposta_senza_ai(watch: dict[str, Any], testo: str) -> dict[str, Any]:
     return {"reply": reply, "prefs": {}, "rerun": False}
 
 
+def _etichette(cambi: dict[str, Any]) -> list[str]:
+    """Le modifiche in parole, come le legge l'utente nella chat."""
+    etichette: list[str] = []
+    for chiave, valore in (cambi or {}).items():
+        if chiave == "max_price":
+            try:
+                etichette.append(f"budget {float(valore):.2f} EUR")
+            except (TypeError, ValueError):
+                etichette.append(f"budget {valore}")
+        elif chiave == "from_point":
+            etichette.append(f"partenza da {valore or 'centro citta'}")
+        elif chiave == "to_point":
+            etichette.append(f"arrivo a {valore or 'centro citta'}")
+        elif chiave == "depart_after":
+            etichette.append(f"partenza dopo {_fmt(valore)}")
+        elif chiave == "arrive_by":
+            etichette.append(f"arrivo entro {_fmt(valore)}")
+        elif chiave == "passes":
+            etichette.append("abbonamenti aggiornati")
+        else:
+            etichette.append(f"{chiave}: {valore}")
+    return etichette
+
+
+def _storico(testo: list[dict[str, Any]]) -> str:
+    righe: list[str] = []
+    for messaggio in testo:
+        chi = "Utente" if messaggio.get("role") == "io" else "Agente"
+        righe.append(f"{chi}: {str(messaggio.get('text') or '')[:300]}")
+    return "\n".join(righe) or "(nessun messaggio precedente)"
+
+
 async def answer(
     watch_id: int, testo: str, *, user_id: int | None = None
 ) -> dict[str, Any]:
@@ -242,6 +277,11 @@ async def answer(
     if not testo:
         return {"ok": False, "error": "Scrivi la domanda"}
 
+    # La conversazione resta: cosi' "e per domani?" ha un senso anche dopo
+    # un ricarico della pagina.
+    precedenti = list_chat_messages(watch_id, limit=8)
+    add_chat_message(watch_id, "io", testo, user_id=user_id)
+
     client = client_from_settings()
     if not (ai_enabled() and client.available):
         risultato = _risposta_senza_ai(watch, testo)
@@ -250,6 +290,7 @@ async def answer(
         contesto = _contesto(watch)
         prompt = SYSTEM.format(
             contesto=json.dumps(contesto, ensure_ascii=False, indent=1)[:6000],
+            storico=_storico(precedenti),
             richiesta=testo,
             chiavi=", ".join(CHIAVI_PATCH),
             passes=", ".join(sorted(passes_service.PASS_TYPES)[:40]),
@@ -282,11 +323,16 @@ async def answer(
         except Exception as exc:  # noqa: BLE001
             log.warning("patch non applicata: %s", exc)
 
+    reply = risultato.get("reply") or ""
+    etichette = _etichette(applicato)
+    add_chat_message(watch_id, "agente", reply, etichette, user_id=user_id)
+
     return {
         "ok": True,
-        "reply": risultato.get("reply") or "",
+        "reply": reply,
         "prefs": patch,
         "changes": applicato,
+        "changes_labels": etichette,
         "rerun": bool(risultato.get("rerun") or applicato),
     }
 

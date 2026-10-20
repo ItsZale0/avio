@@ -265,6 +265,19 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
 
 
 
+-- La conversazione con l'agente ("Chiedi"): resta anche dopo il ricarico.
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    watch_id   INTEGER NOT NULL REFERENCES watches(id) ON DELETE CASCADE,
+    user_id    INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    role       TEXT NOT NULL,
+    text       TEXT NOT NULL,
+    changes    TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_watch ON chat_messages(watch_id, id);
+
 CREATE TABLE IF NOT EXISTS ai_log (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     watch_id   INTEGER,
