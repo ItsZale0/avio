@@ -334,7 +334,13 @@ def start_ngrok(port: int) -> tuple[subprocess.Popen, str | None]:
     token = ngrok_token()
     if not token:
         raise RuntimeError("manca NGROK_AUTHTOKEN")
-    command = [binary, "http", str(port), "--log", "stdout", "--log-format", "logfmt"]
+    command = [
+        binary, "http", str(port),
+        "--log", "stdout", "--log-format", "logfmt",
+        # ngrok v3.4+ blocca le richieste con Host sconosciuto: senza questo
+        # il browser si vede la pagina di avviso invece dell'app.
+        "--host-header", "rewrite",
+    ]
     domain = ngrok_domain()
     if domain:
         # Dominio riservato: l'indirizzo pubblico non cambia mai.
