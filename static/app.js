@@ -694,6 +694,18 @@ function renderPlan() {
        </div>`
     : "";
 
+  // Se il piano supera il budget, offri di alzarlo con un clic.
+  const overBudget = plan.total_price != null && state.watch?.max_price
+    && plan.total_price > state.watch.max_price;
+  const raiseBtn = overBudget
+    ? `<div class="plan-raise">
+         <span>Il budget di ${euro(state.watch.max_price)} e' troppo basso per questa soluzione.</span>
+         <button type="button" class="btn ghost" data-raise-budget="${Math.ceil(plan.total_price)}">
+           Alza il budget a ${euro(Math.ceil(plan.total_price))}
+         </button>
+       </div>`
+    : "";
+
   box.innerHTML = `
     <div class="plan-head">
       <div>
@@ -717,7 +729,28 @@ function renderPlan() {
         : `<span>🔁 ${plan.steps.length} tratte</span>`}
     </div>
     ${watchouts ? `<div class="plan-watchouts">${watchouts}</div>` : ""}
+    ${raiseBtn}
     ${alts}`;
+
+  const raiseButton = box.querySelector("[data-raise-budget]");
+  if (raiseButton) {
+    raiseButton.addEventListener("click", () => raiseBudget(Number(raiseButton.dataset.raiseBudget)));
+  }
+}
+
+async function raiseBudget(amount) {
+  const watch = state.watch;
+  if (!watch) return;
+  try {
+    await api(`/api/watches/${watch.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ max_price: amount }),
+    });
+    toast(`Budget portato a ${euro(amount)}: cerco di nuovo`);
+    await loadDetail(watch.id);
+  } catch (error) {
+    toast(error.message, "error");
+  }
 }
 
 function renderQuestions() {

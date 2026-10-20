@@ -599,6 +599,14 @@ select { cursor: pointer; }
 .plan-step .ps-price { font-weight: 650; white-space: nowrap; }
 .plan-meta { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 11px; font-size: 12px; color: var(--muted); }
 .plan-watchouts { margin-top: 10px; font-size: 12.5px; color: var(--warn); display: flex; flex-direction: column; gap: 4px; }
+.plan-raise {
+  margin-top: 12px; padding: 10px 12px;
+  border: 1px solid rgba(251, 191, 36, .35); border-radius: 10px;
+  background: rgba(251, 191, 36, .07);
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; font-size: 12.5px; color: var(--warn);
+}
+.plan-raise .btn { white-space: nowrap; }
 .plan-alts { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 10px; }
 .plan-alts h4 { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
 .plan-alt { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; padding: 4px 0; color: var(--muted); }
