@@ -64,7 +64,8 @@ def _supervisor_pids() -> list[int]:
             "-NoProfile",
             "-Command",
             "Get-CimInstance Win32_Process | "
-            f"Where-Object {{ $_.CommandLine -like '*{marker}*' }} | "
+            f"Where-Object {{ $_.Name -like '*python*' -and "
+            f"$_.CommandLine -like '*{marker}*' }} | "
             "ForEach-Object { $_.ProcessId }",
         ],
         capture_output=True,
