@@ -127,6 +127,14 @@ L'agente non si limita al prezzo più basso in assoluto: cerca anche i modi
   (“arrivo la sera prima va bene?”, “alzo il budget a 13 €?”, “meglio il
   giorno dopo?”) e poi ricalcola.
 
+### Rispondi a parole
+
+Ogni domanda dell'agente ha i pulsanti **e** una **casella di testo libera**.
+Ci scrivi come parli e lui capisce: “alzo il budget a 15” cambia il tetto,
+“ho il carnet da 10 biglietti regionali” aggiunge l'abbonamento, “arrivo la
+sera prima va bene” sblocca la giornata precedente. Funziona anche da
+Telegram: un messaggio qualsiasi diventa la risposta alla domanda in attesa.
+
 - **Gli abbonamenti contano**: l'agente chiede quali abbonamenti hai
   (Trenitalia regionale, annuale, carnet da 10 biglietti, abbonamento urbano)
   e **se la tratta e' coperta il biglietto non lo paghi**. Il piano mostra

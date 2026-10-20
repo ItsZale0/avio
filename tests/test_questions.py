@@ -133,5 +133,54 @@ class QuestionLifecycleTests(unittest.TestCase):
         self.assertTrue(merged["prefs"]["prefer_fast"])
 
 
+class FreeAnswerTests(unittest.TestCase):
+    """Le risposte scritte a parole vengono capite."""
+
+    def _interpret(self, key: str, text: str) -> dict:
+        import asyncio
+
+        from app.ai import intelligence
+
+        return asyncio.run(
+            intelligence.interpret_answer(
+                {"key": key, "text": "domanda", "options": []}, text
+            )
+        )
+
+    def test_abbonamento_annuale(self):
+        result = self._interpret("abbonamenti", "ho l'abbonamento annuale Trenitalia")
+        self.assertEqual(result["prefs"]["add_pass"], "trenitalia_tutti")
+
+    def test_carnet_regionale(self):
+        result = self._interpret(
+            "abbonamenti", "ho il carnet da 10 biglietti regionali"
+        )
+        self.assertEqual(result["prefs"]["add_pass"], "carnet_regionale")
+
+    def test_nessun_abbonamento(self):
+        result = self._interpret("abbonamenti", "no, non ho abbonamenti")
+        self.assertTrue(result["prefs"]["clear_passes"])
+
+    def test_nuovo_budget(self):
+        result = self._interpret("budget_flex", "alzo il budget a 15 euro")
+        self.assertEqual(result["prefs"]["budget_raise"], 15.0)
+
+    def test_budget_da_numero_solo(self):
+        result = self._interpret("budget_flex", "18")
+        self.assertEqual(result["prefs"]["budget_raise"], 18.0)
+
+    def test_giorno_prima_si(self):
+        result = self._interpret("arrivo_giorno_prima", "va bene, arrivo la sera prima")
+        self.assertTrue(result["prefs"]["arrivo_giorno_prima"])
+
+    def test_giorno_prima_no(self):
+        result = self._interpret("arrivo_giorno_prima", "no, voglio arrivare quel giorno")
+        self.assertFalse(result["prefs"]["arrivo_giorno_prima"])
+
+    def test_priorita_veloce(self):
+        result = self._interpret("priorita", "preferisco arrivare prima")
+        self.assertTrue(result["prefs"]["prefer_fast"])
+
+
 if __name__ == "__main__":
     unittest.main()
