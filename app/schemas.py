@@ -165,6 +165,8 @@ class SettingsIn(BaseModel):
     ngrok_domain: str | None = None
     # Lista JSON degli abbonamenti in corso (globali per l'utente).
     passes: str | None = None
+    # Agevolazione X-GO: "giovane" / "senior" / "".
+    xgo: str | None = None
 
 
 class PushKeys(BaseModel):

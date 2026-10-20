@@ -245,6 +245,30 @@ resta sempre quanto costerebbe senza abbonamento, con la percentuale
 coperta. Il "trenitalia_regionale" generico deduce la regione dal punto di
 partenza (quello di casa).
 
+### Gli sconti X-GO: le condizioni vere
+
+"X-GO" **non è un operatore**: è il programma fedeltà di Trenitalia (2 punti
+per euro, cashback). Sui treni regionali dà due sconti del 20%: **Young**
+(under 30) e **Senior** (60 e più).
+
+Le condizioni (fonte: trenitalia.com/it/offerte/young-regionale.html) sono
+restrittive, e `app/services/discounts.py` le applica una per una:
+
+1. solo treni **regionali** (Regionale, Regionale Veloce, Regionale Express):
+   niente Frecce, Intercity, EuroCity, **Frecce Regionale** (le ibride
+   premium) e niente treni degli operatori privati (Italo/NTV);
+2. **non vale** in Campania, Abruzzo, Sardegna, Puglia e nelle province
+   autonome di Trento e Bolzano;
+3. vale **solo sui treni selezionati** dalla promozione (in base a tratta,
+   giorno e orario): non tutti i regionali ne sono coperti;
+4. l'acquisto va fatto **entro le 23:59 del giorno prima**;
+5. la promozione **vale fino al 30 novembre 2026**.
+
+Il treno escluso dalla promozione resta comunque in lista, con la ragione
+("lo sconto X-GO non vale in Bolzano"): si sa perché non si applica, senza
+nasconderlo. Il prezzo scontato è marcato come **stima** e mostra il
+listino accanto.
+
 ### Il tempo, i cambi e le priorità
 
 Il punteggio (`app/scoring.py`) pesa sei fattori, non solo il prezzo:
