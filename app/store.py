@@ -17,9 +17,15 @@ WATCH_FIELDS = [
     "from_place",
     "from_lat",
     "from_lon",
+    "from_point",
+    "from_point_lat",
+    "from_point_lon",
     "to_place",
     "to_lat",
     "to_lon",
+    "to_point",
+    "to_point_lat",
+    "to_point_lon",
     "depart_after",
     "arrive_by",
     "max_price",
@@ -331,8 +337,9 @@ def save_plans(
                 INSERT INTO plans(watch_id, run_id, kind, title, total_price, total_duration_min,
                     steps, explanation, watchouts, confidence, fingerprint, created_at, is_current,
                     profile, changes, effective_cost, access_cost, depart_at, arrive_at,
-                    transfer_km, partial, ai, net_total_price, covered, passes, confronti)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    transfer_km, partial, ai, net_total_price, covered, passes, confronti,
+                    door_to_door_min, walk_out_min, walk_in_min, walk_out_km, walk_in_km)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     watch_id,
@@ -360,6 +367,11 @@ def save_plans(
                     1 if item.get("covered") else 0,
                     db.dump_json(item.get("passes") or []),
                     db.dump_json(item.get("confronti") or []),
+                    item.get("door_to_door_min"),
+                    item.get("walk_out_min"),
+                    item.get("walk_in_min"),
+                    item.get("walk_out_km"),
+                    item.get("walk_in_km"),
                 ),
             )
 

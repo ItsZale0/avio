@@ -95,9 +95,15 @@ CREATE TABLE IF NOT EXISTS watches (
     from_place    TEXT NOT NULL,
     from_lat      REAL,
     from_lon      REAL,
+    from_point      TEXT,
+    from_point_lat  REAL,
+    from_point_lon  REAL,
     to_place      TEXT NOT NULL,
     to_lat        REAL,
     to_lon        REAL,
+    to_point        TEXT,
+    to_point_lat    REAL,
+    to_point_lon    REAL,
     depart_after  TEXT,
     arrive_by     TEXT NOT NULL,
     max_price     REAL,
@@ -234,7 +240,12 @@ CREATE TABLE IF NOT EXISTS plans (
     net_total_price   REAL,
     covered           INTEGER NOT NULL DEFAULT 0,
     passes            TEXT NOT NULL DEFAULT '[]',
-    confronti         TEXT NOT NULL DEFAULT '[]'
+    confronti         TEXT NOT NULL DEFAULT '[]',
+    door_to_door_min  INTEGER,
+    walk_out_min      INTEGER,
+    walk_in_min       INTEGER,
+    walk_out_km       REAL,
+    walk_in_km        REAL
 );
 
 CREATE INDEX IF NOT EXISTS idx_plans_watch ON plans(watch_id, is_current);
@@ -270,6 +281,14 @@ CREATE TABLE IF NOT EXISTS ai_log (
 
 # Colonne aggiunte nel tempo: create con ALTER se mancano (migrazione idempotente).
 MIGRATIONS = [
+    # Punti di ritrovo esatti (quartiere, piazza, stazione): da l' parte
+    # l'app calcola il tempo a piedi e chiede il posto all'agente.
+    ("watches", "from_point", "TEXT"),
+    ("watches", "from_point_lat", "REAL"),
+    ("watches", "from_point_lon", "REAL"),
+    ("watches", "to_point", "TEXT"),
+    ("watches", "to_point_lat", "REAL"),
+    ("watches", "to_point_lon", "REAL"),
     ("runs", "notes", "TEXT NOT NULL DEFAULT '[]'"),
     ("runs", "ai_used", "INTEGER NOT NULL DEFAULT 0"),
     ("runs", "ai_tokens", "INTEGER NOT NULL DEFAULT 0"),
@@ -298,6 +317,12 @@ MIGRATIONS = [
     ("plans", "passes", "TEXT NOT NULL DEFAULT '[]'"),
     # Confronto fra tratte singole e biglietto diretto.
     ("plans", "confronti", "TEXT NOT NULL DEFAULT '[]'"),
+    # Il tempo reale: a piedi + viaggio + a piedi.
+    ("plans", "door_to_door_min", "INTEGER"),
+    ("plans", "walk_out_min", "INTEGER"),
+    ("plans", "walk_in_min", "INTEGER"),
+    ("plans", "walk_out_km", "REAL"),
+    ("plans", "walk_in_km", "REAL"),
 ]
 
 # Indici sulle colonne introdotte dalle migrazioni: si creano dopo, quando

@@ -13,8 +13,21 @@ from app.services.search import _filter_offers
 from app.store import links_for_watch
 
 
+def _reference() -> datetime:
+    """Momento di riferimento stabile: domani mattina alle 8 locali.
+
+    Se si usasse "adesso", la finestra attraverserebbe la mezzanotte e i
+    test fallirebbero a seconda dell'ora in cui girano.
+    """
+    from app.timeutil import ROME
+
+    local = (datetime.now(timezone.utc) + timedelta(days=1)).astimezone(ROME)
+    base = local.replace(hour=8, minute=0, second=0, microsecond=0)
+    return base.astimezone(timezone.utc)
+
+
 def make_context(**overrides) -> SearchContext:
-    now = datetime.now(timezone.utc)
+    now = _reference()
     data = dict(
         watch_id=1,
         from_place="Milano",

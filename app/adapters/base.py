@@ -34,6 +34,30 @@ class SearchContext:
     # Preferenze apprese (orari, comodita', priorita'): servono al ranking
     # e all'AI per ragionare come un travel agent.
     prefs: dict[str, Any] = field(default_factory=dict)
+    # Punto di ritrovo esatto (quartiere, piazza, stazione): da li' si calcola
+    # il tempo a piedi vero, non quello dal centro citta'.
+    from_point_lat: float | None = None
+    from_point_lon: float | None = None
+    to_point_lat: float | None = None
+    to_point_lon: float | None = None
+
+    @property
+    def origin_coords(self) -> tuple[float, float] | None:
+        """Da dove parte l'utente: il punto esatto se noto, altrimenti la citta'."""
+        if self.from_point_lat is not None and self.from_point_lon is not None:
+            return (self.from_point_lat, self.from_point_lon)
+        if self.from_lat is not None and self.from_lon is not None:
+            return (self.from_lat, self.from_lon)
+        return None
+
+    @property
+    def destination_coords(self) -> tuple[float, float] | None:
+        """Dove deve arrivare: il punto esatto se noto, altrimenti la citta'."""
+        if self.to_point_lat is not None and self.to_point_lon is not None:
+            return (self.to_point_lat, self.to_point_lon)
+        if self.to_lat is not None and self.to_lon is not None:
+            return (self.to_lat, self.to_lon)
+        return None
 
     @property
     def distance_km(self) -> float | None:
@@ -118,14 +142,18 @@ class Offer:
         return f"{self.source}:{self.external_id}:{dep}"
 
     def pickup_distance_km(self, ctx: SearchContext) -> float | None:
-        if None in (self.pickup_lat, self.pickup_lon, ctx.from_lat, ctx.from_lon):
+        """Distanza dal punto di ritrovo dell'utente (o dalla citta')."""
+        origin = ctx.origin_coords
+        if origin is None or self.pickup_lat is None or self.pickup_lon is None:
             return None
-        return haversine_km(self.pickup_lat, self.pickup_lon, ctx.from_lat, ctx.from_lon)  # type: ignore[arg-type]
+        return haversine_km(origin[0], origin[1], self.pickup_lat, self.pickup_lon)
 
     def dropoff_distance_km(self, ctx: SearchContext) -> float | None:
-        if None in (self.dropoff_lat, self.dropoff_lon, ctx.to_lat, ctx.to_lon):
+        """Distanza fino alla destinazione reale (o fino alla citta')."""
+        destination = ctx.destination_coords
+        if destination is None or self.dropoff_lat is None or self.dropoff_lon is None:
             return None
-        return haversine_km(self.dropoff_lat, self.dropoff_lon, ctx.to_lat, ctx.to_lon)  # type: ignore[arg-type]
+        return haversine_km(self.dropoff_lat, self.dropoff_lon, destination[0], destination[1])
 
 
 def iso_time(value: Any) -> str | None:

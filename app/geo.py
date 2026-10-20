@@ -113,6 +113,40 @@ def nearest_city(lat: float, lon: float, max_km: float = 40) -> tuple[str, float
     return best
 
 
+# Velocita' di camminata: passo spedito di una persona media (4,5 km/h).
+# Il tempo a piedi conta: 20 minuti a piedi spostano un treno dalle 9:40
+# alle 10:00, e possono cambiare la scelta.
+WALK_KMH = 4.5
+
+
+def walking_minutes(km: float | None) -> int | None:
+    """Minuti di cammino per una distanza in linea d'aria.
+
+    E' una stima prudenziale: il percorso pedonale reale e' un po' piu'
+    lungo dello stretto (strade, deviatoi) e in citta' i semafori allungano.
+    """
+    if km is None or km < 0:
+        return None
+    if km < 0.05:
+        return 0
+    return int(round(km / WALK_KMH * 60))
+
+
+def walking_text(km: float | None) -> str:
+    """Il tempo a piedi in parole brevi."""
+    minutes = walking_minutes(km)
+    if minutes is None:
+        return ""
+    if minutes <= 2:
+        return "a piedi"
+    if minutes < 60:
+        return f"{minutes} min a piedi"
+    hours, rest = divmod(minutes, 60)
+    if rest:
+        return f"{hours}h {rest:02d} a piedi"
+    return f"{hours}h a piedi"
+
+
 def offline_lookup(query: str) -> tuple[float, float, str] | None:
     q = normalize(query)
     if not q:

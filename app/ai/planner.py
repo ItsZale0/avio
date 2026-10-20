@@ -58,6 +58,11 @@ class Candidate:
     net_total_price: float | None = None
     # Pass che coprono il viaggio (nomi).
     passes: list[str] = field(default_factory=list)
+    # Tempo porta a porta: a piedi + mezzo + a piedi.
+    walk_out_min: int = 0
+    walk_in_min: int = 0
+    walk_out_km: float | None = None
+    walk_in_km: float | None = None
 
     @property
     def partial(self) -> bool:
@@ -74,6 +79,13 @@ class Candidate:
     def effective_cost(self) -> float:
         """Quanto si spende davvero: biglietti (con abbonamenti) + spostamento."""
         return round(self.net_total + self.access_cost, 2)
+
+    @property
+    def door_to_door_min(self) -> int | None:
+        """Il tempo totale reale: a piedi, poi il viaggio, poi a piedi."""
+        if self.total_duration_min is None:
+            return None
+        return self.total_duration_min + self.walk_out_min + self.walk_in_min
 
     @property
     def covered(self) -> bool:
@@ -139,6 +151,11 @@ class Candidate:
             "access_cost": round(self.access_cost, 2),
             "effective_cost": self.effective_cost,
             "total_duration_min": self.total_duration_min,
+            "door_to_door_min": self.door_to_door_min,
+            "walk_out_min": self.walk_out_min,
+            "walk_in_min": self.walk_in_min,
+            "walk_out_km": round(self.walk_out_km, 1) if self.walk_out_km is not None else None,
+            "walk_in_km": round(self.walk_in_km, 1) if self.walk_in_km is not None else None,
             "changes": self.changes,
             "depart_at": self.depart_at.isoformat() if self.depart_at else None,
             "arrive_at": self.arrive_at.isoformat() if self.arrive_at else None,
@@ -167,6 +184,39 @@ def _net_info(legs: list[Offer]) -> tuple[float, list[str]]:
         if nome and nome not in pass_nomi:
             pass_nomi.append(str(nome))
     return totale, pass_nomi
+
+
+def _walk_times(
+    legs: list[Offer], ctx: SearchContext
+) -> tuple[int, int, float | None, float | None]:
+    """Il tempo a piedi all'inizio e alla fine del viaggio.
+
+    Il punto di ritrovo e' quello che l'utente ha indicato (o, se non c'e',
+    il centro citta'): 20 minuti a piedi possono valere piu' di 20 euro.
+    """
+    from ..geo import walking_minutes
+
+    out_km: float | None = None
+    in_km: float | None = None
+    if legs:
+        first = legs[0]
+        origin = ctx.origin_coords
+        if origin and first.pickup_lat is not None and first.pickup_lon is not None:
+            out_km = haversine_km(
+                origin[0], origin[1], first.pickup_lat, first.pickup_lon
+            )
+        last = legs[-1]
+        destination = ctx.destination_coords
+        if destination and last.dropoff_lat is not None and last.dropoff_lon is not None:
+            in_km = haversine_km(
+                last.dropoff_lat, last.dropoff_lon, destination[0], destination[1]
+            )
+    return (
+        walking_minutes(out_km) or 0,
+        walking_minutes(in_km) or 0,
+        out_km,
+        in_km,
+    )
 
 
 def _access_cost(offer: Offer, ctx: SearchContext) -> float:
@@ -347,6 +397,12 @@ def _build_triples(
                 net_total, pass_nomi = _net_info(legs)
                 candidate.net_total_price = net_total
                 candidate.passes = pass_nomi
+                (
+                    candidate.walk_out_min,
+                    candidate.walk_in_min,
+                    candidate.walk_out_km,
+                    candidate.walk_in_km,
+                ) = _walk_times(candidate.legs, ctx)
                 if candidate.covered:
                     candidate.notes.append(
                         f"Coperto da {', '.join(pass_nomi)}: i biglietti non li paghi."
@@ -421,6 +477,12 @@ def build_candidates(
         net_total, pass_nomi = _net_info([offer])
         candidate.net_total_price = net_total
         candidate.passes = pass_nomi
+        (
+            candidate.walk_out_min,
+            candidate.walk_in_min,
+            candidate.walk_out_km,
+            candidate.walk_in_km,
+        ) = _walk_times(candidate.legs, ctx)
         if candidate.covered:
             candidate.notes.append(
                 f"Coperto da {', '.join(pass_nomi)}: il biglietto non lo paghi."
@@ -488,6 +550,12 @@ def build_candidates(
                 net_total, pass_nomi = _net_info([leg1, leg2])
                 candidate.net_total_price = net_total
                 candidate.passes = pass_nomi
+                (
+                    candidate.walk_out_min,
+                    candidate.walk_in_min,
+                    candidate.walk_out_km,
+                    candidate.walk_in_km,
+                ) = _walk_times(candidate.legs, ctx)
                 if candidate.covered:
                     candidate.notes.append(
                         f"Coperto da {', '.join(pass_nomi)}: i biglietti non li paghi."

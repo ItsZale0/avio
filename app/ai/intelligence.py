@@ -125,6 +125,7 @@ def _candidates_payload(candidates: list[Candidate]) -> list[dict[str, Any]]:
                 leg_info["prezzo_diretto"] = leg.details.get("prezzo_diretto")
             legs.append(leg_info)
         duration = candidate.total_duration_min
+        porta_a_porta = candidate.door_to_door_min
         payload.append(
             {
                 "id": candidate.id,
@@ -142,6 +143,11 @@ def _candidates_payload(candidates: list[Candidate]) -> list[dict[str, Any]]:
                 else None,
                 "duration_min": duration,
                 "duration": _human_duration(duration),
+                # Il tempo reale: a piedi, poi il viaggio, poi a piedi.
+                "door_to_door_min": porta_a_porta,
+                "door_to_door": _human_duration(porta_a_porta),
+                "walk_out_min": candidate.walk_out_min,
+                "walk_in_min": candidate.walk_in_min,
                 "changes": candidate.changes,
                 "legs_count": len(candidate.legs),
                 "partial": candidate.partial,
@@ -332,6 +338,50 @@ def _pass_question(prefs: dict[str, Any]) -> list[dict]:
                     "id": "none",
                     "label": "Nessuno, pago ogni biglietto",
                     "prefs": {"clear_passes": True},
+                },
+            ],
+        }
+    ]
+
+
+def _point_questions(
+    offers: list[Offer], ctx: SearchContext, watch: dict[str, Any]
+) -> list[dict]:
+    """Chiede il punto di ritrovo esatto: cambia il tempo totale.
+
+    Con un passaggio in auto o un bus, il punto di ritrovo e' deciso dal
+    conducente o dalla fermata: se e' lontano da casa, il tempo reale
+    peggiora. Meglio chiedere che tirare a indovinare.
+    """
+    if watch.get("from_point"):
+        return []
+    from_place = watch.get("from_place") or ctx.from_place
+    # Ha senso chiederlo solo se il viaggio prevede un punto di ritrovo
+    # (auto, bus, trasporti) o se la citta' e' piccola (le distanze contano).
+    has_pickup = any(
+        offer.mode in ("rideshare", "carsharing", "bus", "transit", "tram")
+        for offer in offers
+    )
+    if not has_pickup:
+        return []
+    return [
+        {
+            "key": "punto_partenza",
+            "text": (
+                "Dove vuoi essere preso esattamente? Il punto di ritrovo cambia "
+                "il tempo totale: 20 minuti a piedi all'andata e 20 al ritorno "
+                "sono un'ora che si aggiunge al viaggio."
+            ),
+            "options": [
+                {
+                    "id": "centro",
+                    "label": f"Al centro di {from_place}",
+                    "prefs": {"set_from_point": ""},
+                },
+                {
+                    "id": "stazione",
+                    "label": f"Alla stazione di {from_place}",
+                    "prefs": {"set_from_point": f"Stazione di {from_place}"},
                 },
             ],
         }
@@ -617,7 +667,10 @@ async def analyze(
         if not diagnostics:
             result.summary = "Ancora nessuna offerta dalle fonti attive."
             return result
-        result.questions = _relax_questions(diagnostics, ctx, prefs)
+        result.questions = (
+            _relax_questions(diagnostics, ctx, prefs)
+            + _point_questions(diagnostics, ctx, watch)
+        )[:2]
         result.summary = "Nessuna combinazione rispetta i vincoli attuali."
         return result
 
@@ -726,9 +779,17 @@ async def analyze(
     # Le domande dell'AI hanno la precedenza, ma la domanda sugli
     # abbonamenti resta: se la tratta e' coperta cambia il piano.
     if ai_questions:
-        result.questions = (ai_questions + _pass_question(prefs))[:2]
+        result.questions = (
+            ai_questions
+            + _point_questions(offers, ctx, watch)
+            + _pass_question(prefs)
+        )[:2]
     else:
-        result.questions = (_pass_question(prefs) + _priority_question(candidates))[:2]
+        result.questions = (
+            _point_questions(offers, ctx, watch)
+            + _pass_question(prefs)
+            + _priority_question(candidates)
+        )[:2]
     parziale = " (prezzo parziale)" if plan.get("partial") else ""
     result.summary = f"{plan['title']} · {plan['total_price']:.2f} EUR{parziale}"
 
@@ -880,6 +941,14 @@ async def interpret_answer(question: dict[str, Any], answer: str) -> dict[str, A
             return {"prefs": {"add_pass": "trenitalia_regionale"}, "note": clean}
         if any(word in testo for word in ("bus", "metro", "urbano", "citta", "città", "tram")):
             return {"prefs": {"add_pass": "urbano"}, "note": clean}
+
+    if key in ("punto_partenza", "punto_arrivo", "ritrovo", "punto"):
+        # Il punto di ritrovo esatto: si usa il testo cosi' com'e'.
+        campo = "set_from_point" if "partenza" in key else "set_to_point"
+        testo = clean.strip()
+        if not testo or testo.lower() in ("centro", "centro citta", "city center", "no"):
+            return {"prefs": {campo: ""}, "note": clean}
+        return {"prefs": {campo: testo}, "note": clean}
 
     if key in ("priorita", "priority", "prefer_fast", "travel_time", "speed"):
         if clean.strip().lower() in ("yes", "si", "sì", "ok", "true", "1"):

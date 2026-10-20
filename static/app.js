@@ -748,6 +748,8 @@ function renderDetail() {
   $("#watchSub").textContent =
     `entro ${fmtDate(watch.arrive_by)} · budget ${watch.max_price != null ? euro(watch.max_price) : "libero"} · ` +
     `ogni ${watch.interval_min} min · raggio ${watch.radius_km} km · ${sources}` +
+    (watch.from_point ? ` · 📍 ${watch.from_point}` : "") +
+    (watch.to_point ? ` → 📍 ${watch.to_point}` : "") +
     (passNames ? ` · 🎟️ ${passNames}` : "");
 
   $("#btnToggleWatch").textContent = watch.active ? "Pausa" : "Riprendi";
@@ -877,6 +879,14 @@ function renderPlan() {
         : (plan.total_price != null ? plan.total_price + accessCost : null));
   const hasAccess = accessCost > 0.01;
   const passNames = (plan.passes || []).join(", ");
+  // Il tempo reale: a piedi, poi il viaggio, poi a piedi.
+  const walkOut = Number(plan.walk_out_min || 0);
+  const walkIn = Number(plan.walk_in_min || 0);
+  const doorToDoor = plan.door_to_door_min != null ? Number(plan.door_to_door_min) : null;
+  const walkNote =
+    walkOut || walkIn
+      ? `<span>🚶 ${walkOut ? walkOut + " min" : ""}${walkOut && walkIn ? " + " : ""}${walkIn ? walkIn + " min" : ""} a piedi</span>`
+      : "";
   const alts = state.planAlternatives.length
     ? `<div class="plan-alts">
          <h4>Alternative: altri profili</h4>
@@ -918,6 +928,8 @@ function renderPlan() {
       ${plan.arrive_at ? `<span>🏁 arrivo ${fmtDate(plan.arrive_at)}</span>` : ""}
       ${duration ? `<span>⏱ ${duration}</span>` : ""}
       <span>🔁 ${changeLabel}</span>
+      ${walkNote}
+      ${doorToDoor ? `<span>🚶 porta a porta ${fmtDuration(doorToDoor)}</span>` : ""}
       ${covered ? `<span>🎟️ coperto da ${esc(passNames || "abbonamento")}</span>` : ""}
       ${plan.transfer_km != null ? `<span>🚶 ${plan.transfer_km} km a piedi nel cambio</span>` : ""}
     </div>
@@ -1055,6 +1067,11 @@ function offerCard(offer, suppressNew = false) {
 
   const detailBits = [];
   if (duration) detailBits.push(`⏱ ${duration}`);
+  const walkKm = offer.details?.distanza_pickup_km;
+  if (walkKm != null && walkKm > 0.05) {
+    const minuti = Math.round((walkKm / 4.5) * 60);
+    detailBits.push(`🚶 ${minuti} min a piedi fino al ritrovo`);
+  }
   const changes = offer.details?.cambi;
   if (changes != null) {
     detailBits.push(
@@ -1427,6 +1444,8 @@ function openWatchModal(watch) {
   $("#fDepart").value = data.depart_after || "";
   $("#fArrive").value = data.arrive_by || "";
   $("#fPrice").value = data.max_price ?? "";
+  $("#fFromPoint").value = data.from_point || "";
+  $("#fToPoint").value = data.to_point || "";
   $("#fPassengers").value = data.passengers || 1;
   $("#fRadius").value = data.radius_km || 5;
   $("#fInterval").value = String(data.interval_min || 60);
@@ -1598,6 +1617,8 @@ async function submitWatch(event) {
     depart_after: departLocal ? new Date(departLocal).toISOString() : null,
     arrive_by: new Date(arriveLocal).toISOString(),
     max_price: $("#fPrice").value ? Number($("#fPrice").value) : null,
+    from_point: $("#fFromPoint").value.trim() || null,
+    to_point: $("#fToPoint").value.trim() || null,
     passengers: Number($("#fPassengers").value || 1),
     radius_km: Number($("#fRadius").value || 5),
     interval_min: Number($("#fInterval").value || 60),

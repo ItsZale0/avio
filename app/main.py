@@ -127,7 +127,33 @@ async def _resolve_places(payload: WatchIn) -> dict:
         "from_lon": from_lon,
         "to_lat": to_lat,
         "to_lon": to_lon,
+        **(await _resolve_points(payload)),
     }
+
+
+async def _resolve_points(payload: WatchIn) -> dict:
+    """Geocodifica i punti di ritrovo esatti (quartiere, piazza, stazione).
+
+    Servono per calcolare il tempo a piedi: il punto di ritrovo scelto
+    dall'autista puo' essere lontano da casa, e 20 minuti a piedi cambiano
+    il piano.
+    """
+    resolved: dict[str, float] = {}
+    for prefix, place, lat, lon in (
+        ("from", payload.from_point, payload.from_point_lat, payload.from_point_lon),
+        ("to", payload.to_point, payload.to_point_lat, payload.to_point_lon),
+    ):
+        if not place:
+            continue
+        if lat is not None and lon is not None:
+            resolved[f"{prefix}_point_lat"] = lat
+            resolved[f"{prefix}_point_lon"] = lon
+            continue
+        found = await geo.resolve_place(place)
+        if found and found[0] is not None:
+            resolved[f"{prefix}_point_lat"] = found[0]
+            resolved[f"{prefix}_point_lon"] = found[1]
+    return resolved
 
 
 # --------------------------------------------------------------------------- #
@@ -421,6 +447,17 @@ async def update_watch(watch_id: int, payload: WatchUpdate, request: Request):
         if lat is None:
             raise HTTPException(status_code=400, detail=f"Localita' non trovata: {to_place}")
         changes.update(to_lat=lat, to_lon=lon)
+    # Punti di ritrovo: se il nome cambia, le coordinate vanno ricalcolate.
+    for prefix in ("from", "to"):
+        key = f"{prefix}_point"
+        if key in changes and changes[key]:
+            lat, lon, _ = await geo.resolve_place(str(changes[key]))
+            if lat is not None:
+                changes[f"{key}_lat"] = lat
+                changes[f"{key}_lon"] = lon
+        elif key in changes and not changes[key]:
+            changes[f"{key}_lat"] = None
+            changes[f"{key}_lon"] = None
 
     arrive_by = changes.get("arrive_by", parse_dt(watch["arrive_by"]))
     depart_after = changes.get("depart_after", parse_dt(watch.get("depart_after")))

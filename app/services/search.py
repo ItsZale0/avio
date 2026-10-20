@@ -42,7 +42,34 @@ def build_context(watch: dict[str, Any]) -> SearchContext:
         max_price=watch.get("max_price"),
         allow_day_before=bool(prefs.get("arrivo_giorno_prima")),
         prefs=prefs,
+        from_point_lat=watch.get("from_point_lat"),
+        from_point_lon=watch.get("from_point_lon"),
+        to_point_lat=watch.get("to_point_lat"),
+        to_point_lon=watch.get("to_point_lon"),
     )
+
+
+async def _resolve_points(watch: dict[str, Any]) -> None:
+    """Geocodifica i punti di ritrovo (se mancano le coordinate)."""
+    from .. import geo
+
+    for prefix in ("from", "to"):
+        name = (watch.get(f"{prefix}_point") or "").strip()
+        if not name:
+            continue
+        if watch.get(f"{prefix}_point_lat") is not None:
+            continue
+        found = await geo.resolve_place(name)
+        if not found or found[0] is None:
+            continue
+        with db.db() as conn:
+            conn.execute(
+                f"UPDATE watches SET {prefix}_point_lat = ?, {prefix}_point_lon = ? "
+                "WHERE id = ?",
+                (found[0], found[1], watch["id"]),
+            )
+        watch[f"{prefix}_point_lat"] = found[0]
+        watch[f"{prefix}_point_lon"] = found[1]
 
 
 def _filter_offers(offers: list[Offer], ctx: SearchContext, late_minutes: int = 0) -> list[Offer]:
@@ -153,6 +180,11 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
             )
             run_id = int(cursor.lastrowid)
 
+        ctx = build_context(watch)
+        # I punti di ritrovo indicati a parole possono non avere le
+        # coordinate: si risolvono qui (una volta sola) per calcolare il
+        # tempo a piedi reale.
+        await _resolve_points(watch)
         ctx = build_context(watch)
         adapters = get_adapters(watch["sources"])
         results = await asyncio.gather(*(_run_adapter(adapter, ctx) for adapter in adapters))

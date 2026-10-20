@@ -16,9 +16,17 @@ class WatchIn(BaseModel):
     from_place: str = Field(..., min_length=2, max_length=160)
     from_lat: float | None = Field(None, ge=-90, le=90)
     from_lon: float | None = Field(None, ge=-180, le=180)
+    # Punto di ritrovo esatto (quartiere, piazza, stazione): serve per
+    # calcolare il tempo a piedi e chiedere il posto all'agente.
+    from_point: str | None = Field(None, max_length=160)
+    from_point_lat: float | None = Field(None, ge=-90, le=90)
+    from_point_lon: float | None = Field(None, ge=-180, le=180)
     to_place: str = Field(..., min_length=2, max_length=160)
     to_lat: float | None = Field(None, ge=-90, le=90)
     to_lon: float | None = Field(None, ge=-180, le=180)
+    to_point: str | None = Field(None, max_length=160)
+    to_point_lat: float | None = Field(None, ge=-90, le=90)
+    to_point_lon: float | None = Field(None, ge=-180, le=180)
     depart_after: datetime | None = None
     arrive_by: datetime
     max_price: float | None = Field(None, ge=0, le=10000)
@@ -75,9 +83,15 @@ class WatchOut(BaseModel):
     from_place: str
     from_lat: float | None = None
     from_lon: float | None = None
+    from_point: str | None = None
+    from_point_lat: float | None = None
+    from_point_lon: float | None = None
     to_place: str
     to_lat: float | None = None
     to_lon: float | None = None
+    to_point: str | None = None
+    to_point_lat: float | None = None
+    to_point_lon: float | None = None
     depart_after: str | None = None
     arrive_by: str
     max_price: float | None = None

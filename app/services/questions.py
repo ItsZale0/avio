@@ -228,6 +228,15 @@ def merge_prefs(watch: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
         if key == "clear_passes":
             prefs["passes"] = []
             continue
+        if key in ("set_from_point", "set_to_point"):
+            # Il punto di ritrovo esatto: "Piazza Vittoria", "stazione di Mestre".
+            # Le coordinate si ricalcolano al giro successivo.
+            field = "from_point" if key == "set_from_point" else "to_point"
+            value = str(value or "").strip()
+            changes[field] = value or None
+            changes[f"{field}_lat"] = None
+            changes[f"{field}_lon"] = None
+            continue
         if key not in KNOWN_PREFS and key not in PASS_ACTIONS:
             continue
         if key == "notes":
