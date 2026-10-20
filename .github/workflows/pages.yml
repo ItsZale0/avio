@@ -33,8 +33,12 @@ jobs:
           # config.json: URL del backend (tunnel) usato dalla PWA su Pages.
           # Lasciato vuoto di proposito: si configura dal file config.json
           # committato oppure via variabile CARPOOL_API_BASE.
+          # updated_at permette al frontend di capire quale dei due
+          # puntatori (config.json e backend.json sul branch) e' piu' fresco.
           if [ -n "${{ vars.CARPOOL_API_BASE }}" ]; then
-            printf '{"apiBase":"%s"}' "${{ vars.CARPOOL_API_BASE }}" > _site/config.json
+            printf '{"apiBase":"%s","updated_at":"%s"}' \
+              "${{ vars.CARPOOL_API_BASE }}" \
+              "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > _site/config.json
           fi
           # .nojekyll: evita che Jekyll tocchi i file con _ iniziale
           touch _site/.nojekyll

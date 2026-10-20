@@ -236,8 +236,8 @@ async function loadRuntimeConfig() {
   // precedente non porta piu' da nessuna parte.
   //
   // In coda si legge anche il puntatore "fresco" pubblicato dal tunnel sul
-  // branch: e' aggiornato all'istante, mentre la config.json di Pages arriva
-  // solo dopo il deploy.
+  // branch: copre la finestra in cui la config.json di Pages non e' ancora
+  // stata rideployata.
   const stamp = Date.now();
   const found = [];
   const candidates = [`config.json?ts=${stamp}`, "/config.json"];
@@ -247,7 +247,10 @@ async function loadRuntimeConfig() {
       if (!response.ok) continue;
       const config = await response.json();
       if (config && typeof config.apiBase === "string" && config.apiBase) {
-        found.push(config.apiBase.replace(/\/$/, ""));
+        found.push({
+          base: config.apiBase.replace(/\/$/, ""),
+          updated: config.updated_at || "",
+        });
       }
       break;
     } catch (_) { /* prova il successivo */ }
@@ -257,16 +260,28 @@ async function loadRuntimeConfig() {
     if (response.ok) {
       const config = await response.json();
       if (config && typeof config.apiBase === "string" && config.apiBase) {
-        found.push(config.apiBase.replace(/\/$/, ""));
+        found.push({
+          base: config.apiBase.replace(/\/$/, ""),
+          updated: config.updated_at || "",
+        });
       }
     }
   } catch (_) { /* senza rete resta solo la config.json */ }
 
-  const unici = [...new Set(found)];
+  // Via i duplicati, tenendo la data piu' recente per ogni URL.
+  const perBase = new Map();
+  for (const item of found) {
+    const noto = perBase.get(item.base);
+    if (!noto || String(item.updated) > String(noto.updated)) {
+      perBase.set(item.base, item);
+    }
+  }
+  const unici = [...perBase.values()].sort(
+    (a, b) => String(b.updated).localeCompare(String(a.updated))
+  );
   if (unici.length) {
-    API_FALLBACKS = unici;
-    // Il puntatore fresco viene per primo: e' quello aggiornato.
-    API_BASE = unici[unici.length - 1] || unici[0];
+    API_FALLBACKS = unici.map((item) => item.base);
+    API_BASE = API_FALLBACKS[0];
     showApiHint();
   }
 }
