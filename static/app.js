@@ -229,6 +229,24 @@ async function api(path, options = {}) {
 }
 
 async function loadRuntimeConfig() {
+  // Se la pagina e' servita dall'app stessa (uso locale), l'API e' alla
+  // stessa origine: la si usa direttamente, senza passare dal tunnel.
+  try {
+    const probe = await fetch("api/auth/status?ts=" + Date.now(), {
+      cache: "no-store",
+      credentials: "include",
+    });
+    if (probe.ok) {
+      const body = await probe.json();
+      if (body && typeof body === "object" && "locked" in body) {
+        API_BASE = location.origin;
+        API_FALLBACKS = [location.origin];
+        showApiHint();
+        return;
+      }
+    }
+  } catch (_) { /* non e' l'app stessa: si prosegue */ }
+
   // Prova il file di config locale; su Pages contiene l'URL del backend.
   // Prima il path relativo: su GitHub Pages la root e' /<repo>/, non "/".
   // `cache: "no-store"` e i query param servono a non prendere una copia
@@ -533,6 +551,13 @@ function bindEvents() {
     const button = event.target.closest("[data-answer]");
     if (!button) return;
     answerQuestion(Number(button.dataset.qid), button.dataset.answer);
+  });
+  // Risposta aperta (invio col tasto Invio o col bottone).
+  $("#questionsCard").addEventListener("submit", (event) => {
+    const form = event.target.closest(".q-free");
+    if (!form) return;
+    event.preventDefault();
+    answerFree(Number(form.dataset.qid), form);
   });
 
   document.addEventListener("click", (event) => {
@@ -874,9 +899,17 @@ function renderQuestions() {
         `<button class="btn" data-qid="${question.id}" data-answer="${esc(option.id)}">${esc(option.label)}</button>`
       ).join("");
       const skip = `<button class="btn ghost" data-qid="${question.id}" data-answer="skip">Salta</button>`;
+      // Risposta aperta: si scrive a parole, l'agente capisce e ricalcola.
+      const libero = question.allow_free_text === false ? "" : `
+        <form class="q-free" data-qid="${question.id}">
+          <input type="text" name="answer" maxlength="300" autocomplete="off"
+                 placeholder="Oppure scrivi qui la risposta…" />
+          <button class="btn" type="submit">Invia</button>
+        </form>`;
       return `<div class="q-item">
         <p>${esc(question.text)}</p>
         <div class="q-options">${options}${skip}</div>
+        ${libero}
       </div>`;
     }).join("")}`;
 }
@@ -893,6 +926,39 @@ async function answerQuestion(questionId, answer) {
     setTimeout(refreshAll, 4000);
   } catch (error) {
     toast(error.message, "error");
+  }
+}
+
+/* Risposta libera: l'agente interpreta la frase e se la usa come
+   preferenza (un abbonamento, un budget, un giorno piu' tardi...). */
+async function answerFree(questionId, form) {
+  const input = form.querySelector("input[name=answer]");
+  const text = (input?.value || "").trim();
+  if (!text) {
+    toast("Scrivi la risposta.", "error");
+    input?.focus();
+    return;
+  }
+  const send = form.querySelector("button[type=submit]");
+  if (send) {
+    send.disabled = true;
+    send.textContent = "Invio…";
+  }
+  try {
+    const result = await api(`/api/questions/${questionId}/answer`, {
+      method: "POST",
+      body: JSON.stringify({ answer: text, source: "web" }),
+    });
+    const note = result?.applied?.note;
+    toast(note ? `Grazie: ${note}` : "Grazie: aggiorno la ricerca.");
+    await refreshAll();
+    setTimeout(refreshAll, 4000);
+  } catch (error) {
+    toast(error.message, "error");
+    if (send) {
+      send.disabled = false;
+      send.textContent = "Invia";
+    }
   }
 }
 

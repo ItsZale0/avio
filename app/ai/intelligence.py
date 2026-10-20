@@ -829,6 +829,29 @@ async def interpret_answer(question: dict[str, Any], answer: str) -> dict[str, A
         flag = yes_no(lowered, True)
         return {"prefs": {"flexible_days": 1 if flag else 0}, "note": clean}
 
+    if key in ("budget_flex", "budget", "budget_increase", "budget_raise"):
+        # "alzo a 15", "15 euro", "fino a 20" -> il nuovo tetto.
+        cifre = [ch for ch in clean if ch.isdigit() or ch in ".,"]
+        if cifre:
+            try:
+                import re
+
+                numeri = re.findall(r"\d+(?:[.,]\d+)?", clean)
+                if numeri:
+                    amount = float(numeri[0].replace(",", "."))
+                    if amount > 0:
+                        return {"prefs": {"budget_raise": round(amount, 2)}, "note": clean}
+            except (TypeError, ValueError):
+                pass
+        flag = yes_no(lowered, True)
+        if flag is not None:
+            return {"prefs": {"notes": clean}, "note": clean}
+
+    if key in ("arrivo_giorno_prima", "day_before", "arrivo"):
+        flag = yes_no(lowered, True)
+        if flag is not None:
+            return {"prefs": {"arrivo_giorno_prima": flag}, "note": clean}
+
     if key in ("allow_multi_leg", "multi_leg", "changes"):
         flag = yes_no(lowered, True)
         if flag is not None:

@@ -87,7 +87,7 @@ Non usare markdown: testo semplice.
 ANSWER_SYSTEM = """Converti la risposta di un utente a una domanda di viaggio in preferenze strutturate.
 Rispondi SOLO con JSON: {{"prefs": {{...}}, "note": "una riga"}}.
 Chiavi ammesse in prefs: flexible_days (intero 0-3), allow_multi_leg (bool), max_walk_km (numero), luggage (stringa), prefer_modes (lista di "treno"/"bus"/"passaggio"/"carsharing"), no_changes (bool), prefer_fast (bool: true se vuole arrivare prima, anche spendendo di piu'), notes (stringa).
-Chiavi speciali: add_pass (stringa: "trenitalia_regionale", "trenitalia_tutti", "carnet_regionale", "carnet_bus", "abbonamento_unico", "urbano", "carnet_urbano") quando l'utente dice di avere un abbonamento o un carnet; clear_passes (true) quando dice di non avere abbonamenti.
+Chiavi speciali: add_pass (stringa: "trenitalia_regionale", "trenitalia_tutti", "carnet_regionale", "carnet_bus", "abbonamento_unico", "urbano", "carnet_urbano") quando l'utente dice di avere un abbonamento o un carnet; clear_passes (true) quando dice di non avere abbonamenti; budget_raise (numero) quando l'utente dice un nuovo tetto di spesa (es. "alzo a 15 euro").
 Inserisci solo le chiavi deducibili dalla risposta.
 """
 

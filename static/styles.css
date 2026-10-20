@@ -654,6 +654,24 @@ select { cursor: pointer; }
 .q-item:first-of-type { border-top: 0; }
 .q-item p { font-size: 13.5px; margin-bottom: 9px; }
 .q-options { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Risposta aperta: l'utente scrive a parole, l'agente capisce. */
+.q-free {
+  display: flex; gap: 8px; margin-top: 9px; flex-wrap: wrap;
+}
+.q-free input {
+  flex: 1 1 240px; min-width: 0;
+  background: rgba(10, 14, 19, 0.5);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px; padding: 8px 10px;
+  color: var(--text); font-size: 13px; font-family: inherit;
+}
+.q-free input:focus {
+  outline: none; border-color: rgba(96, 165, 250, 0.65);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.15);
+}
+.q-free input::placeholder { color: var(--muted-2); }
+.q-free button { flex: 0 0 auto; }
 .q-options .btn { font-size: 12.5px; padding: 7px 11px; }
 .q-answer { color: var(--accent); font-size: 12.5px; }
 
