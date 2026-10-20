@@ -1,0 +1,40 @@
+name: Verifica tunnel
+
+# Serve a capire se il tunnel pubblico risponde davvero e se il preflight
+# CORS attraversa (indispensabile per il frontend su GitHub Pages).
+# Si lancia a mano: Actions -> Verifica tunnel -> Run workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "URL del tunnel (senza slash finale)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verifica
+        run: |
+          URL="${{ inputs.url }}"
+          echo "Tunnel: $URL"
+          echo
+          echo "=== 1. GET con l'header di bypass (ngrok-skip-browser-warning) ==="
+          code=$(curl -s -o /tmp/a -w "%{http_code}" -H "ngrok-skip-browser-warning: 1" "$URL/api/auth/status")
+          echo "HTTP $code"
+          head -c 300 /tmp/a; echo; echo
+          echo "=== 2. GET senza header ==="
+          code=$(curl -s -o /tmp/b -w "%{http_code}" "$URL/api/auth/status")
+          echo "HTTP $code"
+          head -c 200 /tmp/b; echo; echo
+          echo "=== 3. Preflight CORS (OPTIONS) ==="
+          curl -s -D /tmp/h -o /tmp/c -X OPTIONS \
+            -H "Origin: https://itszale0.github.io" \
+            -H "Access-Control-Request-Method: POST" \
+            -H "Access-Control-Request-Headers: content-type" \
+            "$URL/api/watches"
+          head -20 /tmp/h
+          head -c 200 /tmp/c; echo

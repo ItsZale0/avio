@@ -1,0 +1,12 @@
+# Politica di traffico ngrok.
+#
+# ngrok v3.4+ mostra una pagina di avviso quando l'header Host della
+# richiesta non corrisponde al dominio del tunnel. Il frontend su GitHub
+# Pages chiama l'API con l'Host del tunnel: riscrivendolo a localhost
+# l'ngrok inoltra la richiesta all'app senza passare per l'avviso.
+on_http_request:
+  - actions:
+      - type: add-headers
+        config:
+          headers:
+            host: localhost

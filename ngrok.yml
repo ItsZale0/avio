@@ -1,0 +1,10 @@
+version: "3"
+agent:
+  autoupdate: true
+  log: stdout
+endpoints:
+  - name: carpool
+    url: http://127.0.0.1:8787
+    # Senza questo, ngrok mostra la pagina di avviso invece dell'app
+    # (la CLI non accetta piu' il flag --host-header).
+    host_header: rewrite
