@@ -106,6 +106,21 @@ def _check_tunnel(public: str) -> str:
         )
 
 
+def _ip_di_rete() -> str:
+    """L'IP di rete del PC (serve per aprirlo dal telefono)."""
+    import socket
+
+    try:
+        # Non manda nulla: sceglie l'interfaccia con cui si esce.
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        probe.connect(("10.255.255.255", 1))
+        indirizzo = probe.getsockname()[0]
+        probe.close()
+        return str(indirizzo)
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def main() -> int:
     print("=" * 58)
     print("CARPOOL HUNTER - stato")
@@ -118,6 +133,17 @@ def main() -> int:
         print("Supervisore: NON in esecuzione")
     else:
         print("Supervisore: non registrato (l'agente non e' avviato)")
+
+    # Indirizzo locale: con HOST=0.0.0.0 l'app si apre anche dal telefono.
+    porta = "8787"
+    if ENV_FILE.exists():
+        for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
+            if line.startswith("PORT="):
+                porta = line.split("=", 1)[1].strip() or porta
+    ip = _ip_di_rete()
+    if ip:
+        print(f"IP locale:     http://{ip}:{porta}   (dal telefono, stesso Wi-Fi)")
+    print(f"Sul PC:        http://127.0.0.1:{porta}")
 
     # URL pubblico
     public = ""
