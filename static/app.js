@@ -55,6 +55,8 @@ const dfShort = new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "short
 const dfDay = new Intl.DateTimeFormat("it-IT", { weekday: "short", day: "2-digit", month: "short" });
 const tf = new Intl.DateTimeFormat("it-IT", { hour: "2-digit", minute: "2-digit" });
 
+function offText(n) { return n === 1 ? "1 offerta" : n + " offerte"; }
+
 function fmtDate(iso) {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -1208,7 +1210,7 @@ function renderDetail() {
   $("#statLastRun").textContent = watch.last_run_at ? relative(watch.last_run_at) : "mai";
   const lastRun = state.runs[0];
   $("#statLastRunNote").textContent = lastRun
-    ? `${lastRun.offers_found} offerte · ${lastRun.status === "ok" ? "ok" : lastRun.status}`
+    ? `${offText(lastRun.offers_found)} · ${lastRun.status === "ok" ? "ok" : lastRun.status}`
     : "nessun controllo";
 
   $("#statNextRun").textContent = watch.active ? relative(watch.next_run_at) : "—";
