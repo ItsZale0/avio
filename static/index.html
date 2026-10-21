@@ -87,7 +87,7 @@
         <div class="agent-pill" id="agentStatus" title="Stato dell'agente">
           <span class="dot"></span><span id="agentText">connessione…</span>
         </div>
-        <div class="ai-pill" id="aiStatus" title="Intelligenza artificiale">
+        <div class="ai-pill" id="aiStatus" title="Agente artificiale">
           <span class="dot"></span><span id="aiText">AI…</span>
         </div>
         <span class="hint">L'agente controlla ogni ora le fonti attive e ti avvisa solo quando trova qualcosa di nuovo.</span>
@@ -126,9 +126,9 @@
 
         <div class="stat-grid">
           <div class="stat" id="statBestCell"><span class="stat-label">Miglior prezzo</span><strong id="statBest">—</strong><small id="statBestNote">&nbsp;</small></div>
-          <div class="stat"><span class="stat-label">Offerte attive</span><strong id="statCount">—</strong><small id="statCountNote">&nbsp;</small></div>
-          <div class="stat"><span class="stat-label">Ultima ricerca</span><strong id="statLastRun">—</strong><small id="statLastRunNote">&nbsp;</small></div>
-          <div class="stat"><span class="stat-label">Prossima ricerca</span><strong id="statNextRun">—</strong><small id="statNextRunNote">&nbsp;</small></div>
+          <div class="stat"><span class="stat-label">Offerte trovate</span><strong id="statCount">—</strong><small id="statCountNote">&nbsp;</small></div>
+          <div class="stat"><span class="stat-label">Ultimo controllo</span><strong id="statLastRun">—</strong><small id="statLastRunNote">&nbsp;</small></div>
+          <div class="stat"><span class="stat-label">Prossimo controllo</span><strong id="statNextRun">—</strong><small id="statNextRunNote">&nbsp;</small></div>
         </div>
 
         <div class="plan-card hidden" id="planCard"></div>
@@ -139,7 +139,7 @@
           <button class="tab active" data-tab="best">Migliori</button>
           <button class="tab" data-tab="all">Tutte <span class="tabcount" id="countAll"></span></button>
           <button class="tab" data-tab="map">Mappa</button>
-          <button class="tab" data-tab="nearby">Carsharing &amp; vicino</button>
+          <button class="tab" data-tab="nearby">Carsharing e vicino</button>
           <button class="tab" data-tab="links">Link utili</button>
           <button class="tab" data-tab="runs">Cronologia</button>
         </div>
@@ -451,7 +451,7 @@
 
         <!-- ============ INTELLIGENZA ============ -->
         <div class="tab-pane" data-pane="intelligenza">
-          <div class="section-title">Intelligenza (Groq)</div>
+          <div class="section-title">Agente (Groq)</div>
           <div class="field">
             <label for="sGroqKey">Chiave API Groq (gratuita su console.groq.com)</label>
             <input id="sGroqKey" name="groq_api_key" type="password" autocomplete="off" />
@@ -474,7 +474,7 @@
             </div>
           </div>
           <div class="field inline-field">
-            <label class="chip"><input type="checkbox" id="sAiEnabled" checked /> Intelligenza attiva</label>
+            <label class="chip"><input type="checkbox" id="sAiEnabled" checked /> Agente attivo</label>
             <button type="button" class="btn ghost" id="btnTestAi">Prova AI</button>
             <button type="button" class="btn ghost" id="btnAiModels">Aggiorna elenco modelli</button>
           </div>

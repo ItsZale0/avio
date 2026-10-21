@@ -169,6 +169,41 @@ Italian copy, sentence case. No emoji as UI. No invented numbers: every figure
 comes from the API. Split journeys ("spezzatura") are always shown as a
 comparison, even when more expensive.
 
+### The vocabulary (one word per thing)
+
+| Thing | Word | Never |
+| --- | --- | --- |
+| the saved search | **ricerca** | "viaggio", "monitoraggio" |
+| the agent's pass over a search | **controllo** | "esecuzione", "run", "ricerca" |
+| the verb for that pass | **cerca** (the button: "Cerca ora") | "forza", "lancia" |
+| a result row | **offerta** | "opzione", "combinazione" |
+| a leg of the journey | **tratta** | "leg", "segmento" |
+| the recommended journey | **piano** | "soluzione", "proposta" |
+| the point of departure / arrival | **da** / **a** (chips) | "ritrovo" / "arrivo" (arrivo also means the arrival *time*) |
+| the agent | **agente** | "AI", "assistente", "bot" |
+
+### The formats (one way to write each)
+
+- **Day:** `gio 22 ott` everywhere — in the chips, in the facts row, in the
+  offer rows, in the index.
+- **Moment:** `gio 22 ott, 07:21` (day + time) in the chips and the facts row;
+  bare `07:21` in the rows, where the day sits next to it.
+- **Duration:** `2h 29m` in the interface (the agent's prose may spell it out).
+- **Price:** `€13,10` — always the symbol first, always two decimals.
+- **Confidence:** `fiducia 95/100` (the plan) and `punteggio 91/100` (the
+  offer): the same scale, never `95%` next to `91/100`.
+- **Quotes:** `«…»` (Italian usage). Never straight or curly double quotes.
+- **Voice:** second person singular ("cerca", "scegli"), short sentences, no
+  "Grazie:" prefixes, no exclamation marks, no "Ciao".
+
+### How much text is on screen
+
+- The plan panel shows the **answer** (price, facts, journey) and keeps the
+  agent's reasoning behind **"Perché questo piano"**. The caveats stay visible
+  under **"Da tenere d'occhio"** — two short lines, never a wall.
+- One line of prose per zone, 72 characters of measure at most.
+- A chip states a filter, never a sentence.
+
 ## What pages MUST share
 
 The graphite/mint palette and accent placement, the Plus Jakarta Sans family,

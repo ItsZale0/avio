@@ -52,6 +52,7 @@ const dtf = new Intl.DateTimeFormat("it-IT", {
   weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
 });
 const dfShort = new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "short" });
+const dfDay = new Intl.DateTimeFormat("it-IT", { weekday: "short", day: "2-digit", month: "short" });
 const tf = new Intl.DateTimeFormat("it-IT", { hour: "2-digit", minute: "2-digit" });
 
 function fmtDate(iso) {
@@ -63,6 +64,12 @@ function fmtDay(iso) {
   if (!iso) return "—";
   const d = new Date(iso);
   return isNaN(d) ? "—" : dfShort.format(d);
+}
+/* Il giorno con il giorno della settimana: un solo formato in tutta l'app. */
+function fmtDayFull(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return isNaN(d) ? "—" : dfDay.format(d);
 }
 function fmtTime(iso) {
   if (!iso) return "—";
@@ -504,7 +511,7 @@ function showApiHint() {
   hint.innerHTML =
     "Se non riesci a entrare, apri l'app direttamente qui: " +
     `<a href="${esc(API_BASE)}" target="_blank" rel="noopener">${esc(API_BASE)}</a>` +
-    " — la prima volta ngrok chiede una conferma: clicca “Visit Site”.";
+    " — la prima volta ngrok chiede una conferma: clicca «Visit Site».";
 }
 
 /* Se l'API non risponde, il tunnel potrebbe essere stato riavviato con un
@@ -886,10 +893,10 @@ async function loadStatus() {
   if (aiPill) {
     aiPill.classList.toggle("off", !ai.active);
     $("#aiText").textContent = ai.active
-      ? `AI ${shortModel(ai.model_smart)}`
+      ? `Agente · ${shortModel(ai.model_smart)}`
       : ai.configured
-        ? "AI disattivata"
-        : "AI non configurata";
+        ? "Agente disattivato"
+        : "Agente non configurato";
   }
   if (status.sources && !state.sources.length) state.sources = status.sources;
   return status;
@@ -913,7 +920,7 @@ async function loadWatches() {
 function renderWatchList() {
   const box = $("#watchList");
   if (!state.watches.length) {
-    box.innerHTML = `<div class="hint hint-block">Nessuna ricerca. Creane una con “+ Nuova ricerca”.</div>`;
+    box.innerHTML = `<div class="hint hint-block">Nessuna ricerca. Creane una con «+ Nuova ricerca».</div>`;
     return;
   }
   box.innerHTML = state.watches.map((watch) => {
@@ -927,7 +934,7 @@ function renderWatchList() {
         <span class="watch-route"><span class="watch-status-dot"></span>${route}</span>
         ${watch.name ? `<span class="watch-name">${esc(watch.name)}</span>` : ""}
         <span class="watch-meta">
-          <span>entro ${fmtDay(watch.arrive_by)}</span>
+          <span>entro ${fmtDayFull(watch.arrive_by)}</span>
           <span class="price">${price}</span>
         </span>
       </button>`;
@@ -1004,19 +1011,20 @@ function renderDetail() {
       const tipo = typeof p === "string" ? p : p.tipo;
       const known = PASS_CATALOGO.find((item) => item.id === tipo);
       if (typeof p === "string") return known ? known.nome : tipo;
-      return p.nome || (known ? known.nome : tipo);
+      return (p.nome || (known ? known.nome : tipo)).replace(/\s*\([^)]*\)\s*$/, "");
     })
     .join(", ");
   // I criteri della ricerca come chip: una riga leggibile invece di un muro
   // di testo. L'elenco delle fonti non sta qui: ogni riga di offerta dice la
   // sua fonte, ogni scheda vuota spiega come è andata, e in Impostazioni si
-  // scelgono.
+  // scelgono. I punti di ritrovo si chiamano "da"/"a", come il titolo
+  // della tratta: "arrivo" da solo diceva due cose diverse.
   const criteri = [`entro ${fmtDate(watch.arrive_by)}`];
   if (watch.max_price != null) criteri.push(`budget ${euro(watch.max_price)}`);
   if (watch.interval_min) criteri.push(`ogni ${watch.interval_min} min`);
   if (watch.radius_km != null) criteri.push(`raggio ${watch.radius_km} km`);
-  if (watch.from_point) criteri.push(`ritrovo: ${watch.from_point}`);
-  if (watch.to_point) criteri.push(`arrivo: ${watch.to_point}`);
+  if (watch.from_point) criteri.push(`da: ${watch.from_point}`);
+  if (watch.to_point) criteri.push(`a: ${watch.to_point}`);
   if (passNames) criteri.push(`abbonamenti: ${passNames}`);
   $("#watchSub").innerHTML = criteri
     .map((c) => `<span class="crit">${esc(c)}</span>`)
@@ -1038,13 +1046,13 @@ function renderDetail() {
 
   $("#statCount").textContent = state.offers.length;
   const transitCount = state.offers.filter((o) => o.mode === "transit").length;
-  $("#statCountNote").textContent = transitCount ? `${transitCount} combinazioni mezzi` : "";
+  $("#statCountNote").textContent = transitCount ? `${transitCount} combinazioni di mezzi` : "";
 
   $("#statLastRun").textContent = watch.last_run_at ? relative(watch.last_run_at) : "mai";
   const lastRun = state.runs[0];
   $("#statLastRunNote").textContent = lastRun
     ? `${lastRun.offers_found} offerte · ${lastRun.status === "ok" ? "ok" : lastRun.status}`
-    : "nessuna esecuzione";
+    : "nessun controllo";
 
   $("#statNextRun").textContent = watch.active ? relative(watch.next_run_at) : "—";
   $("#statNextRunNote").textContent = watch.active ? "controllo automatico" : "ricerca in pausa";
@@ -1113,7 +1121,7 @@ function renderConfronti(confronti) {
     .join("");
   const nessunRisparmio = confronti.every((c) => Number(c.delta_prezzo || 0) >= -0.01);
   return `<div class="confronti">
-    <h4 title="Confronto reale sui prezzi Trenitalia: quanto costa e quanto tempo cambia spezzando il viaggio.">Tratte singole invece del biglietto unico</h4>
+    <h4 title="Confronto reale sui prezzi Trenitalia: quanto costa e quanto tempo cambia spezzando il viaggio.">Tratte singole</h4>
     ${righe}
     ${nessunRisparmio
       ? '<small class="conf-note">Nessun risparmio: spezzando il viaggio si paga uguale o di più, conviene il biglietto unico.</small>'
@@ -1162,7 +1170,7 @@ function renderPlan() {
   const steps = (plan.steps || []).map((step, i) => {
     const dep = step.depart_at ? fmtTime(step.depart_at) : "—";
     const arr = step.arrive_at ? fmtTime(step.arrive_at) : "—";
-    const day = step.depart_at ? fmtDay(step.depart_at) : "";
+    const day = step.depart_at ? fmtDayFull(step.depart_at) : "";
     // Con una sola tratta il prezzo e' gia' quello del piano: non si ripete.
     const unicaTratta = (plan.steps || []).length === 1;
     const price = step.price != null ? euro(step.price) : "da verificare";
@@ -1235,7 +1243,7 @@ function renderPlan() {
     : "";
   const alts = state.planAlternatives.length
     ? `<div class="plan-alts">
-         <h4>Alternative: altri profili</h4>
+         <h4>Alternative</h4>
          ${state.planAlternatives.map((alt) => {
            const altCovered = !!alt.covered;
            const altNet = altCovered
@@ -1262,33 +1270,33 @@ function renderPlan() {
         <small>${covered
           ? `coperto da ${esc(passNames || "abbonamento")}`
           : plan.partial ? "totale noto · tratte da verificare"
-          : hasAccess ? "biglietto + spostamento" : "costo totale"}${plan.ai && confidence != null ? ` · fiducia ${confidence}%` : ""}</small>
+          : hasAccess ? "biglietto + spostamento" : "costo totale"}${plan.ai && confidence != null ? ` · fiducia ${confidence}/100` : ""}</small>
         ${covered && plan.total_price != null ? `<small>biglietto ${euro(plan.total_price)}, ma è già coperto</small>` : ""}
         ${!covered && hasAccess && plan.total_price != null ? `<small>biglietti ${euro(plan.total_price)} + ${euro(accessCost)} spostamento</small>` : ""}
       </div>
     </div>
-    <div class="plan-body">
-      <div class="plan-main">
-        <div class="plan-facts">
-          ${plan.depart_at ? `<span>partenza ${fmtDate(plan.depart_at)}</span>` : ""}
-          ${plan.arrive_at ? `<span>arrivo ${fmtDate(plan.arrive_at)}</span>` : ""}
-          ${duration ? `<span>${duration}</span>` : ""}
-          <span>${changeLabel}</span>
-          ${plan.partial ? "<span>prezzo parziale</span>" : ""}
-          ${walkNote}
-          ${walkNote2}
-          ${partiDiCasa ? `<span>${partiDiCasa}</span>` : ""}
-          ${doorToDoor && (walkOut || walkIn) ? `<span>porta a porta ${fmtDuration(doorToDoor)}</span>` : ""}
-          ${covered ? `<span>coperto da ${esc(passNames || "abbonamento")}</span>` : ""}
-          ${plan.transfer_km != null ? `<span>${plan.transfer_km} km a piedi nel cambio</span>` : ""}
-        </div>
-        ${steps ? `<div class="plan-steps">${steps}</div>` : ""}
-      </div>
-      <div class="plan-why">
-        <div class="plan-explanation">${esc(plan.explanation || "")}</div>
-        ${watchouts ? `<div class="plan-watchouts">${watchouts}</div>` : ""}
-      </div>
+    <div class="plan-facts">
+      ${plan.depart_at ? `<span>partenza ${fmtDate(plan.depart_at)}</span>` : ""}
+      ${plan.arrive_at ? `<span>arrivo ${fmtDate(plan.arrive_at)}</span>` : ""}
+      ${duration ? `<span>${duration}</span>` : ""}
+      <span>${changeLabel}</span>
+      ${plan.partial ? "<span>prezzo parziale</span>" : ""}
+      ${walkNote}
+      ${walkNote2}
+      ${partiDiCasa ? `<span>${partiDiCasa}</span>` : ""}
+      ${doorToDoor && (walkOut || walkIn) ? `<span>porta a porta ${fmtDuration(doorToDoor)}</span>` : ""}
+      ${covered ? `<span>coperto da ${esc(passNames || "abbonamento")}</span>` : ""}
+      ${plan.transfer_km != null ? `<span>${plan.transfer_km} km a piedi nel cambio</span>` : ""}
     </div>
+    ${steps ? `<div class="plan-steps">${steps}</div>` : ""}
+    ${plan.explanation ? `<details class="plan-why">
+      <summary>Perché questo piano</summary>
+      <p class="plan-explanation">${esc(plan.explanation)}</p>
+    </details>` : ""}
+    ${watchouts ? `<div class="plan-watchouts">
+      <span class="plan-label">Da tenere d’occhio</span>
+      ${watchouts}
+    </div>` : ""}
     ${renderConfronti(plan.confronti)}
     ${alts}`;
 }
@@ -1331,7 +1339,7 @@ async function answerQuestion(questionId, answer) {
       ? { method: "POST" }
       : { method: "POST", body: JSON.stringify({ answer, source: "web" }) };
     await api(`/api/questions/${questionId}/${endpoint}`, options);
-    toast("Grazie: aggiorno la ricerca.");
+    toast("Aggiorno la ricerca.");
     await refreshAll();
     setTimeout(refreshAll, 4000);
   } catch (error) {
@@ -1422,7 +1430,7 @@ function offerCard(offer, suppressNew = false) {
 
   const dep = offer.depart_at ? fmtTime(offer.depart_at) : "—";
   const arr = offer.arrive_at ? fmtTime(offer.arrive_at) : "—";
-  const dayLabel = offer.depart_at ? fmtDay(offer.depart_at) : "";
+  const dayLabel = offer.depart_at ? fmtDayFull(offer.depart_at) : "";
   const duration = fmtDuration(offer.duration_min);
   const pickupKm = offer.details?.km_pickup_a_piedi;
   const dropoffKm = offer.details?.km_dropoff_a_piedi;
@@ -1550,7 +1558,7 @@ function renderBest(panel) {
     const notes = (state.runs[0]?.notes || []).slice(0, 4);
     panel.innerHTML = emptyTab(
       "Ancora nessuna offerta con prezzo",
-      "L'agente sta cercando. Puoi forzare un controllo con “Cerca ora”.",
+      "L'agente controlla ogni ora. Puoi chiederne uno adesso: «Cerca ora».",
       true,
       notes
     );
@@ -1562,7 +1570,7 @@ function renderBest(panel) {
 
 function renderAll(panel) {
   if (!state.offers.length) {
-    panel.innerHTML = emptyTab("Nessuna offerta salvata", "Avvia una ricerca o allarga il raggio/budget.");
+    panel.innerHTML = emptyTab("Nessuna offerta salvata", "Avvia una ricerca o allarga il raggio o il budget.");
     return;
   }
   const groups = {};
@@ -1585,7 +1593,7 @@ function renderNearby(panel) {
   if (!offers.length) {
     panel.innerHTML = emptyTab(
       "Nessuna alternativa vicina",
-      "Il carsharing viene stimato solo per tratte coperte dal provider; le fermate vicine compaiono se la fonte è attiva."
+      "Il carsharing compare solo dove il provider copre la tratta; le fermate vicine arrivano se la fonte è attiva."
     );
     return;
   }
@@ -1621,7 +1629,7 @@ async function renderMap(panel) {
   if (typeof L === "undefined") {
     panel.innerHTML = emptyTab(
       "Mappa non disponibile",
-      "La libreria della mappa (Leaflet) non è stata caricata: controlla la connessione e ricarica la pagina."
+      "La mappa non si è caricata: controlla la connessione e ricarica la pagina."
     );
     return;
   }
@@ -1740,7 +1748,7 @@ function renderLinks(panel) {
 
 function renderRuns(panel) {
   if (!state.runs.length) {
-    panel.innerHTML = emptyTab("Nessuna esecuzione", "La cronologia comparirà dopo il primo controllo.");
+    panel.innerHTML = emptyTab("Nessun controllo", "La cronologia dei controlli apparirà dopo il primo giro.");
     return;
   }
   panel.innerHTML = `<div>${state.runs.map((run) => `
@@ -1771,7 +1779,7 @@ function emptyTab(title, text, withLinks = false, notes = []) {
 async function runNow() {
   if (!state.watch) return;
   try {
-    toast("Ricerca avviata…");
+    toast("Controllo in corso…");
     await api(`/api/watches/${state.watch.id}/run`, { method: "POST" });
     setTimeout(refreshAll, 2500);
     setTimeout(refreshAll, 7000);
@@ -1901,7 +1909,7 @@ async function aiFill() {
   }
   const button = $("#btnAiFill");
   button.disabled = true;
-  hint.textContent = "L'AI sta leggendo…";
+  hint.textContent = "L'agente sta leggendo…";
   hint.className = "field-hint";
   try {
     const result = await api("/api/ai/parse", { method: "POST", body: JSON.stringify({ text }) });
@@ -1975,7 +1983,7 @@ async function checkGeo(fieldId) {
   try {
     const result = await api("/api/geocode?q=" + encodeURIComponent(query));
     if (!result.found) {
-      hint.textContent = "località non trovata, prova con “Città” o “Città Stazione”";
+      hint.textContent = "località non trovata, prova con «Città» o «Città Stazione»";
       hint.className = "field-hint err";
       return;
     }
@@ -2049,7 +2057,7 @@ async function submitWatch(event) {
     closeModal("watchModal");
     await loadWatches();
     await selectWatch(watch.id);
-    toast(state.editingId ? "Ricerca aggiornata" : "Ricerca avviata: primo controllo in corso…");
+    toast(state.editingId ? "Ricerca aggiornata" : "Controllo in corso: le prime offerte arrivano tra poco.");
     setTimeout(refreshAll, 3000);
     setTimeout(refreshAll, 8000);
   } catch (error) {
@@ -2173,7 +2181,7 @@ async function loadModelOptions(smart, fast) {
     fastSelect.innerHTML = `<option value="">— modello predefinito —</option>`;
     smartSelect.disabled = false;
     fastSelect.disabled = false;
-    hint.textContent = "errore: " + error.message;
+    hint.textContent = "Errore: " + error.message;
     hint.className = "field-hint err";
   }
 }
@@ -2467,7 +2475,7 @@ async function updateGtfs() {
   try {
     await api("/api/gtfs/update", { method: "POST" });
   } catch (error) {
-    hint.textContent = "errore: " + error.message;
+    hint.textContent = "Errore: " + error.message;
     hint.className = "field-hint err";
     return;
   }
@@ -2513,7 +2521,7 @@ async function renderPushStatus() {
       : `Non attive su questo dispositivo · ${data.subscriptions} dispositivi collegati`;
     hint.className = "field-hint" + (subscription ? " ok" : "");
   } catch (error) {
-    hint.textContent = "errore: " + error.message;
+    hint.textContent = "Errore: " + error.message;
     hint.className = "field-hint err";
   }
 }
@@ -2547,7 +2555,7 @@ async function enablePush() {
     });
     await renderPushStatus();
   } catch (error) {
-    hint.textContent = "errore: " + error.message;
+    hint.textContent = "Errore: " + error.message;
     hint.className = "field-hint err";
   }
 }
@@ -2566,7 +2574,7 @@ async function disablePush() {
     }
     await renderPushStatus();
   } catch (error) {
-    hint.textContent = "errore: " + error.message;
+    hint.textContent = "Errore: " + error.message;
     hint.className = "field-hint err";
   }
 }
@@ -2580,7 +2588,7 @@ async function testPush() {
     if (!data.ok) throw new Error(data.error || "nessun dispositivo raggiunto");
     toast("Notifica di prova inviata");
   } catch (error) {
-    hint.textContent = "errore: " + error.message;
+    hint.textContent = "Errore: " + error.message;
     hint.className = "field-hint err";
     return;
   }
@@ -2597,7 +2605,7 @@ async function testTelegram() {
     hint.textContent = result.ok ? "messaggio inviato" : "errore: " + result.error;
     hint.className = "field-hint " + (result.ok ? "ok" : "err");
   } catch (error) {
-    hint.textContent = "errore: " + error.message;
+    hint.textContent = "Errore: " + error.message;
     hint.className = "field-hint err";
   }
 }
@@ -2632,7 +2640,7 @@ async function loadChatHistory(watchId) {
 // Il pulsante flottante: la chat e' a portata di mano da qualsiasi scheda.
 function apriChat() {
   if (!state.watch) {
-    toast("Scegli prima una ricerca: poi potrai chiedermi quello che vuoi.");
+    toast("Prima scegli una ricerca: poi chiedimi quello che vuoi.");
     return;
   }
   state.tab = "ask";
@@ -2681,7 +2689,7 @@ function renderChat(panel) {
         </div>
         <small class="field-hint">
           Fai una domanda sui viaggi trovati o cambia la ricerca a parole
-          (budget, orario, mezzo, abbonamento, punto di ritrovo). Le risposte
+          (budget, orario, mezzo, abbonamento, punto di partenza). Le risposte
           usano i prezzi e gli orari reali di questa ricerca.
         </small>
       </div>
@@ -2946,7 +2954,7 @@ async function testAi() {
     await api("/api/settings", { method: "PUT", body: JSON.stringify(settingsPayload()) });
     const result = await api("/api/ai/test", { method: "POST" });
     if (result.ok) {
-      hint.textContent = `risposta da ${shortModel(result.model)}: “${result.reply}”`;
+      hint.textContent = `risposta da ${shortModel(result.model)}: «${result.reply}»`;
       hint.className = "field-hint ok";
       await loadStatus();
     } else {
@@ -2954,7 +2962,7 @@ async function testAi() {
       hint.className = "field-hint err";
     }
   } catch (error) {
-    hint.textContent = "errore: " + error.message;
+    hint.textContent = "Errore: " + error.message;
     hint.className = "field-hint err";
   }
 }
@@ -2968,7 +2976,7 @@ async function listAiModels() {
     await api("/api/settings", { method: "PUT", body: JSON.stringify(settingsPayload()) });
     await loadModelOptions($("#sAiSmart").value, $("#sAiFast").value);
   } catch (error) {
-    hint.textContent = "errore: " + error.message;
+    hint.textContent = "Errore: " + error.message;
     hint.className = "field-hint err";
   }
 }
