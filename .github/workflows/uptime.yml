@@ -67,9 +67,15 @@ jobs:
           region=eu-milan-1
           key_file=$HOME/.oci/key.pem
           EOF
+          oci compute instance get \
+            --instance-id "$OCI_INSTANCE_OCID" \
+            --query 'data."lifecycle-state"' \
+            --output text 2>&1 | tee /tmp/stato.txt || true
+          echo "stato dell'istanza: $(cat /tmp/stato.txt 2>/dev/null || echo 'sconosciuto')"
           oci compute instance action \
             --action START \
-            --instance-id "$OCI_INSTANCE_OCID" || true
+            --instance-id "$OCI_INSTANCE_OCID" 2>&1 | tee /tmp/avvio.txt || true
+          cat /tmp/avvio.txt
 
       - name: Avvisa su Telegram
         if: failure()
