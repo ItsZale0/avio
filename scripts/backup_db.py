@@ -147,6 +147,44 @@ def invia_telegram(file_path: Path) -> bool:
         return False
 
 
+def invia_chiave(segnale: Path) -> bool:
+    """Manda la chiave di cifratura al proprietario, una volta sola.
+
+    Senza questa chiave i backup non si aprono: e' il pezzo che va
+    tenuto da parte (nel gestore di password), non dentro la VM.
+    """
+    if segnale.exists():
+        return False
+    valori = app_settings.get_all()
+    token = (valori.get("telegram_token") or "").strip()
+    chat_id = (valori.get("telegram_chat_id") or "").strip()
+    if not token or not chat_id or chat_id.startswith("-"):
+        return False
+    segreto = KEY_FILE.read_text(encoding="utf-8").strip()
+    testo = (
+        "Chiave del backup di Carpool Hunter (serve per aprire i backup).\n"
+        "Copiare questo testo nel gestore di password: senza, i backup cifrati "
+        "non si aprono.\n\n"
+        f"{segreto}"
+    )
+    try:
+        import httpx
+
+        with httpx.Client(timeout=60) as client:
+            risposta = client.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": chat_id, "text": testo},
+            )
+        if not risposta.json().get("ok"):
+            return False
+        segnale.write_text("inviata\n", encoding="utf-8")
+        log("chiave di cifratura inviata su Telegram")
+        return True
+    except Exception as exc:  # noqa: BLE001
+        log(f"invio della chiave fallito: {type(exc).__name__}: {exc}")
+        return False
+
+
 def pulisci_locali() -> None:
     """Tiene solo le ultime copie locali."""
     archivio_dir = DATA_DIR / "backup"
@@ -160,6 +198,7 @@ def pulisci_locali() -> None:
 def main() -> int:
     log("inizio")
     chiave()
+    invia_chiave(DATA_DIR / ".chiave-inviata")
     tar_path = archivio()
     if tar_path is None:
         return 1
