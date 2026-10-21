@@ -232,7 +232,10 @@ d'aria: l'agente usa i **progressivi chilometrici RFI** delle linee
 altoatesine (Brennero, Bolzano-Merano, Fortezza-San Candido, Merano-Malles),
 quindi Bressanone-Bolzano sono 38,1 km e non 32,8: col Flex costa 4,96 €
 invece del biglietto da 8,00 €. Il Flex vale fino a **Trento** (Bolzano-Trento
-55,4 km sono tutti coperti); oltre Trento serve un altro biglietto.
+55,4 km sono tutti coperti); oltre Trento serve un altro biglietto. Per questo
+la spezzatura prova sempre anche il **confine** (Trento), non solo le fermate
+descritte dalla fonte: Bressanone→Rovereto viene confrontato sia via Bolzano
+sia via Trento (Flex fino a Trento + biglietto Trento→Rovereto).
 
 La copertura è quasi sempre **parziale** e viene calcolata tratto per tratto:
 sui treni si usano i km della tabella e le stazioni della provincia

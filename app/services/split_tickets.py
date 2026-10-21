@@ -33,6 +33,7 @@ from ..adapters.trenitalia import (
 )
 from ..timeutil import ROME, iso, parse_dt
 from . import passes as passes_service
+from . import rail_km
 
 log = logging.getLogger("carpool.split")
 
@@ -61,6 +62,16 @@ RAIL_HUBS = [
     "bari", "lecce", "reggio calabria", "taranto", "potenza", "ravenna",
     "piacenza", "la spezia", "genova piazza principe", "mestre", "venice",
 ]
+
+# I nodi in linea della rete regionale altoatesina/brenner: stazioni
+# principali dove ha senso spezzare il biglietto. Servono perche' molti
+# adapter descrivono solo le tratte commerciali del viaggio (es. cambio a
+# Bolzano) e non tutte le fermate: senza questi nodi una spezzatura a
+# Trento, che e' il confine del sistema provinciale, non verrebbe mai provata.
+NODI_IN_LINEA = (
+    "brennero", "fortezza", "bressanone", "brunico", "san candido",
+    "merano", "silandro", "malles", "bolzano", "trento", "rovereto",
+)
 
 
 async def _segment_price(
@@ -140,18 +151,35 @@ def _is_endpoint(hub: str, ctx: SearchContext) -> bool:
     return False
 
 
+def _chiave_punto(nome: str | None) -> str:
+    """Chiave per capire se due nomi indicano la stessa stazione."""
+    return rail_km.stazione(nome) or str(nome or "").strip().lower()
+
+
 def _split_points(offer: Offer, ctx: SearchContext) -> list[str]:
     """Le citta' dove provare a spezzare il biglietto, in ordine di promessa.
 
     Prima i **nodi ferroviari in linea** sul percorso (Bologna, Firenze,
     Verona...): e' li' che la spezzatura conviene, perche' offrono
-    regionali economici che il treno diretto non usa. Poi le fermate reali
-    dell'itinerario, che sono un buon piano B.
+    regionali economici che il treno diretto non usa. Poi i nodi della rete
+    regionale attraversati (Fortezza, Bolzano, Trento...), infine le fermate
+    reali dell'itinerario, che sono un buon piano B.
 
     "In linea" vuol dire che la deviazione e' minima:
     dist(partenza, X) + dist(X, arrivo) - dist(partenza, arrivo) < 70 km.
     """
     points: list[str] = []
+    visti: set[str] = set()
+
+    def aggiungi(nome: str) -> None:
+        nome = str(nome or "").strip()
+        if not nome:
+            return
+        chiave = _chiave_punto(nome)
+        if chiave in visti:
+            return
+        visti.add(chiave)
+        points.append(nome)
 
     if None not in (ctx.from_lat, ctx.from_lon, ctx.to_lat, ctx.to_lon):
         from ..geo import CITIES, haversine_km
@@ -171,9 +199,19 @@ def _split_points(offer: Offer, ctx: SearchContext) -> list[str]:
                     on_the_way.append((priority, hub))
             on_the_way.sort()
             for _, hub in on_the_way:
-                label = hub.title()
-                if label not in points:
-                    points.append(label)
+                aggiungi(hub.title())
+
+    # I nodi in linea della rete regionale: il percorso reale dice quali
+    # stazioni si attraversano, anche quando l'adapter descrive solo le
+    # tratte commerciali. Trento e' il confine del sistema altoatesino.
+    if offer.mode == "train":
+        partenza = rail_km.stazione(offer.pickup_name)
+        arrivo = rail_km.stazione(offer.dropoff_name)
+        if partenza and arrivo:
+            cammino, _ = rail_km.percorso(partenza, arrivo)
+            for nodo in cammino:
+                if nodo in NODI_IN_LINEA:
+                    aggiungi(nodo.replace("_", " ").title())
 
     # Poi le fermate reali del treno.
     tappe = offer.details.get("tappe") or []
@@ -181,14 +219,12 @@ def _split_points(offer: Offer, ctx: SearchContext) -> list[str]:
         if not isinstance(step, dict):
             continue
         for key in ("da", "a"):
-            name = str(step.get(key) or "").strip()
-            if name and name not in points:
-                points.append(name)
+            aggiungi(str(step.get(key) or ""))
 
     # Escludi partenza e arrivo.
-    start = str(offer.pickup_name or "").strip().lower()
-    end = str(offer.dropoff_name or "").strip().lower()
-    return [p for p in points if p.lower() not in (start, end)]
+    start = _chiave_punto(offer.pickup_name)
+    end = _chiave_punto(offer.dropoff_name)
+    return [p for p in points if _chiave_punto(p) not in (start, end)]
 
 
 def _duration(depart: datetime | None, arrive: datetime | None) -> int:
@@ -554,9 +590,14 @@ async def analyze_splits(
             )
         )
 
-    # I confronti: prima quelli che fanno risparmiare, poi i piu' vicini.
+    # I confronti: prima quelli che fanno risparmiare e costano meno, poi
+    # gli altri. A pari costo vince chi arriva prima.
     comparisons.sort(
-        key=lambda c: (not c["conveniente"], abs(c["delta_prezzo"]), abs(c["delta_minuti"]))
+        key=lambda c: (
+            not c["conveniente"],
+            c.get("totale_effettivo") or c["totale"],
+            c["durata_min"],
+        )
     )
     return spezzate, [_comparison(c) for c in comparisons]
 

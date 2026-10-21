@@ -259,6 +259,45 @@ class SplitPointTests(unittest.TestCase):
         points = split_tickets._split_points(make_train_offer(tappe=tappe), ctx)
         self.assertIn("Piacenza", points)
 
+    def test_trento_is_tried_even_if_the_adapter_skips_it(self):
+        # L'adapter descrive solo le tratte commerciali (cambio a Bolzano):
+        # Trento, confine del sistema altoatesino, deve comunque essere
+        # provata come punto di spezzatura.
+        ctx = make_ctx(
+            from_place="Bressanone Brixen",
+            to_place="Rovereto",
+            from_lat=46.709998,
+            from_lon=11.650005,
+            to_lat=45.890972,
+            to_lon=11.033528,
+        )
+        offer = Offer(
+            source="omio",
+            external_id="direct",
+            mode="train",
+            operator="Trenitalia",
+            depart_at=datetime(2026, 10, 25, 7, 55, tzinfo=timezone.utc),
+            arrive_at=datetime(2026, 10, 25, 9, 47, tzinfo=timezone.utc),
+            price=20.70,
+            pickup_name="Bressanone Brixen",
+            dropoff_name="Rovereto",
+            pickup_lat=46.709998,
+            pickup_lon=11.650005,
+            dropoff_lat=45.890972,
+            dropoff_lon=11.033528,
+            details={
+                "tappe": [
+                    {"da": "Bressanone Brixen", "a": "Bolzano Bozen"},
+                    {"da": "Bolzano Bozen", "a": "Rovereto"},
+                ]
+            },
+        )
+        points = split_tickets._split_points(offer, ctx)
+        self.assertIn("Trento", points)
+        self.assertIn("Bolzano", points)
+        # Una sola volta, anche se arriva sia dal percorso sia dalle tappe.
+        self.assertEqual(sum(1 for p in points if split_tickets._chiave_punto(p) == "bolzano"), 1)
+
 
 class SplitOfferTests(unittest.TestCase):
     def test_split_is_kept_only_when_cheaper(self):
