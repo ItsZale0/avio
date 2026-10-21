@@ -964,7 +964,9 @@ function renderConfronti(confronti) {
           const listino = Number(t.prezzo || 0);
           const effettivo =
             t.prezzo_effettivo != null ? Number(t.prezzo_effettivo) : listino;
-          const nota = t.pass ? ` (${esc(t.pass)})` : "";
+          const nota = t.pass
+            ? ` (${esc(String(t.pass).replace(/\s*\([^)]*\)\s*$/, ""))}${t.pass_km ? `, ${Number(t.pass_km).toLocaleString("it-IT", { maximumFractionDigits: 1 })} km` : ""})`
+            : "";
           const prezzo =
             Math.abs(effettivo - listino) > 0.005
               ? `<s>${euro(listino)}</s> ${euro(effettivo)}${nota}`

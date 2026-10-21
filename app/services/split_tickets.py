@@ -364,7 +364,7 @@ def applica_abbonamenti(
 
     Spezzando si compra un titolo per tratta: il pass va applicato al
     singolo biglietto (Flex solo dove e' valido), non alla somma. Cosi'
-    Bressanone→Bolzano viene 4,80 col Flex e non 8,00, mentre
+    Bressanone→Bolzano viene 4,96 col Flex e non 8,00, mentre
     Bolzano→Rovereto resta a prezzo intero perche' esce dall'Alto Adige.
     """
     if not comparisons:
@@ -388,6 +388,11 @@ def applica_abbonamenti(
             tratta["prezzo_effettivo"] = costo
             if nome:
                 tratta["pass"] = nome
+                km = passes_service.km_tratta(
+                    tratta.get("da") or "", tratta.get("a") or ""
+                )
+                if km:
+                    tratta["pass_km"] = round(km, 1)
             totale_effettivo += costo
 
         diretta = confronto.get("offer")
@@ -481,7 +486,7 @@ async def analyze_splits(
 
     # Gli abbonamenti si applicano ai singoli biglietti: e' qui che la
     # spezzatura cambia davvero prezzo (es. Flex sul tratto in Alto Adige:
-    # Bressanone-Bolzano 4,80 invece di 8,00).
+    # Bressanone-Bolzano 4,96 invece di 8,00).
     applica_abbonamenti(comparisons, passes, sconto_xgo)
 
     # Le offerte: quelle che battono il diretto. Se l'utente preferisce

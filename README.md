@@ -226,14 +226,18 @@ in Campania, Abruzzo, Sardegna, Puglia, Trento e Bolzano.
 
 Il **Flex** e' diverso dagli altri: non e' a tariffa fissa, si paga **il
 chilometro** (0,13 €/km nel primo scaglione, poi 0,08, 0,03, 0,02, 0; massimo
-650 €/anno e 22 €/giorno; minimo 10 km tariffari a viaggio). Per questo l'agente
-non lo tratta come "gratis": calcola quanto si paga davvero e te lo dice
-(Merano-Bolzano: 24 km, 3,18 € invece del biglietto da 5,90 €).
+650 €/anno e 22 €/giorno). Per le connessioni urbane si contano 10 km
+tariffari a Bolzano e Merano, 5 km nelle altre zone. I km non sono la linea
+d'aria: l'agente usa i **progressivi chilometrici RFI** delle linee
+altoatesine (Brennero, Bolzano-Merano, Fortezza-San Candido, Merano-Malles),
+quindi Bressanone-Bolzano sono 38,1 km e non 32,8: col Flex costa 4,96 €
+invece del biglietto da 8,00 €. Il Flex vale fino a **Trento** (Bolzano-Trento
+55,4 km sono tutti coperti); oltre Trento serve un altro biglietto.
 
-La copertura è quasi sempre **parziale** e viene calcolata tratto per tratto,
-campionando il percorso: l'altoadigemobilita sul treno Thiene→Trento copre il
-36% del viaggio (la linea del Brennero entra in area a Fortezza), quello
-provinciale del Trentino il 56%.
+La copertura è quasi sempre **parziale** e viene calcolata tratto per tratto:
+sui treni si usano i km della tabella e le stazioni della provincia
+(Bolzano→Rovereto: coperti 55,4 km su 79,0, il 70%; Rovereto→Trento: 0%),
+sugli altri mezzi si campiona il percorso.
 
 ### Il tempo conta quanto il prezzo
 

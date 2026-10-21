@@ -19,6 +19,7 @@ from datetime import date, datetime
 from typing import Any
 
 from ..geo import CITIES, haversine_km, normalize
+from . import rail_km
 
 # --------------------------------------------------------------------------- #
 # Trenitalia: l'abbonamento regionale esiste in ogni regione (tariffe
@@ -194,12 +195,25 @@ _INTEGRATI: dict[str, dict[str, Any]] = {
             "merano",
             "bressanone",
             "brunico",
-            "cortina d'ampezzo",
             "silandro",
             "egna",
             "vipiteno",
             "laives",
             "san candido",
+            "chiusa",
+            "fortezza",
+            "ora",
+            "malles",
+            "dobbiaco",
+            "lana",
+            "terlano",
+            "san lorenzo di sebato",
+            "valdaora",
+            "monguelfo",
+            "villabassa",
+            "laces",
+            "naturno",
+            "castelbello",
         ],
         "raggio_km": 20,
         "copre": {"train", "bus", "tram", "transit"},
@@ -214,16 +228,20 @@ _INTEGRATI: dict[str, dict[str, Any]] = {
                 (20000, 0.02),
                 (None, 0.0),
             ],
-            "min_km": 10,
+            "min_km": 0,
+            "urbano_km": 10.0,
+            "urbano_km_altre": 5.0,
             "tetto_giornaliero": 22.0,
         },
         "nota": (
             "Pass annuale a tariffa chilometrica: 0,13 EUR/km nella prima "
             "fascia, poi 0,08, 0,03, 0,02 e infine 0 EUR/km. Massimo 650 "
-            "EUR/anno e massimo 22 EUR al giorno. Minimo 10 km tariffari a "
-            "viaggio (5 km per gli autobus fuori da Bolzano e Merano). "
-            "Valido su treni, autobus e funivie dell'Alto Adige: per il "
-            "Trentino e il Tirolo serve l'Euregio Ticket."
+            "EUR/anno e massimo 22 EUR al giorno. Per le connessioni urbane "
+            "si contano 10 km tariffari a Bolzano e Merano, 5 km nelle altre "
+            "zone; sulle tratte extraurbane si pagano i km percorsi. Vale "
+            "sui treni, sugli autobus e sulle funivie dell'Alto Adige e sui "
+            "treni regionali fino a Trento: oltre Trento serve un altro "
+            "biglietto."
         ),
         "fonte": "https://www.suedtirolmobil.info/it/ticket/altoadigemobilita-pass-la-connessione-di-cui-hai-bisogno",
     },
@@ -234,12 +252,25 @@ _INTEGRATI: dict[str, dict[str, Any]] = {
             "merano",
             "bressanone",
             "brunico",
-            "cortina d'ampezzo",
             "silandro",
             "egna",
             "vipiteno",
             "laives",
             "san candido",
+            "chiusa",
+            "fortezza",
+            "ora",
+            "malles",
+            "dobbiaco",
+            "lana",
+            "terlano",
+            "san lorenzo di sebato",
+            "valdaora",
+            "monguelfo",
+            "villabassa",
+            "laces",
+            "naturno",
+            "castelbello",
         ],
         "raggio_km": 20,
         "copre": {"train", "bus", "tram", "transit"},
@@ -254,15 +285,18 @@ _INTEGRATI: dict[str, dict[str, Any]] = {
                 (20000, 0.02),
                 (None, 0.0),
             ],
-            "min_km": 10,
+            "min_km": 0,
+            "urbano_km": 10.0,
+            "urbano_km_altre": 5.0,
             "tetto_giornaliero": 22.0,
         },
         "nota": (
             "Pass annuale personale per famiglie (ex Euregio Family Pass) a "
             "tariffa chilometrica ridotta: 0,11 EUR/km nella prima fascia, "
             "poi 0,07, 0,02, 0,02 e 0. Massimo 540 EUR/anno e 22 EUR al "
-            "giorno. Tessera prepagata: ricarica minima 20 EUR, credito "
-            "minimo 10 EUR."
+            "giorno. Connessioni urbane: 10 km tariffari a Bolzano e Merano, "
+            "5 km nelle altre zone. Tessera prepagata: ricarica minima 20 "
+            "EUR, credito minimo 10 EUR."
         ),
         "fonte": "https://www.suedtirolmobil.info/it/ticket/trovaticket/altoadigemobilita-flexfamily-pass",
     },
@@ -695,11 +729,15 @@ def _route_points(offer: Any) -> list[tuple[float, float]]:
 # Quanti punti si campionano su ogni tratto del percorso.
 _CAMPIONI_TRATTO = 12
 
-# I binari non sono una linea retta: la distanza in linea d'aria va
-# corretta per avvicinarsi ai km tariffari veri. Bressanone-Bolzano:
-# 32,8 km in retta, 36,9 km di ferrovia (+12,5%), cioe' 4,80 EUR col
-# Flex a 0,13 EUR/km.
+# I binari non sono una linea retta: quando la stazione non e' nella
+# tabella dei km tariffari (app/services/rail_km.py) la distanza in linea
+# d'aria va corretta. Per l'Alto Adige la tabella ufficiale vale sempre
+# (Bressanone-Bolzano 38,1 km, non 32,8), questo resta il ripiego.
 FATTORE_ROTAIA = 1.13
+
+# Le strade curvano piu' dei binari: per gli autobus senza fermate
+# intermedie la retta va corretta di piu'.
+FATTORE_STRADA = 1.2
 
 
 def _punto_dentro(
@@ -806,15 +844,45 @@ def _copertura_base(
     if tipo.get("solo_regionali") and mode == "train" and not _is_regional_train(offer):
         return None
 
-    percorso = _route_points(offer)
-    # Solo i treni viaggiano su binari: per bus e passaggi la retta va bene.
-    fattore = FATTORE_ROTAIA if mode == "train" else 1.0
+    # I treni si prezzano sui km tariffari veri (tabella RFI): la retta
+    # corretta a occhio sbagliava del 10-30% sulle tratte lunghe (Merano-
+    # Bolzano 27,7 invece di 31,5; Bressanone-Bolzano 37,0 invece di 38,1).
+    ferroviaria = None
+    if mode == "train":
+        ferroviaria = rail_km.copertura(
+            getattr(offer, "pickup_name", None), getattr(offer, "dropoff_name", None)
+        )
 
     if not tipo.get("parziale"):
-        lunghezza = 0.0
-        for primo, secondo in zip(percorso, percorso[1:]):
-            lunghezza += haversine_km(primo[0], primo[1], secondo[0], secondo[1]) * fattore
+        # Abbonamento valido su tutto il viaggio: conta solo la lunghezza.
+        if ferroviaria is not None:
+            lunghezza = ferroviaria[1]
+        else:
+            lunghezza = 0.0
+            for primo, secondo in zip(_route_points(offer), _route_points(offer)[1:]):
+                lunghezza += (
+                    haversine_km(primo[0], primo[1], secondo[0], secondo[1]) * FATTORE_ROTAIA
+                )
         return lunghezza, lunghezza, "tutto il viaggio", True
+
+    if ferroviaria is not None:
+        km_coperti, km_totali, completo = ferroviaria
+        if km_coperti <= 0.01:
+            return None
+        return km_coperti, km_totali, "rete ferroviaria provinciale", completo
+
+    percorso = _route_points(offer)
+    # Strade e ferrovie non sono rette. Per i treni (quando la stazione non
+    # e' in tabella) si usa il fattore rotaia; per gli autobus la strada
+    # curva di piu', ma se l'offerta elenca gia' le fermate la spezzata e'
+    # gia' realistica.
+    tappe = (getattr(offer, "details", None) or {}).get("tappe") or []
+    if mode == "train":
+        fattore = FATTORE_ROTAIA
+    elif mode in ("bus", "tram", "transit") and len(tappe) < 2:
+        fattore = FATTORE_STRADA
+    else:
+        fattore = 1.0
 
     punti_area = _area_points(tipo)
     if not punti_area and str(pass_info.get("tipo")) == "trenitalia_regionale":
@@ -854,20 +922,56 @@ def coverage(
     return quota, zona
 
 
+def _zona_urbana(offer: Any) -> str | None:
+    """La citta' della zona tariffaria, se il viaggio e' una connessione urbana.
+
+    Le "connessioni urbane" del Flex pagano un numero fisso di km
+    tariffari (10 a Bolzano e Merano, 5 altrove), non i km percorsi. Una
+    connessione e' urbana quando entrambi i capi stanno nella stessa
+    citta': un autobus Bolzano-Merano non lo e'.
+    """
+    mode = str(getattr(offer, "mode", "") or "")
+    if mode not in ("bus", "tram", "transit"):
+        return None
+    lat1 = getattr(offer, "pickup_lat", None)
+    lon1 = getattr(offer, "pickup_lon", None)
+    lat2 = getattr(offer, "dropoff_lat", None)
+    lon2 = getattr(offer, "dropoff_lon", None)
+    if None in (lat1, lon1, lat2, lon2):
+        return None
+    for nome, (clat, clon) in CITIES.items():
+        raggio = 8.0 if nome in ("bolzano", "merano") else 6.0
+        da = haversine_km(lat1, lon1, clat, clon)
+        a = haversine_km(lat2, lon2, clat, clon)
+        if da is not None and a is not None and da <= raggio and a <= raggio:
+            return nome
+    return None
+
+
 def _costo_tariffa_km(
-    tariffa: dict[str, Any], km_coperti: float
+    tariffa: dict[str, Any], km_coperti: float, offer: Any = None
 ) -> tuple[float, float, str]:
     """Costo in euro di un pass a tariffa chilometrica.
 
     Ritorna (costo, km tariffati, descrizione). Gli scaglioni sono annuali e
     l'app non sa quanti km hai gia' percorso quest'anno: usa il primo
-    scaglione, il piu' caro, quindi la stima non e' mai ottimista.
+    scaglione, il piu' caro, quindi la stima non e' mai ottimista. Per le
+    connessioni urbane valgono i km tariffari fissi della zona (10 a
+    Bolzano e Merano, 5 nelle altre), come da tariffa 41/3.
     """
     fasce = tariffa.get("fasce") or []
     prezzo_km = float(fasce[0][1]) if fasce else 0.0
     min_km = float(tariffa.get("min_km") or 0)
     tetto = float(tariffa.get("tetto_giornaliero") or 0)
     km_tariffati = max(min_km, km_coperti)
+    citta = _zona_urbana(offer) if offer is not None else None
+    if citta:
+        if citta in ("bolzano", "merano"):
+            km_urbani = float(tariffa.get("urbano_km") or 0)
+        else:
+            km_urbani = float(tariffa.get("urbano_km_altre") or 0)
+        if km_urbani:
+            km_tariffati = km_urbani
     costo = km_tariffati * prezzo_km
     if tetto:
         costo = min(costo, tetto)
@@ -919,18 +1023,32 @@ def apply_passes(
     if tariffa:
         # Pass a tariffa chilometrica: la parte coperta non e' gratis, si
         # paga il chilometro. La parte scoperta si paga come sempre.
-        costo_km, km_tariffati, descrizione = _costo_tariffa_km(tariffa, km_coperti)
+        costo_km, km_tariffati, descrizione = _costo_tariffa_km(
+            tariffa, km_coperti, offer
+        )
         parte_scoperta = (offer.price or 0.0) * (1 - quota)
         # Non si paga mai piu' del biglietto.
         details["net_cost"] = round(min(offer.price or 0.0, parte_scoperta + costo_km), 2)
         details["pass_tariffa"] = descrizione
-        details["pass_km"] = round(km_tariffati)
+        details["pass_km"] = round(km_tariffati, 1)
         details["pass_costo_km"] = round(costo_km, 2)
     else:
         details["net_cost"] = round((offer.price or 0.0) * (1 - quota), 2)
     offer.details = details
     offer.net_cost = details["net_cost"]
     return offer
+
+
+def km_tratta(da: str, a: str) -> float | None:
+    """Km tariffari del tratto: tabella RFI, altrimenti stima geografica."""
+    distanza = rail_km.km(da, a)
+    if distanza:
+        return distanza
+    coords_da = _station_coords(da)
+    coords_a = _station_coords(a)
+    if not coords_da or not coords_a:
+        return None
+    return round(haversine_km(*coords_da, *coords_a) * FATTORE_ROTAIA, 1)
 
 
 def netto_tratta(
@@ -945,8 +1063,9 @@ def netto_tratta(
     """Costo di un biglietto singolo con gli abbonamenti: (costo, nome pass).
 
     Serve alla spezzatura: ogni biglietto si paga a parte, quindi i km e il
-    pass vanno calcolati sul singolo tratto (Bressanone->Bolzano 4,80 col
-    Flex, Bolzano->Rovereto prezzo intero perche' esce dall'Alto Adige).
+    pass vanno calcolati sul singolo tratto (Bressanone->Bolzano 38,1 km,
+    4,96 EUR col Flex; Bolzano->Rovereto prezzo intero perche' esce
+    dall'Alto Adige).
 
     Con ``intera`` un abbonamento vale solo se copre tutto il tratto: su un
     biglietto separato che esce dall'area non si puo' scontare "una parte",
@@ -964,6 +1083,8 @@ def netto_tratta(
         mode="train",
         operator="Trenitalia Regionale",
         price=valore,
+        pickup_name=da,
+        dropoff_name=a,
         pickup_lat=coords_da[0],
         pickup_lon=coords_da[1],
         dropoff_lat=coords_a[0],

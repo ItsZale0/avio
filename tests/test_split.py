@@ -195,16 +195,16 @@ class PassiSullaSpezzaturaTests(unittest.TestCase):
         confronto = self._confronto()
         split_tickets.applica_abbonamenti([confronto], self.FLEX)  # type: ignore[list-item]
         prima, seconda = confronto["tratte"]
-        # Bressanone-Bolzano col Flex: 37 km a 0,13 = 4,81, non 8,00.
-        self.assertAlmostEqual(prima["prezzo_effettivo"], 4.81, places=2)
+        # Bressanone-Bolzano col Flex: 38,13 km tariffari a 0,13 = 4,96.
+        self.assertAlmostEqual(prima["prezzo_effettivo"], 4.96, places=2)
         self.assertIn("Flex", prima["pass"])
         # Bolzano-Rovereto esce dall'Alto Adige: prezzo intero.
         self.assertEqual(seconda["prezzo_effettivo"], 12.55)
         self.assertNotIn("pass", seconda)
-        self.assertAlmostEqual(confronto["totale_effettivo"], 17.36, places=2)
+        self.assertAlmostEqual(confronto["totale_effettivo"], 17.51, places=2)
         # Il diretto non e' coperto per intero: resta a listino.
         self.assertEqual(confronto["diretto_effettivo"], 23.81)
-        self.assertAlmostEqual(confronto["delta_prezzo"], -6.45, places=2)
+        self.assertAlmostEqual(confronto["delta_prezzo"], -6.30, places=2)
         self.assertTrue(confronto["conveniente"])
 
     def test_xgo_and_flex_together_take_the_cheapest(self):
@@ -213,12 +213,12 @@ class PassiSullaSpezzaturaTests(unittest.TestCase):
             [confronto], self.FLEX, sconto_xgo=0.2
         )
         prima, seconda = confronto["tratte"]
-        # X-GO porta 8,00 a 6,40, ma il Flex (4,81) e' meglio.
-        self.assertAlmostEqual(prima["prezzo_effettivo"], 4.81, places=2)
+        # X-GO porta 8,00 a 6,40, ma il Flex (4,96) e' meglio.
+        self.assertAlmostEqual(prima["prezzo_effettivo"], 4.96, places=2)
         self.assertEqual(prima["sconto_xgo"], 1.60)
         # Seconda tratta: X-GO 20% (10,04), il Flex non la copre.
         self.assertEqual(seconda["prezzo_effettivo"], 10.04)
-        self.assertAlmostEqual(confronto["totale_effettivo"], 14.85, places=2)
+        self.assertAlmostEqual(confronto["totale_effettivo"], 15.00, places=2)
 
     def test_without_passes_the_ticket_prices_are_kept(self):
         confronto = self._confronto()
