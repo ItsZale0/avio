@@ -44,7 +44,6 @@ jobs:
         env:
           OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
           OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
-          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
           OCI_INSTANCE_OCID: ${{ secrets.OCI_INSTANCE_OCID }}
           OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
           OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
@@ -69,8 +68,7 @@ jobs:
           EOF
           oci compute instance action \
             --action START \
-            --instance-id "$OCI_INSTANCE_OCID" \
-            --compartment-id "$OCI_COMPARTMENT_OCID" || true
+            --instance-id "$OCI_INSTANCE_OCID" || true
 
       - name: Avvisa su Telegram
         if: failure()
