@@ -55,50 +55,32 @@ jobs:
             echo "Le trovi in docs/ORACLE.md (sezione 'Se l'app non risponde')."
             exit 0
           fi
-          # La CLI OCI: prima l'installer ufficiale (binario autonomo),
-          # poi pipx, poi un ambiente virtuale. Uno dei tre va.
-          if ! command -v oci >/dev/null 2>&1; then
-            echo "installo la CLI OCI (installer ufficiale)..."
-            bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" \
-              -- --accept-licenses --install-dir "$HOME/oci-cli" || true
-            export PATH="$HOME/oci-cli/bin:$PATH"
-          fi
-          if ! command -v oci >/dev/null 2>&1; then
-            echo "l'installer non ha funzionato: provo pipx"
-            pipx install oci || true
-            export PATH="$HOME/.local/bin:$PATH"
-          fi
-          if ! command -v oci >/dev/null 2>&1; then
-            echo "l'installer non ha funzionato: provo un ambiente virtuale"
-            python3 -m venv "$HOME/oci-venv" || true
-            "$HOME/oci-venv/bin/pip" install --quiet --disable-pip-version-check oci || true
-            export PATH="$HOME/oci-venv/bin:$PATH"
-          fi
-          if ! command -v oci >/dev/null 2>&1; then
-            echo "::error::nessun modo per installare la CLI OCI"
-            exit 1
-          fi
-          oci --version
-          mkdir -p "$HOME/.oci"
-          printf '%s' "$OCI_PRIVATE_KEY" > "$HOME/.oci/key.pem"
-          chmod 600 "$HOME/.oci/key.pem"
-          cat > "$HOME/.oci/config" <<EOF
-          [DEFAULT]
-          user=$OCI_USER_OCID
-          fingerprint=$OCI_FINGERPRINT
-          tenancy=$OCI_TENANCY_OCID
-          region=eu-milan-1
-          key_file=$HOME/.oci/key.pem
-          EOF
-          oci compute instance get \
-            --instance-id "$OCI_INSTANCE_OCID" \
-            --query 'data."lifecycle-state"' \
-            --output text 2>&1 | tee /tmp/stato.txt || true
-          echo "stato dell'istanza: $(cat /tmp/stato.txt 2>/dev/null || echo 'sconosciuto')"
-          oci compute instance action \
-            --action START \
-            --instance-id "$OCI_INSTANCE_OCID" 2>&1 | tee /tmp/avvio.txt || true
-          cat /tmp/avvio.txt
+          # Si usa l'SDK Python di Oracle (il pacchetto "oci" su PyPI):
+          # firma lui le richieste con la chiave, quindi non serve la CLI.
+          python3 -m venv "$HOME/oci-venv"
+          "$HOME/oci-venv/bin/pip" install --quiet --disable-pip-version-check oci
+          "$HOME/oci-venv/bin/python" - <<'PY'
+          import os
+          import oci
+
+          config = {
+              "user": os.environ["OCI_USER_OCID"],
+              "fingerprint": os.environ["OCI_FINGERPRINT"],
+              "tenancy": os.environ["OCI_TENANCY_OCID"],
+              "region": "eu-milan-1",
+              "key_content": os.environ["OCI_PRIVATE_KEY"],
+          }
+          oci.config.validate_config(config)
+          client = oci.compute.ComputeClient(config)
+          instance_id = os.environ["OCI_INSTANCE_OCID"]
+          istanza = client.get_instance(instance_id)
+          print("stato dell'istanza:", istanza.lifecycle_state)
+          if istanza.lifecycle_state == "RUNNING":
+              print("l'istanza e' gia' accesa: non serve riavviarla")
+          else:
+              client.instance_action(instance_id, "START")
+              print("avvio richiesto: l'istanza sta ripartendo")
+          PY
 
       - name: Avvisa su Telegram
         if: failure()
