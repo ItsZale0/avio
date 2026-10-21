@@ -279,13 +279,10 @@ async function api(path, options = {}) {
   let response;
   let lastError = null;
 
-  // L'header serve per il caso in cui il backend sia ancora un tunnel
-  // gratuito (ngrok): senza, quello mette la sua pagina di avviso al posto
-  // della risposta e il browser blocca la chiamata. Con la VM non serve,
-  // ma innocuo.
+  // Le chiamate restano semplici: niente header customi, quindi nessun
+  // preflight CORS e nessun modo di farsi bloccare da un proxy.
   const headers = {
     "Content-Type": "application/json",
-    "ngrok-skip-browser-warning": "1",
     ...(options.headers || {}),
   };
 
@@ -494,7 +491,6 @@ async function backendVivo(base, ms = 4000) {
         cache: "no-store",
         credentials: "include",
         signal: ctrl.signal,
-        headers: { "ngrok-skip-browser-warning": "1" },
       }
     );
     if (!response.ok) return false;

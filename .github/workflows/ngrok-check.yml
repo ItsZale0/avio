@@ -18,12 +18,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Verifica
+        env:
+          # L'input non viene mai interpolato dentro la shell: passa per
+          # una variabile d'ambiente, altrimenti un URL con "; ..." diventa
+          # codice eseguito sul runner.
+          TUNNEL_URL: ${{ inputs.url }}
         run: |
-          URL="${{ inputs.url }}"
+          URL="$TUNNEL_URL"
           echo "Tunnel: $URL"
           echo
-          echo "=== 1. GET con l'header di bypass (ngrok-skip-browser-warning) ==="
-          code=$(curl -s -o /tmp/a -w "%{http_code}" -H "ngrok-skip-browser-warning: 1" "$URL/api/auth/status")
+          echo "=== 1. GET semplice ==="
+          code=$(curl -s -o /tmp/a -w "%{http_code}" "$URL/api/auth/status")
           echo "HTTP $code"
           head -c 300 /tmp/a; echo; echo
           echo "=== 2. GET senza header ==="
@@ -39,11 +44,11 @@ jobs:
           head -20 /tmp/h
           head -c 200 /tmp/c; echo
           echo
-          echo "=== 4. Preflight con l'header custom che usa il frontend ==="
+          echo "=== 4. Preflight con un header custom ==="
           curl -s -D /tmp/h2 -o /tmp/c2 -X OPTIONS \
             -H "Origin: https://itszale0.github.io" \
             -H "Access-Control-Request-Method: POST" \
-            -H "Access-Control-Request-Headers: content-type, ngrok-skip-browser-warning" \
+            -H "Access-Control-Request-Headers: content-type, x-prova" \
             "$URL/api/watches"
           cat /tmp/h2
           echo "--- corpo ---"
@@ -61,7 +66,7 @@ jobs:
           echo "=== 4c. GET con User-Agent da browser e header di bypass ==="
           code=$(curl -s -o /tmp/g -w "%{http_code}" \
             -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" \
-            -H "ngrok-skip-browser-warning: 1" \
+            -H "x-prova: 1" \
             -H "Origin: https://itszale0.github.io" \
             "$URL/api/auth/status")
           echo "HTTP $code"
@@ -71,7 +76,7 @@ jobs:
           code=$(curl -s -o /tmp/e -w "%{http_code}" -X POST \
             -H "Origin: https://itszale0.github.io" \
             -H "Content-Type: application/json" \
-            -H "ngrok-skip-browser-warning: 1" \
+            -H "x-prova: 1" \
             -d '{"password":"sbagliata-di-prova"}' \
             "$URL/api/auth/unlock")
           echo "HTTP $code (401 = risposta normale del server, il tunnel funziona)"

@@ -10,6 +10,7 @@ Regole:
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from fastapi import HTTPException, Request
@@ -25,6 +26,55 @@ PUBLIC_PATHS = {
     "/api/status",
     "/api/sources",
 }
+
+# --------------------------------------------------------------------------- #
+# Rate limiting dello sblocco
+# --------------------------------------------------------------------------- #
+# La porta d'ingresso dell'app e' pubblica su internet: senza un tetto, la
+# password si puo' scoprire a forza bruta. Si contano i tentativi FALLITI per
+# indirizzo IP; uno sblocco riuscito azzera il conto (un utente legittimo che
+# sbaglia la password due volte non deve restare bloccato).
+TENTATIVI_MAX = 10
+TENTATIVI_WINDOW = 600  # secondi
+_tentativi: dict[str, list[float]] = {}
+
+
+def client_ip(request: Request) -> str:
+    """L'indirizzo del client, per quanto possibile reale.
+
+    Dietro Nginx l'IP vero arriva in X-Forwarded-For; Nginx lo riscrive con
+    l'indirizzo del client (non lo appende), quindi l'ultimo valore e' quello
+    reale. Se la connessione non passa da un proxy locale, l'header non e'
+    attendibile e si usa l'IP del socket.
+    """
+    peer = request.client.host if request.client else ""
+    if peer in {"127.0.0.1", "::1"}:
+        forwarded = request.headers.get("x-forwarded-for") or ""
+        if forwarded:
+            return forwarded.split(",")[-1].strip() or peer
+    return peer
+
+
+def _cronologia(ip: str) -> list[float]:
+    adesso = time.time()
+    cronologia = [t for t in _tentativi.get(ip, []) if adesso - t < TENTATIVI_WINDOW]
+    _tentativi[ip] = cronologia
+    return cronologia
+
+
+def sblocco_troppo_spedito(request: Request) -> bool:
+    """True se questo indirizzo ha esaurito i tentativi di sblocco."""
+    return len(_cronologia(client_ip(request))) >= TENTATIVI_MAX
+
+
+def nota_sblocco_fallito(request: Request) -> None:
+    """Registra un tentativo fallito."""
+    _cronologia(client_ip(request)).append(time.time())
+
+
+def pulisci_sblocco(request: Request) -> None:
+    """Uno sblocco riuscito azzera il conto dei tentativi."""
+    _tentativi.pop(client_ip(request), None)
 
 
 def _token_from_request(request: Request) -> str | None:
@@ -95,16 +145,17 @@ def require_admin(request: Request) -> dict[str, Any]:
 def set_session_cookie(response, token: str, *, secure: bool = False) -> None:
     """Imposta il cookie di sessione (HttpOnly).
 
-    `secure=True` (HTTPS) fa usare `SameSite=None`: serve quando la pagina
-    sta su un altro dominio (per esempio GitHub Pages) e chiama l'API via
-    tunnel — con `Lax` il browser non manderebbe il cookie.
+    `secure=True` (HTTPS) aggiunge il flag `Secure`: il cookie non viaggia
+    in chiaro. Il `SameSite` resta "lax": l'app e l'API sono sulla stessa
+    origine (la VM serve entrambe), quindi non serve "none" — che
+    manterrebbe vivo il CSRFcross-site.
     """
     response.set_cookie(
         auth.COOKIE_NAME,
         token,
         max_age=auth.SESSION_DAYS * 24 * 3600,
         httponly=True,
-        samesite="none" if secure else "lax",
+        samesite="lax",
         secure=secure,
         path="/",
     )

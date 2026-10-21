@@ -164,28 +164,43 @@ async def _resolve_points(payload: WatchIn) -> dict:
 # --------------------------------------------------------------------------- #
 @app.get("/api/auth/status")
 async def auth_status(request: Request):
-    """Stato dell'accesso: serve al frontend per sapere se chiedere la password."""
+    """Stato dell'accesso: serve al frontend per sapere se chiedere la password.
+
+    L'endpoint e' pubblico (il frontend lo chiama prima di sapere se e' dentro):
+    percio' i dati dell'utente compaiono SOLO se c'e' una sessione valida —
+    altrimenti si publicherebbero nome, ruolo e chat Telegram a chiunque.
+    """
     locked = deps.auth_enabled()
     user = deps.current_user(request)
-    owner = auth.implicit_owner()
     return {
         "authenticated": bool(user) or not locked,
         "locked": locked,
         "unlocked": bool(user),
         "has_password": access.has_password(),
         "has_key": access.has_key(),
-        "user": auth.public_user(user or owner) if (user or owner) else None,
+        "user": auth.public_user(user) if user else None,
     }
 
 
 @app.post("/api/auth/unlock")
 async def unlock(payload: UnlockIn, request: Request, response: Response):
-    """Sblocca l'app con la password (o con la chiave segreta)."""
+    """Sblocca l'app con la password (o con la chiave segreta).
+
+    I tentativi falliti sono contati per indirizzo IP: la porta d'ingresso
+    dell'app e' pubblica e la password va protetta dalla forza bruta.
+    """
+    if deps.sblocco_troppo_spedito(request):
+        raise HTTPException(
+            status_code=429,
+            detail="Troppi tentativi falliti. Riprova fra qualche minuto.",
+        )
     token, error = access.unlock(
         payload.password, user_agent=request.headers.get("user-agent")
     )
     if error:
+        deps.nota_sblocco_fallito(request)
         raise HTTPException(status_code=401, detail=error)
+    deps.pulisci_sblocco(request)
     if token:
         deps.set_session_cookie(response, token, secure=deps.is_secure_request(request))
     return {"ok": True}
@@ -213,8 +228,11 @@ async def set_access(request: Request, payload: AccessIn):
 
     - `password` non vuota: imposta la nuova password e chiude le sessioni;
     - `password` vuota: toglie la password, l'app si riapre liberamente.
+
+    Cambiare la password o togliere la chiave e' roba da amministratore:
+    un utente qualsiasi non deve poter chiudere l'accesso agli altri.
     """
-    deps.require_user(request)
+    deps.require_admin(request)
     try:
         changed = access.set_password(payload.password)
     except ValueError as exc:
@@ -239,8 +257,11 @@ async def rotate_key(request: Request):
     La chiave si vede una volta sola (nel database c'e' solo l'hash):
     usala nell'URL per entrare con un tocco, es.
     `https://.../?key=XXXX`.
+
+    Ruotare la chiave e' un atto da amministratore: la chiave e' un
+    accesso completo all'app.
     """
-    deps.require_user(request)
+    deps.require_admin(request)
     key = access.new_key()
     return {
         "ok": True,
@@ -252,7 +273,7 @@ async def rotate_key(request: Request):
 @app.delete("/api/auth/key")
 async def delete_key(request: Request):
     """Toglie la chiave segreta."""
-    deps.require_user(request)
+    deps.require_admin(request)
     access.clear_key()
     return {"ok": True, "message": "Chiave segreta rimossa."}
 

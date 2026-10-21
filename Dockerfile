@@ -1,6 +1,9 @@
 # Immagine per il deploy su Northflank (o qualsiasi container).
 # L'agente gira dentro il container: SQLite su volume persistente.
-FROM python:3.12-slim
+#
+# L'immagine base e' fissata per digest: un tag mobile puo' cambiare
+# contenuto da un giorno all'altro (catena di fornitura).
+FROM python:3.12-slim-bookworm@sha256:6a0e06f5ba0b373d051aabd3fffb9b873f27f9a2a3a14bcbe37dee6f0e3bbc70
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -44,4 +47,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 # --proxy-headers: dietro un reverse proxy (tunnel, Nginx) uvicorn deve
 # leggere X-Forwarded-Proto, altrimenti il cookie di sessione perderebbe
 # il flag Secure e il login dal frontend su un altro dominio fallirebbe.
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8787", "--proxy-headers", "--forwarded-allow-ips", "*"]
+# --forwarded-allow-ips: si fidano solo gli header inoltrati che arrivano
+# dal proxy locale, non da chiunque.
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8787", "--proxy-headers", "--forwarded-allow-ips", "127.0.0.1"]

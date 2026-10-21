@@ -185,6 +185,15 @@ chmod +x /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
 # 6. Nginx, seconda fase: HTTPS con il certificato
 # --------------------------------------------------------------------------
 log "Configurazione di Nginx (fase 2: HTTPS)"
+
+# Il log non deve tenere la query string: la chiave d'accesso viaggia
+# nell'URL (?key=...) e finirebbe scritta in chiaro nel log e nei backup.
+if ! grep -q "log_format safe" /etc/nginx/nginx.conf; then
+    sed -i '/^\s*access_log/i\
+log_format safe '"'"'$remote_addr - $remote_user [$time_local] "$request_method $uri $server_protocol" $status $body_bytes_sent '"'"';\
+access_log /var/log/nginx/access.log safe;' /etc/nginx/nginx.conf
+fi
+
 cat > /etc/nginx/sites-available/carpool <<EOF
 server {
     listen 80;
@@ -208,13 +217,22 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/$PUBLIC_IP/privkey.pem;
     client_max_body_size 8m;
 
+    # Header di sicurezza: l'HTTPS resta tale, il referer non porta via
+    # la chiave d'accesso e la pagina non puo' essere incorniciata.
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Permissions-Policy "geolocation=(), camera=(), microphone=()" always;
+
     location / {
         proxy_pass http://127.0.0.1:8787;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         # Necessario al cookie di sessione: senza, il browser lo rifiuta.
         proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        # L'IP reale, riscritto (non accodato): e' la base del rate limiting.
+        proxy_set_header X-Forwarded-For \$remote_addr;
         proxy_read_timeout 120s;
     }
 }

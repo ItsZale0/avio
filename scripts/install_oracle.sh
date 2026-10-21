@@ -54,6 +54,9 @@ python3 -m venv "$APP_DIR/.venv"
 
 mkdir -p "$DATA_DIR"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR" "$DATA_DIR"
+# La cartella dei dati contiene il database con i segreti: solo l'utente
+# del servizio deve potervi entrare.
+chmod 750 "$DATA_DIR"
 
 # --------------------------------------------------------------------------
 # 3. Configurazione
@@ -92,9 +95,11 @@ Environment=PYTHONUNBUFFERED=1
 Environment=TZ=Europe/Rome
 ExecStart=$APP_DIR/.venv/bin/python -m uvicorn app.main:app \\
     --host 0.0.0.0 --port 8787 \\
-    --proxy-headers --forwarded-allow-ips '*'
+    --proxy-headers --forwarded-allow-ips '127.0.0.1'
 Restart=always
 RestartSec=10
+# File creati dal servizio leggibili solo da lui (il database contiene i segreti).
+UMask=0077
 # Il servizio deve poter scrivere solo nella cartella dei dati.
 NoNewPrivileges=true
 PrivateTmp=true

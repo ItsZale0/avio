@@ -1,21 +1,16 @@
-# File di build: esclude il database locale e i segreti dal contesto.
-# `data/` contiene carpool.db (con i token) e gtfs.db: non devono finire
-# nell'immagine, ma nel volume persistente.
+# Cosa non deve finire nell'immagine.
 .git
-.gitignore
 .github
+.agents
+.taste-skill
 data
-docs
+dist-pages
 tests
-*.md
-.env
-.env.example
-scripts/make_icons.py
-scripts/build_pages.py
 __pycache__
 *.pyc
-.venv
-venv
-.pytest_cache
-dist-pages
-.wrangler
+.env
+.env.*
+*.db
+*.zip
+docs
+README.md
