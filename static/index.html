@@ -10,6 +10,9 @@
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <!-- Leaflet prima dei nostri fogli: cosi' le regole dell'app vincono a parita' di specificita'. -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" />
   <link rel="stylesheet" href="tokens.css?v=__BUILD__" />
   <link rel="stylesheet" href="styles.css?v=__BUILD__" />
@@ -112,10 +115,10 @@
             <div class="action-icons">
               <button class="icon-btn" id="btnToggleWatch" type="button" aria-label="Metti in pausa" title="Metti in pausa"></button>
               <button class="icon-btn" id="btnEditWatch" type="button" aria-label="Modifica la ricerca" title="Modifica la ricerca">
-                <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.2 2.3l2.5 2.5L6 12.5 2.8 13.2l.7-3.2z" /></svg>
+                <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.2 2.3l2.5 2.5L6 12.5 2.8 13.2l.7-3.2z" /></svg>
               </button>
               <button class="icon-btn danger" id="btnDeleteWatch" type="button" aria-label="Elimina la ricerca" title="Elimina la ricerca">
-                <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8h5.6l.7-8" /></svg>
+                <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8h5.6l.7-8" /></svg>
               </button>
             </div>
           </div>
@@ -158,7 +161,7 @@
       <div class="modal-head">
         <h3 id="watchModalTitle">Nuova ricerca</h3>
         <button class="btn icon ghost" data-close="watchModal" aria-label="Chiudi">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
         </button>
       </div>
       <form id="watchForm" class="modal-body">
@@ -286,7 +289,7 @@
       <div class="modal-head">
         <h3>Impostazioni</h3>
         <button class="btn icon ghost" data-close="settingsModal" aria-label="Chiudi">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
         </button>
       </div>
       <form id="settingsForm" class="modal-body">
@@ -495,7 +498,7 @@
         <div>
           <button class="btn ghost tiny" id="btnRefreshPromos">Aggiorna</button>
           <button class="btn icon ghost" data-close="promosModal" aria-label="Chiudi">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
           </button>
         </div>
       </div>
@@ -513,7 +516,7 @@
         <div>
           <button class="btn ghost tiny" id="btnReadAll">Segna letti</button>
           <button class="btn icon ghost" data-close="alertsDrawer" aria-label="Chiudi">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
           </button>
         </div>
       </div>
@@ -527,20 +530,25 @@
       <div class="modal-head">
         <h3 id="confirmTitle">Conferma</h3>
         <button class="btn icon ghost" data-close="confirmModal" aria-label="Chiudi">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
         </button>
       </div>
       <div class="modal-body">
         <p class="confirm-text" id="confirmText">—</p>
+        <div class="field" id="confirmTypeField">
+          <label for="confirmType">Scrivi la tratta per confermare</label>
+          <input type="text" id="confirmType" autocomplete="off" spellcheck="false" />
+          <small class="field-hint" id="confirmTypeHint">La cancellazione non si può annullare.</small>
+        </div>
         <div class="modal-foot">
           <button type="button" class="btn ghost" data-close="confirmModal">Annulla</button>
-          <button type="button" class="btn danger" id="confirmOk">Conferma</button>
+          <button type="button" class="btn danger" id="confirmOk" disabled>Conferma</button>
         </div>
       </div>
     </div>
   </div>
 
-  <div class="toasts" id="toasts"></div>
+  <div class="toasts" id="toasts" role="status" aria-live="polite" aria-atomic="false"></div>
 
   <!-- ===================== ACCESSO / REGISTRAZIONE ===================== -->
   <div class="auth-screen hidden" id="authScreen">
@@ -577,8 +585,6 @@
     <span>Chiedi</span>
   </button>
 
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="app.js?v=__BUILD__"></script>

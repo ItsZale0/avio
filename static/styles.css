@@ -1,20 +1,22 @@
 /* Carpool Hunter — foglio dei componenti
- * Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app
+ * Hallmark · macrostructure: Workbench · tone: professional · anchor hue: mint 165°
+ * genre: modern-minimal · design-system: design.md · designed-as-app
  *
  * Voce: piano strumentale. Il canvas è il fondo, i pannelli hanno un filetto da
  * 1px, la striscia KPI è una banda rigata (non una card), le offerte sono righe
- * appoggiate al fondo. I numeri portano il display (Geist) e le cifre tabulari.
- * Un solo movimento: la scheda entra quando cambia ricerca (320ms, ease-out).
+ * appoggiate al fondo. I numeri portano il display (Plus Jakarta Sans) e le
+ * cifre tabulari. Un solo movimento: la scheda entra quando cambia ricerca
+ * (320ms, ease-out). Anche la mappa è del sistema: tile scuri, colori dai token.
  *
  * Griglia (aritmetica dichiarata): rail 52 · indice 240 · canvas fluido con
  * gutter 32 (24 sotto 1200, 16 sotto 760) · gap 24 tra i blocchi · pannello
- * pad 24 · controllo 34px (44px nei moduli con campi).
+ * pad 24 · controllo 34px (44px nei moduli con campi e sul telefono).
  * 1440 → canvas utile 1084, KPI 4 × 271. 390 → utile 358. 320 → utile 288.
  *
  * contrast: pass (40–41) · nav: N3 side rail + bottom bar mobile · footer: none (app)
  * slop: pass (42–45) · honest: pass (46) · chrome: pass (47) · tokens: pass (48)
  * responsive: pass (49) · icons: pass (30) · mobile: pass (34, 49, 50–57)
- * pre-emit: A4 B5 C4 D4 E4 F4 (philosophy/hierarchy/craft/motion/density/honesty)
+ * pre-emit critique: P4 H5 E4 S4 R4 V3 (philosophy/hierarchy/execution/specificity/restraint/variety)
  */
 
 * { box-sizing: border-box; }
@@ -125,8 +127,11 @@ code {
   padding: 2px var(--space-xs) var(--space-xs);
   display: flex; flex-direction: column; gap: 2px;
 }
+/* La voce dell'indice e' un bottone: si cambia ricerca anche da tastiera. */
 .watch-item {
-  padding: 12px 12px 12px; border-radius: var(--radius-md); cursor: pointer;
+  display: block; width: 100%; text-align: left;
+  font: inherit; color: inherit; border: 0; background: none;
+  padding: 12px; border-radius: var(--radius-md); cursor: pointer;
   transition: background var(--dur-micro) var(--ease-out);
 }
 .watch-item:hover { background: var(--surface); }
@@ -150,6 +155,7 @@ code {
   color: var(--text); font-family: var(--font-display); font-weight: 600;
 }
 .watch-name {
+  display: block;
   font-size: var(--text-xs); color: var(--meta); margin-top: 4px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
@@ -176,6 +182,12 @@ code {
 .ai-pill .dot { background: var(--accent); }
 .ai-pill.off .dot { background: var(--meta); }
 .hint { font-size: var(--text-xs); color: var(--meta); line-height: var(--leading-body); }
+/* Testi di stato vuoto: la spaziatura sta nei token, non in stili in linea. */
+.hint-block { padding: var(--space-xs) var(--space-sm); }
+.hint-block.roomy { padding: var(--space-lg) 0; }
+.note-block { margin: var(--space-xs) 0 var(--space-sm); }
+.note-block.tight { margin: 0 0 var(--space-sm); }
+.note-block.soft { margin: 0 0 var(--space-xs); }
 
 .content { overflow-y: auto; padding: var(--pad) var(--pad) 96px; min-height: 0; }
 
@@ -648,15 +660,22 @@ code {
 .map-canvas {
   height: min(62vh, 520px); min-height: 320px;
   border: 1px solid var(--border); border-radius: var(--radius-lg);
-  overflow: hidden; background: var(--raised);
+  overflow: hidden; background: var(--surface);
 }
+/* I tile sono scuri (CARTO dark): tutto quello che Leaflet disegna sopra
+   viene rimesso nei colori del sistema. */
 .map-canvas .leaflet-container { background: var(--surface); font: inherit; }
+/* I tile Esri sono un grigio un po' piu' chiaro del fondo: li abbasso per
+   farli entrare nel pannello senza perdere le etichette. */
+.map-canvas .leaflet-tile-pane { filter: brightness(0.82) saturate(0.85); }
 .map-canvas .leaflet-popup-content-wrapper,
 .map-canvas .leaflet-popup-tip { background: var(--raised); color: var(--text); }
 .map-canvas .leaflet-popup-content { font-size: var(--text-xs); margin: var(--space-xs) 12px; }
+.map-canvas .leaflet-popup-content a { color: var(--accent); }
 .map-canvas .leaflet-bar a {
   background: var(--raised); color: var(--text); border-color: var(--border);
 }
+.map-canvas .leaflet-bar a:hover { background: var(--surface); }
 .map-canvas .leaflet-control-attribution {
   background: var(--surface); color: var(--meta); font-size: var(--text-xs);
 }
@@ -1045,6 +1064,10 @@ select { cursor: pointer; }
   .map-canvas { min-height: 260px; }
   .modal { border-radius: var(--radius-lg); }
   .modal-body { padding: var(--space-md); }
+  /* Sul telefono il dito e' grosso: le azioni e le schede salgono a 44px. */
+  .icon-btn { width: 44px; height: 44px; }
+  .tab { min-height: 44px; padding-top: var(--space-sm); }
+  .btn.tiny { height: 36px; }
 }
 
 @media (max-width: 640px) {

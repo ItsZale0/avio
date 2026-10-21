@@ -110,7 +110,8 @@ rectangles, not capsules.
 - Three durations: `--dur-micro 120ms` · `--dur-minor 200ms` · `--dur-major 320ms`.
 - One ease: `--ease-out cubic-bezier(0.16, 1, 0.3, 1)`.
 - **One orchestrated entrance, once per watch change**: the detail sheet fades
-  and rises 4px in 320ms. It does **not** replay on data refreshes.- Tab change: opacity only, 200ms. No spatial movement.
+  and rises 4px in 320ms. It does **not** replay on data refreshes.
+- Tab change: opacity only, 200ms. No spatial movement.
 - Overlays: backdrop fade 200ms; modal scale 0.995→1; drawer translateX 8px.
 - Offers and skeleton bars: no animation.
 - Reduced motion: all spatial motion collapses; durations ≤ 150ms (effectively
@@ -123,6 +124,8 @@ rectangles, not capsules.
 - Toasts remain for failures and for background jobs whose effect is invisible
   (GTFS update, push registration, test messages).
 - Destructive confirmation happens in the app's own dialog, never `confirm()`.
+  An **irreversible** delete asks you to type the route: a click-OK is too easy
+  to press by mistake.
 - Hover delay 0ms on pointer devices; transitions on background, border-color,
   color only. No lifts, no scale on hover.
 
@@ -142,8 +145,23 @@ rectangles, not capsules.
 320 · 375 · 414 · 768 · 1440 CSS px.
 No horizontal scroll (`overflow-x: clip` on html and body); tabs wrap on two
 rows on mobile instead of scrolling; bottom rail labels hide at ≤ 360px; long
-place names wrap with `overflow-wrap: anywhere`; the KPI strip is 4 columns →
-2 → 2.
+place names wrap with `overflow-wrap: anywhere`; the KPI strip is 4 columns on
+the desktop, 2 on tablet and phone (the third cell spans the row when the
+price cell is hidden).
+Touch floors on the phone (≤ 760px): icon actions and tabs are 44px, the small
+modal buttons 36px, form fields 44px.
+
+## The map is part of the system
+
+The map tab is not an island: it uses **dark tiles** (Esri *World Dark Gray
+Canvas*: a base layer plus a label layer, no API key), the graphite ground
+behind them, and the popup / controls / attribution in the system colours.
+Every colour it draws comes from a token (`--map-train`, `--map-bus`,
+`--map-origin`, `--map-dest`, `--map-zone`, `--map-tile-url`…), read at runtime
+by `token()` in `app.js` — no hex written in the script. The tile layers are
+nudged down with a small `brightness()` filter so they sit inside the panel.
+Leaflet's stylesheet loads **before** the app's, so the app's rules win at
+equal specificity.
 
 ## Content rules
 
@@ -202,6 +220,22 @@ values:
   --dur-micro: 120ms; --dur-minor: 200ms; --dur-major: 320ms;
 
   --ctl: 34px; --ctl-form: 44px;
+
+  --shadow: 0 8px 20px oklch(0.05 0.004 265 / 0.35);
+
+  --map-train: oklch(0.72 0.12 225);
+  --map-bus: oklch(0.80 0.11 75);
+  --map-tram: oklch(0.76 0.12 340);
+  --map-rideshare: oklch(0.78 0.13 55);
+  --map-flight: oklch(0.80 0.10 200);
+  --map-carsharing: oklch(0.82 0.12 95);
+  --map-transit: oklch(0.66 0.02 265);
+  --map-origin: oklch(0.86 0.135 165);
+  --map-dest: oklch(0.73 0.16 15);
+  --map-zone: oklch(0.84 0.11 78);
+  --map-tile-url: "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}";
+  --map-tile-label-url: "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}";
+  --map-attribution: "Esri, HERE, Garmin, © OpenStreetMap contributors";
 }
 ```
 

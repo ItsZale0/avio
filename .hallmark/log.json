@@ -6,10 +6,11 @@
     "mood": "professional",
     "macrostructure": "Workbench",
     "theme": "custom",
-    "theme_axes": "grafite freddo / display geometrico / mint 165°",
-    "vibe": "piano strumentale, un solo segnale mint",
+    "theme_axes": "dark band / rounded-sans display (Plus Jakarta Sans) / mint 165°",
+    "vibe": "piano strumentale in grafite, un solo segnale mint",
     "enrichment": "none",
     "design_system": "design.md",
-    "brief": "Carpool Hunter — app: rail + indice + canvas, striscia KPI rigata, offerte a righe, Geist + Public Sans, una sola entrata"
+    "brief": "Carpool Hunter — sistema bloccato (grafite + mint, Jakarta): Workbench rail+indice+canvas, mappa nel sistema, un solo movimento",
+    "amended": "2026-10-21: la Mappa entra nel sistema (tile scuri, colori dai token), lista ricerche da tastiera, conferma digitando la tratta"
   }
 ]

@@ -196,8 +196,27 @@ const BADGES = {
 
 /* Icone delle azioni secondarie: lo stato della ricerca si legge dal segno,
    non da un bottone pieno. */
-const ICON_PAUSE = '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6 3.5v9M10 3.5v9" /></svg>';
-const ICON_PLAY = '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 3.5l7 4.5-7 4.5z" /></svg>';
+const ICON_PAUSE = '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6 3.5v9M10 3.5v9" /></svg>';
+const ICON_PLAY = '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 3.5l7 4.5-7 4.5z" /></svg>';
+
+const MODE_TOKEN = {
+  rideshare: "--map-rideshare",
+  bus: "--map-bus",
+  train: "--map-train",
+  tram: "--map-tram",
+  flight: "--map-flight",
+  carsharing: "--map-carsharing",
+  transit: "--map-transit",
+};
+
+/* Un colore viene dal sistema, mai scritto a mano: la mappa non ha una
+   palette parallela a quella del resto dell'app. */
+function token(nome) {
+  const grezzo = getComputedStyle(document.documentElement)
+    .getPropertyValue(nome)
+    .trim();
+  return grezzo.replace(/^["']|["']$/g, "");
+}
 
 const MODE_LABEL = {
   rideshare: "Passaggio",
@@ -210,13 +229,13 @@ const MODE_LABEL = {
 };
 
 const MODE_COLOR = {
-  rideshare: "#e8833a",
-  bus: "#2f7d4f",
-  train: "#3563c9",
-  tram: "#c76b84",
-  flight: "#0e9aa7",
-  carsharing: "#d19b12",
-  transit: "#7b8794",
+  rideshare: "--map-rideshare",
+  bus: "--map-bus",
+  train: "--map-train",
+  tram: "--map-tram",
+  flight: "--map-flight",
+  carsharing: "--map-carsharing",
+  transit: "--map-transit",
 };
 
 const MAX_MAP_OFFERS = 40;
@@ -519,6 +538,8 @@ function toast(message, kind = "") {
   const el = document.createElement("div");
   el.className = `toast ${kind}`;
   el.textContent = message;
+  // Gli errori si annunciano subito: il contenitore e' "polite", l'errore sale.
+  if (kind === "error") el.setAttribute("role", "alert");
   $("#toasts").appendChild(el);
   setTimeout(() => el.remove(), 5200);
 }
@@ -532,21 +553,41 @@ function closeModal(id) {
 /* Conferma nel linguaggio dell'app: una promessa, un dialog, nessun confirm()
    nativo che porti il sistema operativo dentro l'interfaccia. */
 let _confirmResolve = null;
+let _confirmAttesa = "";
+let _confirmTesto = "";
 
-function chiediConferma({ titolo, testo, conferma = "Conferma", danger = false }) {
+/* Un'azione irreversibile si conferma scrivendo: il click-OK e' troppo
+   facile da premere per sbaglio. */
+function chiediConferma({ titolo, testo, conferma = "Conferma", danger = false, digita = "" }) {
   $("#confirmTitle").textContent = titolo;
   $("#confirmText").innerHTML = testo;
   const ok = $("#confirmOk");
   ok.textContent = conferma;
   ok.className = danger ? "btn danger" : "btn primary";
+  const campo = $("#confirmType");
+  const blocco = $("#confirmTypeField");
+  _confirmTesto = (digita || "").trim();
+  _confirmAttesa = _confirmTesto.toLowerCase();
+  if (_confirmAttesa) {
+    blocco.classList.remove("hidden");
+    campo.value = "";
+    campo.placeholder = _confirmTesto;
+    $("#confirmTypeHint").textContent = `Scrivi "${_confirmTesto}" per confermare.`;
+    ok.disabled = true;
+  } else {
+    blocco.classList.add("hidden");
+    ok.disabled = false;
+  }
   openModal("confirmModal");
-  ok.focus({ preventScroll: true });
+  (campo && _confirmAttesa ? campo : ok).focus({ preventScroll: true });
   return new Promise((resolve) => { _confirmResolve = resolve; });
 }
 
 function chiudiConferma(valore) {
   const resolve = _confirmResolve;
   _confirmResolve = null;
+  _confirmAttesa = "";
+  _confirmTesto = "";
   $("#confirmModal")?.classList.add("hidden");
   if (resolve) resolve(valore);
 }
@@ -728,6 +769,11 @@ function bindEvents() {
   $("#btnEditWatch")?.addEventListener("click", () => openWatchModal(state.watch));
   $("#btnDeleteWatch")?.addEventListener("click", deleteWatch);
   $("#confirmOk")?.addEventListener("click", () => chiudiConferma(true));
+  // La conferma si sblocca solo quando la tratta scritta coincide.
+  $("#confirmType")?.addEventListener("input", (event) => {
+    const scritto = event.target.value.trim().toLowerCase();
+    $("#confirmOk").disabled = !scritto || scritto !== _confirmAttesa;
+  });
 
   $("#watchForm")?.addEventListener("submit", submitWatch);
   $("#settingsForm")?.addEventListener("submit", submitSettings);
@@ -867,22 +913,24 @@ async function loadWatches() {
 function renderWatchList() {
   const box = $("#watchList");
   if (!state.watches.length) {
-    box.innerHTML = `<div class="hint" style="padding:10px 8px">Nessuna ricerca. Creane una con “+ Nuova ricerca”.</div>`;
+    box.innerHTML = `<div class="hint hint-block">Nessuna ricerca. Creane una con “+ Nuova ricerca”.</div>`;
     return;
   }
   box.innerHTML = state.watches.map((watch) => {
     const active = watch.id === state.selectedId;
     const route = `${esc(watch.from_place)} <span class="arrow">→</span> ${esc(watch.to_place)}`;
     const price = watch.best_price != null ? euro(watch.best_price) : "—";
+    // Un bottone, non un div con un click: la lista si cambia anche da tastiera.
     return `
-      <div class="watch-item ${active ? "active" : ""} ${watch.active ? "" : "paused"}" data-id="${watch.id}">
-        <div class="watch-route"><span class="watch-status-dot"></span>${route}</div>
-        ${watch.name ? `<div class="watch-name">${esc(watch.name)}</div>` : ""}
-        <div class="watch-meta">
+      <button type="button" class="watch-item ${active ? "active" : ""} ${watch.active ? "" : "paused"}"
+              data-id="${watch.id}"${active ? ' aria-current="true"' : ""}>
+        <span class="watch-route"><span class="watch-status-dot"></span>${route}</span>
+        ${watch.name ? `<span class="watch-name">${esc(watch.name)}</span>` : ""}
+        <span class="watch-meta">
           <span>entro ${fmtDay(watch.arrive_by)}</span>
           <span class="price">${price}</span>
-        </div>
-      </div>`;
+        </span>
+      </button>`;
   }).join("");
 }
 
@@ -1088,7 +1136,7 @@ function renderPlan() {
       vuoto.innerHTML = `
         <h4 class="noplan-title">Nessun piano per questo viaggio</h4>
         <p class="noplan-motivo">${esc(motivo)}</p>
-        <p class="muted" style="margin:8px 0 12px">
+        <p class="muted note-block">
           Le fonti sono state interrogate e i prezzi sono quelli veri: cambiando
           un filtro (budget, orario di arrivo, punto di ritrovo) il piano
           ricompare.
@@ -1554,9 +1602,16 @@ function ensureMap(canvas) {
   }
   if (!mapView) {
     mapView = L.map(canvas, { zoomControl: true });
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    // Tile scuri: la mappa fa parte del sistema, non un'isola chiara.
+    // Base (Esri Dark Gray Canvas) + un livello di etichette sopra.
+    L.tileLayer(token("--map-tile-url"), {
       maxZoom: 19,
-      attribution: "© OpenStreetMap",
+      attribution: token("--map-attribution"),
+    }).addTo(mapView);
+    L.tileLayer(token("--map-tile-label-url"), {
+      maxZoom: 19,
+      interactive: false,
+      zIndex: 2,
     }).addTo(mapView);
   }
   return mapView;
@@ -1614,13 +1669,13 @@ function drawMap() {
     });
 
   if (origin[0] != null && origin[1] != null) {
-    dot(origin[0], origin[1], "#1f9d55", 9)
+    dot(origin[0], origin[1], token("--map-origin"), 9)
       .bindPopup(`<strong>Partenza</strong><br>${esc(watch.from_place || "")}`)
       .addTo(mapLayer);
     bounds.push(origin);
   }
   if (dest[0] != null && dest[1] != null) {
-    dot(dest[0], dest[1], "#d64545", 9)
+    dot(dest[0], dest[1], token("--map-dest"), 9)
       .bindPopup(`<strong>Arrivo</strong><br>${esc(watch.to_place || "")}`)
       .addTo(mapLayer);
     bounds.push(dest);
@@ -1631,7 +1686,7 @@ function drawMap() {
     const a = [offer.pickup_lat, offer.pickup_lon];
     const b = [offer.dropoff_lat, offer.dropoff_lon];
     if (a[0] == null || a[1] == null || b[0] == null || b[1] == null) continue;
-    const color = MODE_COLOR[offer.mode] || "#7b8794";
+    const color = token(MODE_COLOR[offer.mode] || "--map-transit");
     L.polyline([a, b], { color, weight: 2, opacity: 0.55, dashArray: "5,6" }).addTo(mapLayer);
     const label = `<strong>${esc(MODE_LABEL[offer.mode] || offer.mode)}</strong><br>${esc(offer.operator || "")}`;
     const price = offer.price != null ? `${euro(offer.price)}${offer.price_is_estimate ? " (stima)" : ""}` : "solo orario";
@@ -1647,9 +1702,9 @@ function drawMap() {
     for (const zone of state.carsharingZones || []) {
       L.circle([zone.lat, zone.lon], {
         radius: 9000,
-        color: "#d19b12",
+        color: token("--map-zone"),
         weight: 1,
-        fillColor: "#d19b12",
+        fillColor: token("--map-zone"),
         fillOpacity: 0.08,
       })
         .bindPopup(`<strong>${esc(zone.provider)}</strong><br>Carsharing a ${esc(zone.city)}`)
@@ -1744,6 +1799,7 @@ async function deleteWatch() {
     testo: `La ricerca <b>${esc(w.from_place)} → ${esc(w.to_place)}</b> e le sue offerte vengono cancellate. Non si può annullare.`,
     conferma: "Elimina",
     danger: true,
+    digita: `${w.from_place} → ${w.to_place}`,
   });
   if (!ok) return;
   try {
@@ -2765,7 +2821,7 @@ function routeOfAlert(alert) {
 function renderAlerts() {
   const box = $("#alertsList");
   if (!state.alerts.length) {
-    box.innerHTML = `<div class="hint" style="padding:20px 0">Nessun avviso. Quando l'agente trova qualcosa di nuovo lo vedrai qui.</div>`;
+    box.innerHTML = `<div class="hint hint-block roomy">Nessun avviso. Quando l'agente trova qualcosa di nuovo lo vedrai qui.</div>`;
     return;
   }
   box.innerHTML = state.alerts.map((alert) => `
@@ -2848,7 +2904,7 @@ function renderPromos(data) {
           </div>`
         )
         .join("")
-    : `<div class="hint" style="padding:10px 0">Nessuna offerta letta adesso: riprova tra poco o apri le pagine dei vettori qui sotto.</div>`;
+    : `<div class="hint hint-block roomy">Nessuna offerta letta adesso: riprova tra poco o apri le pagine dei vettori qui sotto.</div>`;
 
   const gruppiCoupon = perOperatore(coupons);
   const couponsHtml = gruppiCoupon.length
@@ -2860,10 +2916,10 @@ function renderPromos(data) {
           </div>`
         )
         .join("")
-    : `<div class="hint" style="padding:10px 0">Nessun codice trovato.</div>`;
+    : `<div class="hint hint-block roomy">Nessun codice trovato.</div>`;
 
   $("#promosBody").innerHTML = `
-    <p class="muted" style="margin:0 0 14px">
+    <p class="muted note-block tight">
       Offerte e codici letti direttamente dalle pagine ufficiali dei vettori:
       quello che trovi qui e' quello che vale adesso, non un archivio.
       ${updated ? `Ultimo aggiornamento: ${esc(updated)}.` : ""}
@@ -2871,7 +2927,7 @@ function renderPromos(data) {
     <div class="section-title">Offerte del momento</div>
     ${offersHtml}
     <div class="section-title">Codici sconto &amp; voucher</div>
-    <p class="muted" style="margin:0 0 10px">
+    <p class="muted note-block soft">
       I codici veri stanno nelle pagine ufficiali del vettore: le apri con un
       tocco e trovi quello attivo.
     </p>

@@ -37,7 +37,25 @@
 
   --scrim: oklch(0.05 0.004 265 / 0.58);
   --scroll-thumb: oklch(0.34 0.006 265);
-  --shadow: 0 18px 40px oklch(0.05 0.004 265 / 0.45); /* taste-skill-ignore: solo sovrapposizioni */
+  --shadow: 0 8px 20px oklch(0.05 0.004 265 / 0.35); /* taste-skill-ignore: solo sovrapposizioni */
+
+  /* ---------- la mappa: dentro il sistema, non accanto ------------------ */
+  /* I colori dei mezzi vivono qui e vengono letti da app.js: la mappa non
+     ha una palette parallela. */
+  --map-train: oklch(0.72 0.12 225);
+  --map-bus: oklch(0.80 0.11 75);
+  --map-tram: oklch(0.76 0.12 340);
+  --map-rideshare: oklch(0.78 0.13 55);
+  --map-flight: oklch(0.80 0.10 200);
+  --map-carsharing: oklch(0.82 0.12 95);
+  --map-transit: oklch(0.66 0.02 265);
+  --map-origin: oklch(0.86 0.135 165);
+  --map-dest: oklch(0.73 0.16 15);
+  --map-zone: oklch(0.84 0.11 78);
+  --map-road: oklch(0.46 0.008 265);
+  --map-tile-url: "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}";
+  --map-tile-label-url: "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}";
+  --map-attribution: "Esri, HERE, Garmin, © OpenStreetMap contributors";
 
   /* stati derivati: i mix stanno qui, mai nei componenti */
   --danger-ink: oklch(0.16 0.02 15);
