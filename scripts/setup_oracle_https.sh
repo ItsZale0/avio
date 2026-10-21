@@ -244,8 +244,7 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-User=$SERVICE_USER
-Group=$SERVICE_USER
+# Il certificato sta sotto /etc/letsencrypt (solo root): il controllo gira come root.
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$APP_DIR/.env
 ExecStart=$APP_DIR/.venv/bin/python -m app.cli cert-check --warn-days 3
