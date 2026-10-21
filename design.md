@@ -40,13 +40,18 @@ Accent budget: **≤ 5 % of the viewport**. The accent is a 1px line under the
 active route, a 1px underline on the active tab, the focus ring, and the
 positive delta. It is never a filled surface except the primary action's ink.
 
-## Typography — pairing
+## Typography — one family, two voices
 
-- **Display:** `"Geist"`, 500/600. Headings, route names, prices, counts.
-  Tracking `-0.02em`, line-height 1.15.
-- **Body:** `"Public Sans"`, 400/500. Prose, labels, metadata, controls.
-  Line-height 1.5 (1.55 for prose).
+- **Family:** `"Plus Jakarta Sans"` (400 / 500 / 600 / 700). One family across
+  the whole app: the display voice is weight 600-700 with tight tracking, the
+  body voice is 400-500. Two typefaces were noise here — the app is one
+  surface, not a document.
+- **Display use:** headings, route names, prices, counts, labels. Tracking
+  `-0.02em`, line-height 1.15.
+- **Body use:** prose, labels, metadata, controls. Line-height 1.5 (1.55 for
+  prose).
 - **Outlier:** `ui-monospace` for `<code>` only. No mono in the UI.
+- Fallback stack: `system-ui, -apple-system, "Segoe UI", sans-serif`.
 
 Scale (five sizes, no more):
 
@@ -148,7 +153,7 @@ comparison, even when more expensive.
 
 ## What pages MUST share
 
-The graphite/mint palette and accent placement, the Geist + Public Sans pairing,
+The graphite/mint palette and accent placement, the Plus Jakarta Sans family,
 the five-size scale, the CTA voice, the 3/4/8/12 radius set, the ruled-plane
 surface logic, the single entrance, and the Workbench shell.
 
@@ -181,8 +186,8 @@ values:
   --paper:      oklch(0.955 0.003 265);
   --paper-ink:  oklch(0.205 0.006 265);
 
-  --font-display: "Geist", "Public Sans", system-ui, sans-serif;
-  --font-body: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-body: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
 
   --text-xs: 12px; --text-sm: 14px; --text-md: 18px;
   --text-lg: 27px; --text-xl: 34px;
@@ -212,8 +217,8 @@ values:
     "rule": { "$value": "oklch(0.236 0.006 265)", "$type": "color" }
   },
   "font": {
-    "display": { "$value": "Geist", "$type": "fontFamily" },
-    "body": { "$value": "Public Sans", "$type": "fontFamily" }
+    "display": { "$value": "Plus Jakarta Sans", "$type": "fontFamily" },
+    "body": { "$value": "Plus Jakarta Sans", "$type": "fontFamily" }
   },
   "space": {
     "md": { "$value": "16px", "$type": "dimension" },

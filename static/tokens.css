@@ -64,8 +64,8 @@
   --radius-xl: 12px;  /* modali, accesso */
 
   /* ---------- tipografia ----------------------------------------------- */
-  --font-display: "Geist", "Public Sans", system-ui, sans-serif;
-  --font-body: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-body: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-code: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; /* taste-skill-ignore: solo codice */
 
   --text-xs: 12px;
