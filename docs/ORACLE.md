@@ -240,6 +240,26 @@ volume persiste): basta riavviarla dalla console.
 > riemetti il certificato (`sudo certbot renew --cert-name <IP>`) e rilancia
 > `python /opt/carpool/scripts/publish_backend.py https://<NUOVO_IP>`.
 
+## Sicurezza della VM (cosa fanno gli script)
+
+L'audit di sicurezza ha chiuso i punti aperti: sulla VM, dopo l'installazione,
+valgono gia' queste regole.
+
+| Cosa | Come |
+| --- | --- |
+| Forza bruta | `/api/auth/unlock` accetta 10 tentativi falliti per IP ogni 10 minuti, poi risponde 429 |
+| La chiave nei log | Nginx usa un `log_format` che registra il percorso ma **non** la query string |
+| Ruoli | cambiare la password o la chiave segreta richiede il ruolo admin |
+| CSRF | il cookie di sessione e' `HttpOnly` + `SameSite=lax` (l'app e l'API sono sulla stessa origine) |
+| Permessi | `/var/lib/carpool` e' 750, il database 640, e il servizio ha `UMask=0077` |
+| Header | HSTS, `Referrer-Policy: no-referrer`, `nosniff`, `frame-deny`, `Permissions-Policy` |
+| Header inoltrati | uvicorn si fida solo di `X-Forwarded-*` che arrivano da `127.0.0.1` (Nginx riscrive l'IP reale) |
+| Dati pubblici | `/api/auth/status` non rivela utente, ruolo e chat Telegram senza sessione |
+
+**Da rifare a mano se cambi qualcosa**: Nginx (`/etc/nginx/sites-available/carpool`),
+il servizio (`/etc/systemd/system/carpool.service`) e i timer
+(`carpool-certcheck.timer`, `carpool-update.timer`).
+
 ## Manutenzione
 
 ```bash
