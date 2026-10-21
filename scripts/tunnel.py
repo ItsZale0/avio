@@ -267,11 +267,21 @@ def find_ngrok() -> str | None:
 
 
 def ngrok_token() -> str:
-    """Il token ngrok: variabile d'ambiente, .env, database o config di ngrok.
+    """Il token ngrok: prima le Impostazioni dell'app, poi ambiente/.env.
 
-    Cosi' l'utente puo' salvarlo dove preferisce (anche dalla web, in
-    Impostazioni) e non deve toccare i file a mano.
+    Le Impostazioni vengono prima di proposito: quello che l'utente incolla
+    nella web app deve vincere sulla vecchia copia nel .env, altrimenti
+    cambiare token dalla pagina non servirebbe a niente.
     """
+    try:
+        sys.path.insert(0, str(BASE))
+        from app.services import settings as app_settings
+
+        token = (app_settings.get("ngrok_authtoken") or "").strip()
+        if token:
+            return token
+    except Exception:  # noqa: BLE001
+        pass
     token = (os.getenv("NGROK_AUTHTOKEN") or "").strip()
     if token:
         return token
@@ -282,16 +292,6 @@ def ngrok_token() -> str:
                 token = line.split("=", 1)[1].strip()
                 if token:
                     return token
-    # Salvato nelle impostazioni dell'app (tabella "settings").
-    try:
-        sys.path.insert(0, str(BASE))
-        from app.services import settings as app_settings
-
-        token = (app_settings.get("ngrok_authtoken") or "").strip()
-        if token:
-            return token
-    except Exception:  # noqa: BLE001
-        pass
     # Infine: la configurazione di ngrok stesso (ngrok config add-authtoken).
     for candidate in (
         Path(os.path.expandvars(r"%LOCALAPPDATA%\ngrok\ngrok.yml")),
@@ -311,7 +311,19 @@ def ngrok_token() -> str:
 
 
 def ngrok_domain() -> str:
-    """Il dominio ngrok riservato (facoltativo): rende l'URL stabile."""
+    """Il dominio ngrok riservato (facoltativo): rende l'URL stabile.
+
+    Come per il token, vince quello scritto in Impostazioni.
+    """
+    try:
+        sys.path.insert(0, str(BASE))
+        from app.services import settings as app_settings
+
+        domain = (app_settings.get("ngrok_domain") or "").strip()
+        if domain:
+            return domain
+    except Exception:  # noqa: BLE001
+        pass
     domain = (os.getenv("NGROK_DOMAIN") or "").strip()
     if domain:
         return domain
@@ -320,13 +332,7 @@ def ngrok_domain() -> str:
         for line in env_path.read_text(encoding="utf-8").splitlines():
             if line.startswith("NGROK_DOMAIN="):
                 return line.split("=", 1)[1].strip()
-    try:
-        sys.path.insert(0, str(BASE))
-        from app.services import settings as app_settings
-
-        return (app_settings.get("ngrok_domain") or "").strip()
-    except Exception:  # noqa: BLE001
-        return ""
+    return ""
 
 
 def _drain(stream, path: Path, lines: "queue.Queue[str]") -> None:
@@ -538,16 +544,30 @@ def main() -> int:
                 publish_backend_pointer(nuovo)
                 update_github_variable(nuovo)
 
+        # Se in Impostazioni cambiano token o dominio, il tunnel si
+        # riavvia da solo: niente riavvio manuale dell'agente.
+        firma = (ngrok_token(), ngrok_domain())
         fallimenti = 0
         while True:
             time.sleep(45)
+            nuove = (ngrok_token(), ngrok_domain())
+            cambiato = nuove != firma
+            if cambiato:
+                firma = nuove
+                print("  Token o dominio del tunnel cambiati: riavvio.")
             vivo = process.poll() is None
-            if vivo and check_tunnel(url, attempts=1, wait=0):
+            if not cambiato and vivo and check_tunnel(url, attempts=1, wait=0):
                 fallimenti = 0
                 continue
-            fallimenti += 1
-            motivo = "terminato" if not vivo else "non risponde"
-            print(f"  Tunnel {motivo} ({fallimenti}/3).")
+            if cambiato:
+                fallimenti = 3
+            elif not vivo:
+                # Morto: si riavvia subito, senza aspettare tre controlli.
+                fallimenti = 3
+                print("  Il tunnel e' terminato.")
+            else:
+                fallimenti += 1
+                print(f"  Tunnel non risponde ({fallimenti}/3).")
             if fallimenti < 3:
                 continue
             # Riavvio: si riprova con lo stesso provider, poi con gli altri.
