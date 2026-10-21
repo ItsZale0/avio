@@ -36,6 +36,7 @@ WATCH_FIELDS = [
     "interval_min",
     "active",
     "prefs",
+    "group_id",
 ]
 
 # Vecchie fonte di default (prima dell'arrivo delle fonti reali aggiuntive).
@@ -173,6 +174,93 @@ def list_watches(user_id: int | None = None) -> list[dict[str, Any]]:
             params,
         ).fetchall()
     return [watch_to_dict(row) for row in rows]
+
+
+# --------------------------------------------------------------------------- #
+# Cartelle: i raggruppamenti di ricerche (per viaggio, per contesto)
+# --------------------------------------------------------------------------- #
+def list_groups(user_id: int | None = None) -> list[dict[str, Any]]:
+    """Le cartelle dell'utente con il numero di ricerche dentro."""
+    clause, params = _owner_clause_plain(user_id, "g.user_id")
+    with db.db() as conn:
+        rows = conn.execute(
+            "SELECT g.id, g.name, g.position,"
+            " (SELECT COUNT(*) FROM watches w WHERE w.group_id = g.id) AS count"
+            " FROM watch_groups g WHERE 1=1" + clause + " ORDER BY g.position, g.name",
+            params,
+        ).fetchall()
+    return [db.row_to_dict(row) or {} for row in rows]
+
+
+def create_group(name: str, *, user_id: int | None = None) -> dict[str, Any]:
+    """Crea una cartella. Il nome viene ripulito e reso unico per utente."""
+    pulito = " ".join((name or "").split())[:80]
+    if not pulito:
+        raise ValueError("La cartella ha bisogno di un nome")
+    with db.db() as conn:
+        esiste = conn.execute(
+            "SELECT 1 FROM watch_groups WHERE user_id IS ? AND lower(name) = lower(?)",
+            [user_id, pulito],
+        ).fetchone()
+        if esiste:
+            raise ValueError("Esiste già una cartella con questo nome")
+        prossima = conn.execute(
+            "SELECT COALESCE(MAX(position), 0) + 1 FROM watch_groups WHERE user_id IS ?",
+            [user_id],
+        ).fetchone()[0]
+        cursor = conn.execute(
+            "INSERT INTO watch_groups (user_id, name, position, created_at) VALUES (?, ?, ?, ?)",
+            [user_id, pulito, prossima, now_utc().isoformat()],
+        )
+        group_id = int(cursor.lastrowid)
+    return get_group(group_id, user_id=user_id) or {}
+
+
+def get_group(group_id: int, *, user_id: int | None = None) -> dict[str, Any] | None:
+    clause, params = _owner_clause_plain(user_id, "g.user_id")
+    with db.db() as conn:
+        row = conn.execute(
+            "SELECT g.id, g.name, g.position,"
+            " (SELECT COUNT(*) FROM watches w WHERE w.group_id = g.id) AS count"
+            " FROM watch_groups g WHERE g.id = ?" + clause,
+            [group_id, *params],
+        ).fetchone()
+    return db.row_to_dict(row) if row else None
+
+
+def rename_group(group_id: int, name: str, *, user_id: int | None = None) -> dict[str, Any] | None:
+    pulito = " ".join((name or "").split())[:80]
+    if not pulito:
+        raise ValueError("La cartella ha bisogno di un nome")
+    clause, params = _owner_clause_plain(user_id)
+    with db.db() as conn:
+        duplicato = conn.execute(
+            "SELECT 1 FROM watch_groups WHERE user_id IS ? AND lower(name) = lower(?) AND id <> ?",
+            [user_id, pulito, group_id],
+        ).fetchone()
+        if duplicato:
+            raise ValueError("Esiste già una cartella con questo nome")
+        conn.execute(
+            "UPDATE watch_groups SET name = ? WHERE id = ?" + clause, [pulito, group_id, *params]
+        )
+    return get_group(group_id, user_id=user_id)
+
+
+def delete_group(group_id: int, *, user_id: int | None = None) -> bool:
+    """Elimina la cartella. Le ricerche dentro non si perdono: restano
+    semplicemente senza cartella."""
+    clause, params = _owner_clause_plain(user_id)
+    with db.db() as conn:
+        row = conn.execute(
+            "SELECT id FROM watch_groups WHERE id = ?" + clause, [group_id, *params]
+        ).fetchone()
+        if not row:
+            return False
+        conn.execute(
+            "UPDATE watches SET group_id = NULL WHERE group_id = ?", [group_id]
+        )
+        conn.execute("DELETE FROM watch_groups WHERE id = ?", [group_id])
+    return True
 
 
 def _merge_prefs(existing: Any, new: Any) -> dict[str, Any]:

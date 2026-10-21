@@ -33,6 +33,8 @@ from .schemas import (
     WatchIn,
     WatchOut,
     WatchUpdate,
+    WatchGroupIn,
+    WatchGroupOut,
 )
 from .services import promos as promos_service
 from .services import push as push_service
@@ -409,13 +411,61 @@ async def list_watches(request: Request):
     return store.list_watches(int(user["id"]))
 
 
+# --------------------------------------------------------------------------- #
+# Cartelle: i raggruppamenti delle ricerche
+# --------------------------------------------------------------------------- #
+@app.get("/api/groups", response_model=list[WatchGroupOut])
+async def list_groups(request: Request):
+    user = deps.require_user(request)
+    return store.list_groups(int(user["id"]))
+
+
+@app.post("/api/groups", response_model=WatchGroupOut, status_code=201)
+async def create_group(payload: WatchGroupIn, request: Request):
+    user = deps.require_user(request)
+    try:
+        return store.create_group(payload.name, user_id=int(user["id"]))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.patch("/api/groups/{group_id}", response_model=WatchGroupOut)
+async def rename_group(group_id: int, payload: WatchGroupIn, request: Request):
+    user = deps.require_user(request)
+    try:
+        group = store.rename_group(group_id, payload.name, user_id=int(user["id"]))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if not group:
+        raise HTTPException(status_code=404, detail="Cartella non trovata")
+    return group
+
+
+@app.delete("/api/groups/{group_id}", status_code=204)
+async def delete_group(group_id: int, request: Request):
+    user = deps.require_user(request)
+    if not store.delete_group(group_id, user_id=int(user["id"])):
+        raise HTTPException(status_code=404, detail="Cartella non trovata")
+    return Response(status_code=204)
+
+
+def _check_group(group_id: int | None, user_id: int) -> None:
+    """La cartella deve esistere e appartenere all'utente."""
+    if group_id is None:
+        return
+    if not store.get_group(group_id, user_id=user_id):
+        raise HTTPException(status_code=400, detail="Cartella non trovata")
+
+
 @app.post("/api/watches", response_model=WatchOut, status_code=201)
 async def create_watch(payload: WatchIn, request: Request):
     user = deps.require_user(request)
+    uid = int(user["id"])
+    _check_group(payload.group_id, uid)
     resolved = await _resolve_places(payload)
-    watch = store.create_watch(payload, resolved, user_id=int(user["id"]))
+    watch = store.create_watch(payload, resolved, user_id=uid)
     _queue_run(watch["id"], "created", delay=0.4)
-    return store.get_watch(watch["id"], user_id=int(user["id"]))
+    return store.get_watch(watch["id"], user_id=uid)
 
 
 @app.get("/api/watches/{watch_id}", response_model=WatchOut)
@@ -436,6 +486,8 @@ async def update_watch(watch_id: int, payload: WatchUpdate, request: Request):
         raise HTTPException(status_code=404, detail="Ricerca non trovata")
 
     changes = payload.model_dump(exclude_unset=True)
+    if "group_id" in changes:
+        _check_group(changes["group_id"], uid)
     from_place = changes.get("from_place", watch["from_place"])
     to_place = changes.get("to_place", watch["to_place"])
     if "from_place" in changes and "from_lat" not in changes:

@@ -37,6 +37,8 @@ class WatchIn(BaseModel):
     interval_min: int = Field(60, ge=10, le=1440)
     active: bool = True
     prefs: dict[str, Any] | None = None
+    # Cartella di appartenenza (il raggruppamento per viaggio).
+    group_id: int | None = None
 
     @field_validator("sources")
     @classmethod
@@ -75,6 +77,7 @@ class WatchUpdate(BaseModel):
     interval_min: int | None = Field(None, ge=10, le=1440)
     active: bool | None = None
     prefs: dict[str, Any] | None = None
+    group_id: int | None = None
 
 
 class WatchOut(BaseModel):
@@ -110,6 +113,18 @@ class WatchOut(BaseModel):
     ai_summary: str | None = None
     ai_best_price: float | None = None
     ai_updated_at: str | None = None
+    group_id: int | None = None
+
+
+class WatchGroupIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=80)
+
+
+class WatchGroupOut(BaseModel):
+    id: int
+    name: str
+    position: int = 0
+    count: int = 0
 
 
 class OfferOut(BaseModel):

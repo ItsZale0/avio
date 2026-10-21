@@ -759,7 +759,50 @@ function bindEvents() {
 
   $("#watchList")?.addEventListener("click", (event) => {
     const item = event.target.closest(".watch-item");
-    if (item) selectWatch(Number(item.dataset.id));
+    if (item) {
+      selectWatch(Number(item.dataset.id));
+      return;
+    }
+    // Le cartelle: nuova, rinomina, elimina.
+    if (event.target.closest("#btnNewGroup")) {
+      const bottone = event.target.closest("#btnNewGroup");
+      campoInline(
+        bottone,
+        "",
+        async (nome) => {
+          try {
+            await creaCartella(nome);
+          } catch (error) {
+            toast(error.message, "error");
+          }
+        },
+        () => renderWatchList(),
+      );
+      return;
+    }
+    const azione = event.target.closest("[data-group-action]");
+    if (!azione) return;
+    const id = Number(azione.dataset.group);
+    if (azione.dataset.groupAction === "rename") {
+      const cartella = state.groups.find((g) => g.id === id);
+      const titolo = document.querySelector(`.watch-group[data-group="${id}"] .group-name`);
+      if (!cartella || !titolo) return;
+      campoInline(
+        titolo,
+        cartella.name,
+        async (nome) => {
+          try {
+            await rinominaCartella(id, nome);
+          } catch (error) {
+            toast(error.message, "error");
+            renderWatchList();
+          }
+        },
+        () => renderWatchList(),
+      );
+    } else if (azione.dataset.groupAction === "delete") {
+      eliminaCartella(id).catch((error) => toast(error.message, "error"));
+    }
   });
 
   $("#tabs")?.addEventListener("click", (event) => {
@@ -798,6 +841,12 @@ function bindEvents() {
   $("#btnDelKey")?.addEventListener("click", deleteKey);
   $("#btnTelegramLink")?.addEventListener("click", telegramLink);
   $("#btnTelegramConfirm")?.addEventListener("click", telegramConfirm);
+  // "Nuova cartella…" nel modale: si apre il campo per il nome.
+  $("#fGroup")?.addEventListener("change", (event) => {
+    const nuovo = event.target.value === "new";
+    $("#fGroupNew").classList.toggle("hidden", !nuovo);
+    if (nuovo) $("#fGroupNew").focus();
+  });
   document.addEventListener("input", (event) => {
     if (event.target.classList?.contains("pass-search")) {
       filtraPass(event.target.value);
@@ -912,7 +961,12 @@ function shortModel(model) {
 /* Ricerche                                                           */
 /* ------------------------------------------------------------------ */
 async function loadWatches() {
-  state.watches = await api("/api/watches");
+  const [watches, groups] = await Promise.all([
+    api("/api/watches"),
+    api("/api/groups"),
+  ]);
+  state.watches = watches;
+  state.groups = groups;
   $("#watchCount").textContent = state.watches.length;
   renderWatchList();
 }
@@ -923,7 +977,7 @@ function renderWatchList() {
     box.innerHTML = `<div class="hint hint-block">Nessuna ricerca. Creane una con «+ Nuova ricerca».</div>`;
     return;
   }
-  box.innerHTML = state.watches.map((watch) => {
+  const voce = (watch) => {
     const active = watch.id === state.selectedId;
     const route = `${esc(watch.from_place)} <span class="arrow">→</span> ${esc(watch.to_place)}`;
     const price = watch.best_price != null ? euro(watch.best_price) : "—";
@@ -938,7 +992,100 @@ function renderWatchList() {
           <span class="price">${price}</span>
         </span>
       </button>`;
-  }).join("");
+  };
+  // Le ricerche si raccolgono per cartella; quelle senza cartella restano
+  // in coda, sotto una intestazione che lo dice.
+  const perCartella = new Map();
+  const sciolte = [];
+  for (const watch of state.watches) {
+    const cartella = state.groups.find((g) => g.id === watch.group_id);
+    if (cartella) {
+      if (!perCartella.has(cartella.id)) perCartella.set(cartella.id, []);
+      perCartella.get(cartella.id).push(watch);
+    } else {
+      sciolte.push(watch);
+    }
+  }
+  const sezione = (nome, id, voci, conMenu) => `
+    <section class="watch-group${id ? "" : " plain"}" data-group="${id ?? ""}">
+      <header class="group-head">
+        <span class="group-name">${esc(nome)}</span>
+        <span class="group-count">${voci.length}</span>
+        ${conMenu ? `<details class="group-menu">
+          <summary aria-label="Azioni della cartella">⋯</summary>
+          <div class="menu">
+            <button type="button" data-group-action="rename" data-group="${id}">Rinomina</button>
+            <button type="button" data-group-action="delete" data-group="${id}">Elimina</button>
+          </div>
+        </details>` : ""}
+      </header>
+      <div class="group-items">${voci.map(voce).join("")}</div>
+    </section>`;
+  const parti = state.groups.map((g) => sezione(g.name, g.id, perCartella.get(g.id) || [], true));
+  if (sciolte.length) parti.push(sezione("Altre ricerche", null, sciolte, false));
+  box.innerHTML = `${parti.join("")}
+    <button type="button" class="group-add" id="btnNewGroup">+ Nuova cartella</button>`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Cartelle: creare, rinominare, eliminare                              */
+/* ------------------------------------------------------------------ */
+async function creaCartella(nome) {
+  const gruppo = await api("/api/groups", {
+    method: "POST",
+    body: JSON.stringify({ name: nome }),
+  });
+  await loadWatches();
+  return gruppo;
+}
+
+async function rinominaCartella(id, nome) {
+  await api(`/api/groups/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ name: nome }),
+  });
+  await loadWatches();
+}
+
+async function eliminaCartella(id) {
+  const cartella = state.groups.find((g) => g.id === id);
+  if (!cartella) return;
+  const ok = await chiediConferma({
+    titolo: "Eliminare la cartella?",
+    testo: `Le ricerche dentro <b>${esc(cartella.name)}</b> non si perdono: restano nell'elenco senza cartella.`,
+    conferma: "Elimina",
+    danger: true,
+  });
+  if (!ok) return;
+  await api(`/api/groups/${id}`, { method: "DELETE" });
+  await loadWatches();
+}
+
+/* Un campo inline al posto del titolo: si rinomina o si crea senza aprire
+   un dialog. Invio conferma, Esc annulla. */
+function campoInline(ancora, valore, alSalva, allAnnulla) {
+  const input = document.createElement("input");
+  input.className = "group-rename";
+  input.type = "text";
+  input.maxLength = 80;
+  input.value = valore || "";
+  input.setAttribute("aria-label", "Nome della cartella");
+  let chiuso = false;
+  const chiudi = (salva) => {
+    if (chiuso) return;
+    chiuso = true;
+    const testo = input.value.trim();
+    if (salva && testo) alSalva(testo);
+    else allAnnulla();
+  };
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") { event.preventDefault(); chiudi(true); }
+    if (event.key === "Escape") { event.preventDefault(); chiudi(false); }
+  });
+  input.addEventListener("blur", () => chiudi(true));
+  ancora.replaceWith(input);
+  input.focus();
+  input.select();
 }
 
 async function selectWatch(id) {
@@ -1857,6 +2004,16 @@ function openWatchModal(watch) {
   }
 
   $("#fName").value = data.name || "";
+  // La cartella: le esistenti, più la voce per crearne una nuova.
+  const selezione = $("#fGroup");
+  selezione.innerHTML = `<option value="">— nessuna —</option>` +
+    state.groups
+      .map((g) => `<option value="${g.id}">${esc(g.name)}</option>`)
+      .join("") +
+    `<option value="new">Nuova cartella…</option>`;
+  selezione.value = watch && watch.group_id ? String(watch.group_id) : "";
+  $("#fGroupNew").classList.add("hidden");
+  $("#fGroupNew").value = "";
   $("#fFrom").value = data.from_place || "";
   $("#fTo").value = data.to_place || "";
   $("#fDepart").value = data.depart_after || "";
@@ -2038,6 +2195,20 @@ async function submitWatch(event) {
     notify,
     active: true,
   };
+  // La cartella: una nuova si crea qui, con il nome scritto nel campo.
+  const sceltaCartella = $("#fGroup").value;
+  if (sceltaCartella === "new") {
+    const nome = $("#fGroupNew").value.trim();
+    if (!nome) return fail("Scrivi il nome della cartella.");
+    try {
+      const cartella = await creaCartella(nome);
+      payload.group_id = cartella.id;
+    } catch (error) {
+      return fail(error.message);
+    }
+  } else if (sceltaCartella) {
+    payload.group_id = Number(sceltaCartella);
+  }
   // Gli abbonamenti sono parte delle preferenze: il resto si conserva.
   // Si manda sempre (anche vuota): togliere un abbonamento deve valere.
   payload.prefs = { passes: passTypes.map((tipo) => ({ tipo })) };

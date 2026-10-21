@@ -151,6 +151,22 @@ price cell is hidden).
 Touch floors on the phone (≤ 760px): icon actions and tabs are 44px, the small
 modal buttons 36px, form fields 44px.
 
+## The index is grouped by cartella
+
+The searches are not a flat list: they are grouped in **cartelle** (a trip, a
+context, a person). The index in the sidebar shows one section per cartella —
+the name, the number of searches, a `⋯` menu with *Rinomina* and *Elimina* —
+and the searches that belong to no cartella under **"Altre ricerche"**.
+
+- A cartella is created from the index (**+ Nuova cartella**) or from the
+  search form (**Cartella → Nuova cartella…**). Renaming happens in place: the
+  title becomes a field, Invio saves, Esc cancels.
+- **Deleting a cartella never deletes a search**: the searches inside simply
+  return to "Altre ricerche". The dialog says so.
+- Cartelle and searches are both scoped to the account: two users of the same
+  instance see their own. The data model is per-user from the start, so
+  internal accounts need only a management screen, not a migration.
+
 ## The map is part of the system
 
 The map tab is not an island: it uses **dark tiles** (Esri *World Dark Gray
@@ -174,6 +190,7 @@ comparison, even when more expensive.
 | Thing | Word | Never |
 | --- | --- | --- |
 | the saved search | **ricerca** | "viaggio", "monitoraggio" |
+| a group of searches | **cartella** | "categoria", "tag", "gruppo" |
 | the agent's pass over a search | **controllo** | "esecuzione", "run", "ricerca" |
 | the verb for that pass | **cerca** (the button: "Cerca ora") | "forza", "lancia" |
 | a result row | **offerta** | "opzione", "combinazione" |

@@ -160,10 +160,62 @@ code {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .watch-status-dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--positive); display: inline-block; flex: none;
+  width: 6px; height: 6px; border-radius: 50%;  background: var(--positive); display: inline-block; flex: none;
 }
 .watch-item.paused .watch-status-dot { background: var(--meta); }
+
+/* ---------- l'indice: le ricerche raggruppate per cartella -------------- */
+.watch-group { margin-bottom: var(--space-sm); }
+.watch-group:last-of-type { margin-bottom: var(--space-2xs); }
+.group-head {
+  display: flex; align-items: center; gap: var(--space-2xs);
+  padding: var(--space-xs) var(--space-xs) var(--space-2xs);
+}
+.group-name {
+  font-size: var(--text-xs); font-weight: 600; color: var(--meta);
+  letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.group-count { font-size: var(--text-xs); color: var(--meta); font-variant-numeric: tabular-nums; }
+.group-items { display: flex; flex-direction: column; gap: 2px; }
+
+/* Il menu della cartella: tre puntini, due voci. */
+.group-menu { margin-left: auto; position: relative; }
+.group-menu > summary {
+  list-style: none; cursor: pointer; color: var(--meta);
+  font-size: var(--text-sm); line-height: 1; padding: 0 4px;
+  border-radius: var(--radius-sm);
+}
+.group-menu > summary::-webkit-details-marker { display: none; }
+.group-menu > summary:hover { color: var(--text); background: var(--raised); }
+.group-menu .menu {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 40;
+  min-width: 132px; padding: var(--space-2xs);
+  background: var(--raised); border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow); /* taste-skill-ignore: sovrapposizione */
+  display: flex; flex-direction: column;
+}
+.group-menu .menu button {
+  appearance: none; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: var(--text-xs); color: var(--muted);
+  text-align: left; padding: 6px 8px; border-radius: var(--radius-sm);
+}
+.group-menu .menu button:hover { background: var(--surface); color: var(--text); }
+
+/* Rinomina e nuova cartella: un campo al posto del titolo. */
+.group-rename {
+  font: inherit; font-size: var(--text-xs); font-weight: 600;
+  color: var(--text); background: var(--ground);
+  border: 1px solid var(--accent); border-radius: var(--radius-sm);
+  padding: 2px 6px; width: 100%; min-width: 0; outline: none;
+}
+.group-add {
+  appearance: none; border: 1px dashed var(--rule); background: none;
+  color: var(--meta); font: inherit; font-size: var(--text-xs);
+  padding: 6px 8px; border-radius: var(--radius-md); cursor: pointer;
+  text-align: left; width: 100%; margin-top: var(--space-2xs);
+}
+.group-add:hover { color: var(--text); border-color: var(--control); background: var(--surface); }
 
 .sidebar-foot {
   padding: var(--space-sm) var(--space-md) var(--space-md);
@@ -1010,9 +1062,11 @@ select { cursor: pointer; }
   .sidebar { border-right: 0; border-bottom: 1px solid var(--border); }
   .sidebar-head { padding: var(--space-sm) var(--space-md) var(--space-xs); }
   .watch-list {
-    flex-direction: row; flex-wrap: wrap; overflow: visible;
-    padding: 0 var(--space-sm) var(--space-sm); gap: var(--space-xs); flex: none;
+    flex-direction: column; overflow: visible;
+    padding: 0 var(--space-sm) var(--space-sm); gap: var(--space-sm); flex: none;
   }
+  /* Sul telefono le cartelle restano in colonna, le ricerche dentro affiancate. */
+  .group-items { flex-direction: row; flex-wrap: wrap; gap: var(--space-xs); }
   .watch-item {
     flex: 1 1 220px; max-width: 300px; min-width: 0; overflow: hidden;
     background: var(--surface);

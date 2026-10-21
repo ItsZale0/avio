@@ -120,6 +120,16 @@ CREATE TABLE IF NOT EXISTS watches (
 
 
 
+CREATE TABLE IF NOT EXISTS watch_groups (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    position    INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_watch_groups_user ON watch_groups(user_id);
+
 CREATE TABLE IF NOT EXISTS offers (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     watch_id       INTEGER NOT NULL REFERENCES watches(id) ON DELETE CASCADE,
@@ -336,6 +346,8 @@ MIGRATIONS = [
     ("plans", "walk_in_min", "INTEGER"),
     ("plans", "walk_out_km", "REAL"),
     ("plans", "walk_in_km", "REAL"),
+    # Le cartelle: le ricerche si raggruppano per viaggio o per contesto.
+    ("watches", "group_id", "INTEGER REFERENCES watch_groups(id) ON DELETE SET NULL"),
 ]
 
 # Indici sulle colonne introdotte dalle migrazioni: si creano dopo, quando
