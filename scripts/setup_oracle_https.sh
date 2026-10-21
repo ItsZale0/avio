@@ -339,14 +339,18 @@ cat <<EOF
 ----------------------------------------------------------------------
 PASSI SUCCESSIVI (sul PC)
 ----------------------------------------------------------------------
-  1. python scripts\\export_deploy.py --with-gtfs
-  2. scp -i <chiave> data\\deploy\\carpool-deploy.zip ubuntu@$PUBLIC_IP:/tmp/
-  3. ssh -i <chiave> ubuntu@$PUBLIC_IP
+  1. copia i database del PC sulla VM (carpool.db e gtfs.db, in data/):
+     scp -i <chiave> data/carpool.db ubuntu@$PUBLIC_IP:/tmp/
+     scp -i <chiave> data/gtfs.db    ubuntu@$PUBLIC_IP:/tmp/
+  2. ssh -i <chiave> ubuntu@$PUBLIC_IP
      sudo systemctl stop carpool
-     cd /var/lib/carpool && sudo unzip -o /tmp/carpool-deploy.zip
-     sudo chown -R carpool:carpool /var/lib/carpool && rm /tmp/carpool-deploy.zip
+     sudo cp /tmp/carpool.db /var/lib/carpool/carpool.db
+     sudo cp /tmp/gtfs.db    /var/lib/carpool/gtfs.db
+     sudo chown carpool:carpool /var/lib/carpool/carpool.db /var/lib/carpool/gtfs.db
+     sudo chmod 640 /var/lib/carpool/carpool.db /var/lib/carpool/gtfs.db
+     rm /tmp/carpool.db /tmp/gtfs.db
      sudo systemctl start carpool
-  4. nel repo GitHub: Settings -> Secrets and variables -> Actions ->
+  3. nel repo GitHub: Settings -> Secrets and variables -> Actions ->
      Variables -> CARPOOL_API_BASE = https://$PUBLIC_IP
      poi rilancia il workflow "Deploy frontend su GitHub Pages"
 

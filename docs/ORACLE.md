@@ -84,26 +84,26 @@ sudo -u carpool env CARPOOL_DATA_DIR=/var/lib/carpool \
 
 ## 4. Importare i tuoi dati
 
-Sul PC, esporta il database con account, ricerche e impostazioni:
+La VM ha gia' i tuoi dati (ricerche, impostazioni, chiavi): sono stati
+trasferiti quando l'app e' stata spostata dal PC al server.
+
+Per trasferirli a mano (per esempio da un'altra installazione), copia i file
+del database nella cartella dei dati della VM:
 
 ```powershell
-python scripts\export_deploy.py --with-gtfs
-```
-
-Trovi `data\deploy\carpool-deploy.zip`. Copialo sulla VM:
-
-```powershell
-scp -i ~/Downloads/ssh-key-ocid.key data\deploy\carpool-deploy.zip ubuntu@<IP_PUBBLICO>:/tmp/
+scp -i ~/Downloads/ssh-key-ocid.key data\carpool.db ubuntu@<IP_PUBBLICO>:/tmp/
+scp -i ~/Downloads/ssh-key-ocid.key data\gtfs.db   ubuntu@<IP_PUBBLICO>:/tmp/
 ```
 
 E sulla VM:
 
 ```bash
 sudo systemctl stop carpool
-cd /var/lib/carpool
-sudo unzip -o /tmp/carpool-deploy.zip
-sudo chown -R carpool:carpool /var/lib/carpool
-rm /tmp/carpool-deploy.zip
+sudo cp /tmp/carpool.db /var/lib/carpool/carpool.db
+sudo cp /tmp/gtfs.db    /var/lib/carpool/gtfs.db
+sudo chown carpool:carpool /var/lib/carpool/carpool.db /var/lib/carpool/gtfs.db
+sudo chmod 640 /var/lib/carpool/carpool.db /var/lib/carpool/gtfs.db
+rm /tmp/carpool.db /tmp/gtfs.db
 sudo systemctl start carpool
 ```
 
@@ -163,21 +163,6 @@ CARPOOL_CORS_ORIGINS=https://itszale0.github.io
 ```
 
 5. `sudo systemctl restart carpool`
-
-### Senza dominio: tunnel Cloudflare
-
-```bash
-sudo cloudflared tunnel login
-sudo cloudflared tunnel create carpool
-sudo cloudflared tunnel route dns carpool carpool.tuodominio.it
-sudo cloudflared service install
-```
-
-Poi configura Nginx per il tunnel, oppure fai girare il tunnel verso la porta
-8787 direttamente. L'URL e' stabile, il certificato e' incluso.
-
-> Il quick tunnel (`cloudflared tunnel --url http://127.0.0.1:8787`) funziona
-> ma cambia URL a ogni riavvio: scomodo per la PWA.
 
 ## 6. Collegare GitHub Pages
 

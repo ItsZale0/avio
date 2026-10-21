@@ -260,9 +260,9 @@ function anima(el) {
   el.classList.add("enter");
 }
 
-/* Il puntatore "fresco" del backend, letto direttamente dal repo: il tunnel
-   cambia URL a ogni avvio e la config.json di GitHub Pages si aggiorna solo
-   dopo il deploy (un paio di minuti). Questo file e' subito disponibile. */
+/* Il puntatore "fresco" del backend, letto direttamente dal repo: la
+   config.json di GitHub Pages si aggiorna solo dopo il deploy (un paio di
+   minuti). Questo file e' subito disponibile. */
 const RAW_BACKEND =
   "https://raw.githubusercontent.com/ItsZale0/carpool-intelligence/main/backend.json";
 
@@ -288,9 +288,9 @@ async function api(path, options = {}) {
     ...(options.headers || {}),
   };
 
-  // Il backend puo' cambiare indirizzo (un tunnel riavviato, una VM
-  // ricreata): se la richiesta fallisce a livello di rete si prova un altro
-  // backend conosciuto (config.json di Pages, puntatore fresco su GitHub).
+  // Il backend puo' cambiare indirizzo (una VM ricreata con un IP nuovo):
+  // se la richiesta fallisce a livello di rete si prova un altro backend
+  // noto (config.json di Pages, puntatore fresco su GitHub).
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
       response = await fetch(API_BASE + path, {
@@ -348,11 +348,6 @@ async function api(path, options = {}) {
   }
   if (response.status === 204) return null;
   const text = await response.text();
-  // ngrok free manda la pagina di avviso al posto dell'app: si riconosce
-  // e si spiega, invece di dare un errore JSON incomprensibile.
-  if (text.includes("You are about to visit")) {
-    throw new Error(MESSAGGIO_TUNNEL);
-  }
   try {
     return JSON.parse(text);
   } catch (_) {
@@ -480,9 +475,9 @@ async function passaAlBackend() {
   location.replace(target.toString());
 }
 
-/* L'API risponde? (un tunnel "vivo" ma appeso non risponde: si scarta).
-   Si controlla anche il contenuto: ngrok risponde 200 con la sua pagina
-   di avviso, che non e' l'app. */
+/* L'API risponde? (un backend "vivo" ma appeso non risponde: si scarta).
+   Si controlla anche il contenuto: una pagina di avviso al posto
+   dell'app arriva con HTTP 200 e va riconosciuta. */
 async function backendVivo(base, ms = 4000) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), ms);
@@ -2278,8 +2273,6 @@ async function openSettings() {
     impostaValore("#sTelegramToken", s.telegram_token);
     impostaValore("#sTelegramChat", s.telegram_chat_id);
     impostaValore("#sXgo", s.xgo);
-    impostaValore("#sNgrokToken", s.ngrok_authtoken);
-    impostaValore("#sNgrokDomain", s.ngrok_domain);
     // Gli abbonamenti globali dell'utente.
     let globalPasses = [];
     try {
@@ -2412,8 +2405,6 @@ function settingsPayload() {
   return {
     ...personal,
     groq_api_key: val("#sGroqKey"),
-    ngrok_authtoken: val("#sNgrokToken"),
-    ngrok_domain: val("#sNgrokDomain"),
     xgo: val("#sXgo"),
     // Gli abbonamenti globali: una lista JSON di {tipo}.
     passes: JSON.stringify(

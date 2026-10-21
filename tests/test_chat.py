@@ -12,6 +12,39 @@ from app.services import questions as questions_service
 ROME = timezone(timedelta(hours=2))
 
 
+class BaseDbTest(unittest.TestCase):
+    """Un database di prova con un utente, e niente dipendenze dai dati locali.
+
+    Prima questi test scrivevano sul database di sviluppo e si appoggiavano
+    all'utente con id 3 che stava li' per caso: su un PC pulito (o senza
+    quei dati) fallivano. Ora sono autonomi.
+    """
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+
+        from app import db
+
+        self._tmp = tempfile.TemporaryDirectory()
+        self._old_path = db.DB_PATH
+        db.DB_PATH = Path(self._tmp.name) / "test-chat.db"
+        db.init_db()
+        with db.db() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO users(id, username, password_hash, is_admin, "
+                "status, created_at) VALUES(3, 'test', 'x', 1, 'active', "
+                "'2026-01-01T00:00:00')"
+            )
+        self.addCleanup(self._ripristina)
+
+    def _ripristina(self):
+        from app import db
+
+        db.DB_PATH = self._old_path
+        self._tmp.cleanup()
+
+
 class PatchDeterministicTests(unittest.TestCase):
     WATCH = {
         "id": 1,
@@ -74,7 +107,7 @@ class JsonReadingTests(unittest.TestCase):
         self.assertEqual(patch, {})
 
 
-class MergeTests(unittest.TestCase):
+class MergeTests(BaseDbTest):
     def test_the_departure_time_can_be_changed(self):
         from app import db, store
 
@@ -106,12 +139,13 @@ class MergeTests(unittest.TestCase):
                 conn.execute("DELETE FROM watches WHERE id = 999")
 
 
-class ChatPersistenceTests(unittest.TestCase):
+class ChatPersistenceTests(BaseDbTest):
     """La conversazione resta: e' salvata, non solo nella pagina."""
 
     WATCH_ID = 998
 
     def setUp(self):
+        super().setUp()
         from app import db
 
         # La tabella della chat nasce con init_db: il database di sviluppo
@@ -157,10 +191,11 @@ class ChatPersistenceTests(unittest.TestCase):
         self.assertIn("partenza dopo 2026-10-22 09:00", etichette[1])
 
 
-class WindowWarningTests(unittest.TestCase):
+class WindowWarningTests(BaseDbTest):
     """Partenza dopo l'arrivo: la ricerca resterebbe vuota, meglio dirlo."""
 
     def setUp(self):
+        super().setUp()
         from app import db
 
         db.init_db()
@@ -214,8 +249,11 @@ class TimeDisplayTests(unittest.TestCase):
         self.assertEqual(chat._fmt(None), "-")
 
 
-class LimitePartenzaTests(unittest.TestCase):
+class LimitePartenzaTests(BaseDbTest):
     """Il limite di partenza vale al minuto, anche quando il piano e' comodo."""
+
+    def setUp(self):
+        super().setUp()
 
     def test_un_treno_che_parte_prima_del_limite_viene_scartato(self):
         from datetime import datetime, timezone

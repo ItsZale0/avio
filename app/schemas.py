@@ -176,8 +176,6 @@ class SettingsIn(BaseModel):
     ai_model_smart: str | None = None
     ai_model_fast: str | None = None
     gtfs_enabled: str | None = None
-    ngrok_authtoken: str | None = None
-    ngrok_domain: str | None = None
     # Lista JSON degli abbonamenti in corso (globali per l'utente).
     passes: str | None = None
     # Agevolazione X-GO: "giovane" / "senior" / "".

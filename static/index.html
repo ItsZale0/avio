@@ -323,33 +323,6 @@
             <small class="field-hint">Mettila nell'URL: <code>indirizzo/?key=...</code></small>
           </div>
 
-          <div class="section-title">Accesso da fuori (tunnel)</div>
-          <div class="grid-2">
-            <div class="field">
-              <label for="sNgrokToken">Authtoken ngrok</label>
-              <input id="sNgrokToken" name="ngrok_authtoken" type="password"
-                     placeholder="2abcDEF…" autocomplete="off" />
-            </div>
-            <div class="field">
-              <label for="sNgrokDomain">Dominio ngrok (facoltativo)</label>
-              <input id="sNgrokDomain" name="ngrok_domain"
-                     placeholder="es. mio-veloce.ngrok-free.app" autocomplete="off" />
-              <small class="field-hint">
-                Copialo da <code>dashboard.ngrok.com/domains</code> ("Static
-                domain", gratis): l'indirizzo pubblico non cambia più, nemmeno
-                al riavvio, e la pagina di avviso di ngrok compare una volta
-                sola. Senza, l'URL cambia a ogni avvio e il link GitHub ti
-                porta sempre su quello nuovo (con un clic su "Visit Site").
-              </small>
-            </div>
-          </div>
-          <small class="field-hint">
-            Il tunnel ngrok lavora sulla porta 443, quindi funziona anche dove
-            Cloudflare è bloccato. Prendi l'authtoken su
-            <code>dashboard.ngrok.com/get-started/your-authtoken</code>,
-            poi riavvia l'agente.
-          </small>
-
           <details class="adv-box">
             <summary>Password d'accesso (uso avanzato)</summary>
             <small class="field-hint" id="accessInfo">—</small>

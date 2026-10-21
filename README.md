@@ -4,93 +4,33 @@ Dashboard + agente che cerca **passaggi in auto, treno, autobus, carsharing e vo
 reali, ti mostra **il modo più economico** per fare quel viaggio (anche combinando più tratte) e ti
 avvisa su Telegram/email quando trova qualcosa di nuovo. Se un dato manca, **te lo chiede**.
 
-> Pensato per l'Italia. **Solo dati reali**: nessuna offerta simulata. Agente sul tuo PC,
-> intelligenza con i **modelli gratuiti Groq**.
-> Interfaccia web + **PWA installabile sul telefono** (vedi [`docs/DEPLOY.md`](docs/DEPLOY.md)).
+> Pensato per l'Italia. **Solo dati reali**: nessuna offerta simulata. L'agente gira
+> su una VM Linux (Oracle Cloud, piano gratuito) ed è **sempre online**; intelligenza
+> con i **modelli gratuiti Groq**.
+> Interfaccia web + **PWA installabile sul telefono** (vedi [`docs/ORACLE.md`](docs/ORACLE.md)).
 
 ---
 
-## Avvio rapido (Windows)
+## Come si usa
 
-Doppio clic su **`start.bat`** (oppure `powershell -ExecutionPolicy Bypass -File start.ps1`).
+L'app è **online**: <https://itszale0.github.io/carpool-intelligence/>
 
-Al primo avvio crea `.venv`, installa le dipendenze e apre il server su:
-
-**http://127.0.0.1:8787**
-
-### Dal telefono, senza tunnel: l'IP di rete
-
-Nel `.env` c'è `HOST`: con `HOST=0.0.0.0` il server ascolta su tutta la rete,
-cosi dal telefono (stesso Wi-Fi) si apre direttamente:
-
-```
-http://<ip-del-pc>:8787
-```
-
-L'IP si vede con `ipconfig` (Wi-Fi) oppure con
-`python scripts\agent_status.py`. Con `HOST=127.0.0.1` (predefinito) l'app
-resta raggiungibile solo dal PC. Attenzione: l'app è protetta da password, ma
-chi è sulla stessa rete può raggiungere la porta.
-
-Lo script avvia anche il **tunnel ngrok** (o Cloudflare, se ngrok non c'e'),
-che rende l'app raggiungibile dal telefono. Il tunnel gratuito assegna un URL
-nuovo a ogni avvio: per questo `scripts/tunnel.py` aggiorna da solo il `.env`,
-il file `backend.json`, la variabile GitHub `CARPOOL_API_BASE` e rilancia il
-deploy di GitHub Pages. Per farlo serve un token GitHub con scope `repo` in
-`GITHUB_TOKEN` (`setx GITHUB_TOKEN "ghp_..."`).
-
-### Il link unico: GitHub Pages
-
-L'indirizzo da usare, da qualunque dispositivo e da qualunque rete, e':
-
-**<https://itszale0.github.io/carpool-intelligence/>**
-
-L'interfaccia vive su GitHub Pages, l'API dietro il tunnel ngrok. Non serve
-ricordare l'URL del tunnel ne' l'IP del PC: a ogni avvio dell'agente il
-tunnel cambia indirizzo, e la dashboard lo segue da sola.
-
-Il meccanismo e' a tre livelli, per non restare mai fermi:
-
-| pezzo | chi lo aggiorna | a cosa serve |
-|---|---|---|
-| `config.json` (su Pages) | il deploy automatico | indirizzo del backend per la PWA |
-| `backend.json` (sul branch) | lo script del tunnel, a ogni avvio | puntatore fresco senza aspettare il deploy |
-| controllo di vita nel browser | il frontend, a ogni apertura | scarta i puntatori morti e tiene il primo che risponde davvero |
-
-Aprendo il link GitHub da un browser, la pagina verifica in pochi secondi
-quale backend e' **online** e passa al tunnel attivo: cosi' la sessione vive
-sulla stessa origine (cookie affidabile, niente preflight) e non si resta
-mai su un indirizzo vecchio. Per restare sulla pagina di GitHub aggiungi
-`?resta=1` all'indirizzo.
-
-Il tunnel si autocontrolla ogni 45 secondi: se non risponde lo riavvia e
-ripubblica l'indirizzo appena cambia. Se in `Impostazioni -> Dominio ngrok`
-metti il dominio statico del tuo account (gratuito, uno per account),
-l'indirizzo pubblico **non cambia mai** e il link e' stabile per sempre.
-
-
-**Per farlo girare in background senza finestre di terminale:**
-
-```powershell
-wscript.exe avvia-agente.vbs     # avvia (agente + tunnel) senza finestre
-python scripts\agent_status.py   # stato e ultimi log
-python scripts\stop_agent.py     # ferma tutto
-```
-
-Il collegamento nella cartella di avvio e' gia' installato: al login l'agente
-parte da solo, in silenzio. Il supervisore rilancia un processo che muore e
-scrive i log in `data/logs/`.
+Il link è l'unico indirizzo da usare, da qualunque dispositivo e da qualunque
+rete. Aprendolo, la pagina verifica in pochi secondi quale backend è **online**
+e ci porta: l'app e l'API restano sulla stessa origine (cookie affidabile,
+niente preflight). L'indirizzo della VM è `https://129.152.8.10`; se cambia
+(per esempio dopo una ricreazione dell'istanza) basta pubblicare il nuovo
+indirizzo (vedi [`docs/DEPLOY.md`](docs/DEPLOY.md)) e il link GitHub segue.
 
 Poi:
 
 1. **Accesso**: di default l'app si apre direttamente. Per metterci una
-   password: *Impostazioni → Accesso al sito → Password d'accesso*.
+   password: *Impostazioni → Password d'accesso*.
    Da quel momento il sito chiede **solo la password** (niente nome utente).
-   > C'è anche la **chiave segreta**: *Impostazioni → Chiave segreta →
-   > Genera chiave*. Mettila nell'URL (`https://.../?key=XXXX`) e l'app si
-   > apre con un tocco — perfetto per il telefono, dove il segreto finisce
-   > nella cronologia. La chiave si vede una volta sola (nel database c'è
-   > solo un hash SHA-256).
+   > C'è anche la **chiave segreta**: *Impostazioni → Genera chiave*.
+   > Mettila nell'URL (`https://.../?key=XXXX`) e l'app si apre con un tocco —
+   > perfetto per il telefono, dove il segreto finisce nella cronologia. La
+   > chiave si vede una volta sola (nel database c'è solo un hash SHA-256).
 2. **+ Nuova ricerca** → inserisci partenza, arrivo, “entro quando”, budget, raggio.
    (Oppure scrivi il viaggio in una frase e premi **✨ Compila con l'AI**.)
 3. Scegli le fonti e i canali di avviso.
@@ -101,19 +41,26 @@ non c'è bisogno di account separati. Le impostazioni personali (Telegram,
 SMTP, fascia di silenzio) sono separate da quelle comuni (chiave Groq, orari
 GTFS).
 
-Da riga di comando:
+Da riga di comando (sulla VM):
 
-```powershell
+```bash
 python -m app.cli users              # elenco account e stato
 python -m app.cli user-add mario     # crea un account attivo
 ```
 
-Avvio manuale senza script:
+### Per sviluppare in locale
+
+Il PC non serve più a far girare l'app: serve a **sviluppare**. Per provare le
+modifiche in locale:
 
 ```powershell
-python -m pip install -r requirements.txt
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8787
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+Copy-Item .env.example .env          # compila quello che ti serve
+.venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8787
 ```
+
+Poi http://127.0.0.1:8787. I dati locali stanno in `data/` (gitignorata).
 
 ---
 
@@ -497,49 +444,50 @@ static/
   index.html, styles.css, app.js
   manifest.webmanifest, sw.js, icons/    PWA (pubblicata su GitHub Pages)
 .github/workflows/pages.yml  deploy automatico del frontend su GitHub Pages
+.github/workflows/uptime.yml sorvegliante: controlla l'app ogni 30 minuti
 Dockerfile            immagine per il deploy su un server/container
 scripts/
   make_icons.py        genera le icone PWA
-  build_pages.py       bundle per Cloudflare Pages
-  export_deploy.py     esporta il database per un server
+  build_pages.py       bundle del frontend per il deploy
+  publish_backend.py  pubblica l'indirizzo del backend (variable + backend.json)
   install_oracle.sh    installazione completa su VM Ubuntu (Oracle Cloud)
-  tunnel.py            tunnel Cloudflare + allineamento automatico di Pages
-  install_autostart.py avvio automatico dell'agente (Task Scheduler)
+  setup_oracle_https.sh  HTTPS con Nginx, header di sicurezza, timer
+  backup_db.py         backup cifrato del database (spedito su Telegram)
+  systemd/             unita' systemd del backup
 data/                  database SQLite (generato)
 docs/DESIGN.md         architettura e roadmap
-docs/DEPLOY.md         telefono, tunnel, Pages, GitHub
+docs/DEPLOY.md         come si pubblica e si opera
 docs/ORACLE.md         server sempre acceso su Oracle Cloud
 tests/test_core.py     test di scoring/geo
 tests/test_ai.py       test planner, fallback senza AI, finestra di flessibilità
 tests/test_auth.py     test di accesso, sessioni e separazione dei dati
+tests/test_groups.py   test delle cartelle di ricerca
+tests/test_security.py test di sicurezza: rate limiting, ruoli, cookie
 ```
 
 ---
 
-## Sul telefono (senza server a pagamento)
+## Sul telefono
 
-Guida completa in **[`docs/DEPLOY.md`](docs/DEPLOY.md)**. In breve:
+L'app è già online e installabile come PWA:
 
-- l'agente gira sul PC, avviato all'accensione con Task Scheduler;
-- un **Cloudflare Tunnel** gratuito lo rende raggiungibile in HTTPS;
-- dal telefono apri l'URL → **Aggiungi a schermata Home** → è una PWA;
-- (opzionale) l'interfaccia su **Cloudflare Pages**, l'API resta dietro il tunnel.
+- dal telefono apri <https://itszale0.github.io/carpool-intelligence/> →
+  **Aggiungi a schermata Home** → è una PWA;
+- l'agente gira sulla VM, quindi funziona anche col PC spento;
+- la chiave segreta (`?key=...`) evita di digitare la password ogni volta.
 
-### Opzione: server sempre acceso, anche col PC spento
+Guida completa in **[`docs/DEPLOY.md`](docs/DEPLOY.md)** e
+**[`docs/ORACLE.md`](docs/ORACLE.md)**.
 
-Se vuoi che l'agente continui a girare quando il PC e' spento, c'e' il
-deploy su **Oracle Cloud**: piano Always Free con una VM Linux gratuita
-24/7, IP pubblico e volume persistente per il database.
+### Il server: VM gratuita su Oracle Cloud
+
+L'agente gira su una VM Linux del piano Always Free, con IP pubblico, volume
+persistente e HTTPS con certificato sull'IP (nessun dominio, nessun costo).
 
 - Guida: **[`docs/ORACLE.md`](docs/ORACLE.md)**
 - `scripts/install_oracle.sh` installa e configura tutto in un colpo;
 - `Dockerfile` per chi preferisce un container;
-- l'interfaccia resta su GitHub Pages, l'API dietro l'IP o il dominio.
-
-```powershell
-# esporta account, ricerche e impostazioni per il server
-python scripts\export_deploy.py
-```
+- l'interfaccia resta su GitHub Pages, l'API sulla VM.
 
 ---
 
@@ -548,13 +496,6 @@ python scripts\export_deploy.py
 ```powershell
 # test
 python -m unittest discover -s tests -v
-
-# stato dell'agente (processi, URL pubblico, log)
-python scripts\agent_status.py
-
-# avvio in background senza finestre / arresto
-wscript.exe avvia-agente.vbs
-python scripts\stop_agent.py
 
 # accesso con password: set = imposta, clear = toglie, key = genera la chiave
 python -m app.cli access status
