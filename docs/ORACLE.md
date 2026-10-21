@@ -272,10 +272,17 @@ Restando su Always Free, la rete di sicurezza è questa:
    `sudo certbot renew --cert-name <IP> --force-renewal` e poi
    `sudo systemctl reload nginx`.
 5. **Per non dipendere da te**: aggiungi le credenziali OCI come secret del
-   repository (`OCI_TENANCY_OCID`, `OCI_USER_OCID`, `OCI_COMPARTMENT_OCID`,
-   `OCI_INSTANCE_OCID`, `OCI_FINGERPRINT`, `OCI_PRIVATE_KEY`) e il
-   sorvegliante riavvia l'istanza da solo. Le trovi in Identity →
-   Domains → *Users* → OCID utente, e Tenancy → *API Keys* → *Add API key*.
+   repository e il sorvegliante riavvia l'istanza da solo. Servono tre cose,
+   che trovi nella console Oracle:
+   - `OCI_USER_OCID` — Identity → Domains → *Users* → il tuo utente → OCID
+   - `OCI_FINGERPRINT` e `OCI_PRIVATE_KEY` — Identity → Domains → *Users* →
+     il tuo utente → *API Keys* → **Add API key** → *Generate API key*:
+     scarica il file `.pem` (è la chiave privata) e copia il *fingerprint*
+     che compare nella schermata.
+   Gli altri due secret (`OCI_TENANCY_OCID`, `OCI_INSTANCE_OCID`) sono già
+   impostati. Per il `.pem`: **Settings → Secrets and variables → Actions →
+   New repository secret**, nome `OCI_PRIVATE_KEY`, valore = tutto il contenuto
+   del file (compreso `-----BEGIN PRIVATE KEY-----` e `-----END PRIVATE KEY-----`).
 
 ## Sicurezza della VM (cosa fanno gli script)
 

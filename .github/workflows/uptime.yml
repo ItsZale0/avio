@@ -30,7 +30,8 @@ jobs:
             echo "::error::la variabile CARPOOL_API_BASE non e' impostata"
             exit 1
           fi
-          code=$(curl -s -o /tmp/ping.json -w "%{http_code}" --max-time 30 "$URL/api/ping" || echo 000)
+          code=$(curl -s -o /tmp/ping.json -w "%{http_code}" --max-time 30 "$URL/api/ping" || true)
+          [ -n "$code" ] || code=000
           echo "Chiamata a $URL/api/ping -> HTTP $code"
           cat /tmp/ping.json 2>/dev/null || true
           echo
@@ -81,10 +82,14 @@ jobs:
             echo "Token Telegram non configurati: l'avviso arriva dalla notifica GitHub."
             exit 0
           fi
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          risposta=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="$TELEGRAM_CHAT_ID" \
-            -d text="Carpool Hunter non risponde. La VM potrebbe essere stata spenta da Oracle: si prova a riavvarla, se non basta si avvia a mano dalla console." \
-            > /dev/null || true
+            -d text="Carpool Hunter non risponde. La VM potrebbe essere stata spenta da Oracle: si prova a riavvarla, se non basta si avvia a mano dalla console.")
+          echo "$risposta"
+          case "$risposta" in
+            *'"ok":true'*) echo "avviso inviato su Telegram" ;;
+            *) echo "::error::Telegram non ha confermato l'invio" ;;
+          esac
 
       - name: Segnala il fallimento (GitHub avvisa via email)
         if: failure()
