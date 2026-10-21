@@ -83,7 +83,7 @@ const ALT_PROFILE = {
   veloce: "Più veloce",
   comodo: "Meno cambi",
   alternativa: "Alternativa",
-  proposta: "Proposta",
+  proposta: "Suggerito",
 };
 
 // Gli abbonamenti che l'agente conosce arrivano dall'API (il catalogo
