@@ -90,8 +90,22 @@ if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -qi "attivo\|
     ufw allow 80/tcp || true
     ufw allow 443/tcp || true
 else
-    iptables -I INPUT 6 -p tcp --dport 80 -j ACCEPT || true
-    iptables -I INPUT 6 -p tcp --dport 443 -j ACCEPT || true
+    # Le regole vanno PRIMA del REJECT finale, altrimenti non valgono mai.
+    # La posizione si calcola da quella del REJECT (in `iptables -S` la riga 1
+    # e' la policy, quindi le regole sono numerate da 1 in poi).
+    apri_porte() {
+        local porta=$1
+        iptables -D INPUT -p tcp --dport "$porta" -j ACCEPT 2>/dev/null || true
+        local pos
+        pos=$(iptables -S INPUT | grep -n 'REJECT' | head -1 | cut -d: -f1)
+        if [[ -z "$pos" ]]; then
+            iptables -A INPUT -p tcp --dport "$porta" -j ACCEPT
+        else
+            iptables -I INPUT "$((pos - 1))" -p tcp --dport "$porta" -j ACCEPT
+        fi
+    }
+    apri_porte 80
+    apri_porte 443
     if ! command -v netfilter-persistent >/dev/null 2>&1; then
         apt-get install -y -qq netfilter-persistent || true
     fi
