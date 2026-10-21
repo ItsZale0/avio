@@ -269,6 +269,9 @@ systemctl enable --now carpool-certcheck.timer
 # 9. Aggiornamento automatico del codice (come il frontend su Pages)
 # --------------------------------------------------------------------------
 log "Timer di aggiornamento del codice"
+# La cartella appartiene a 'carpool' ma il timer gira come root: git chiede
+# la "safe.directory" per non bloccarsi.
+git config --system --add safe.directory "$APP_DIR" 2>/dev/null || true
 cat > /etc/systemd/system/carpool-update.service <<EOF
 [Unit]
 Description=Aggiorna Carpool Hunter dal branch main
