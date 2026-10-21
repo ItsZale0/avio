@@ -450,13 +450,17 @@ async function backendVivo(base, ms = 4000) {
   }
 }
 
-/* Dal link GitHub Pages al tunnel attivo: stessa origine vuol dire cookie
-   di sessione affidabile e nessun preflight CORS. Con ?resta=1 si resta
-   sulla pagina di GitHub. */
+/* Passare al tunnel attivo non e' automatico: ngrok, sui account gratuiti,
+   mette davanti la pagina di avviso ("You are about to visit...") a ogni
+   browser nuovo, e li' l'app sembra spenta. L'app su GitHub Pages parla
+   gia' con l'API attraverso il tunnel (con l'header che salta l'avviso e
+   SameSite=None sul cookie di sessione), quindi si resta dove si e'.
+   Con ?tunnel=1 si chiede esplicitamente il passaggio al tunnel. */
 function passaAlTunnel() {
   if (!API_BASE || API_BASE === location.origin) return;
   if (!/(^|\.)github\.io$/.test(location.hostname)) return;
-  if (new URLSearchParams(location.search).has("resta")) return;
+  const query = new URLSearchParams(location.search);
+  if (query.has("resta") || !query.has("tunnel")) return;
   try {
     const target = new URL(API_BASE);
     target.pathname = "/";
@@ -480,7 +484,8 @@ function showApiHint() {
   }
   hint.innerHTML =
     "Se non riesci a entrare, apri l'app direttamente qui: " +
-    `<a href="${esc(API_BASE)}" target="_blank" rel="noopener">${esc(API_BASE)}</a>`;
+    `<a href="${esc(API_BASE)}" target="_blank" rel="noopener">${esc(API_BASE)}</a>` +
+    " — la prima volta ngrok chiede una conferma: clicca “Visit Site”.";
 }
 
 /* Se l'API non risponde, il tunnel potrebbe essere stato riavviato con un
