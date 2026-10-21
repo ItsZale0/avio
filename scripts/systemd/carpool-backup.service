@@ -1,0 +1,13 @@
+[Unit]
+Description=Fai una copia cifrata del database e la manda su Telegram
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Gira come l'utente del servizio: il database e' suo (640) e la chiave di
+# cifratura resta in /var/lib/carpool (750), leggibile solo da lui.
+User=@SERVICE_USER@
+Group=@SERVICE_USER@
+WorkingDirectory=@APP_DIR@
+EnvironmentFile=@APP_DIR@/.env
+ExecStart=@APP_DIR@/.venv/bin/python @APP_DIR@/scripts/backup_db.py

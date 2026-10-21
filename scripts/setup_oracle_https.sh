@@ -323,31 +323,12 @@ systemctl enable --now carpool-update.timer
 # no. Il backup gira come l'utente del servizio e spedisce il file
 # cifrato su Telegram (canale che funziona anche senza l'app).
 log "Timer di backup del database"
-cat > /etc/systemd/system/carpool-backup.service <<EOF
-[Unit]
-Description=Fai una copia cifrata del database e la manda su Telegram
-After=network-online.target
-
-[Service]
-Type=oneshot
-User=$SERVICE_USER
-Group=$SERVICE_USER
-WorkingDirectory=$APP_DIR
-EnvironmentFile=$APP_DIR/.env
-ExecStart=$APP_DIR/.venv/bin/python $APP_DIR/scripts/backup_db.py
-EOF
-
-cat > /etc/systemd/system/carpool-backup.timer <<EOF
-[Unit]
-Description=Ogni notte fa un backup cifrato del database di Carpool Hunter
-
-[Timer]
-OnCalendar=*-*-* 03:17:00
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-EOF
+# I file di unita' stanno nel repo: qui vengono solo riempiti i segnaposto.
+UNIT_DIR="$(cd "$(dirname "$0")" && pwd)/systemd"
+sed -e "s|@APP_DIR@|$APP_DIR|g" -e "s|@SERVICE_USER@|$SERVICE_USER|g" \
+    "$UNIT_DIR/carpool-backup.service" > /etc/systemd/system/carpool-backup.service
+sed -e "s|@APP_DIR@|$APP_DIR|g" -e "s|@SERVICE_USER@|$SERVICE_USER|g" \
+    "$UNIT_DIR/carpool-backup.timer" > /etc/systemd/system/carpool-backup.timer
 
 systemctl daemon-reload
 systemctl enable --now carpool-backup.timer

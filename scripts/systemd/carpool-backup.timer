@@ -1,0 +1,11 @@
+[Unit]
+Description=Ogni notte fa un backup cifrato del database di Carpool Hunter
+
+[Timer]
+# Le 3:17 di notte: un orario tranquillo, lontano dal rilascio di aggiornamenti.
+OnCalendar=*-*-* 03:17:00
+# Se la VM era spenta, il backup parte appena torna su.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
