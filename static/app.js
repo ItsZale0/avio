@@ -213,6 +213,15 @@ const MAX_MAP_OFFERS = 40;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/* Fa partire (o ripartire) l'animazione di arrivo di un blocco: il reflow
+   fra remove e add dice al browser che e' un evento nuovo, non un reset. */
+function anima(el) {
+  if (!el) return;
+  el.classList.remove("enter");
+  void el.offsetWidth;
+  el.classList.add("enter");
+}
+
 /* Il puntatore "fresco" del backend, letto direttamente dal repo: il tunnel
    cambia URL a ogni avvio e la config.json di GitHub Pages si aggiorna solo
    dopo il deploy (un paio di minuti). Questo file e' subito disponibile. */
@@ -899,10 +908,6 @@ function renderDetail() {
   statePill.textContent = watch.active ? "attiva" : "in pausa";
   statePill.classList.toggle("off", !watch.active);
 
-  const sources = (watch.sources || []).map((s) => {
-    const meta = state.sources.find((item) => item.id === s);
-    return meta ? meta.label : s;
-  }).join(", ");
   const passNames = ((watch.prefs && watch.prefs.passes) || [])
     .map((p) => {
       const tipo = typeof p === "string" ? p : p.tipo;
@@ -911,12 +916,20 @@ function renderDetail() {
       return p.nome || (known ? known.nome : tipo);
     })
     .join(", ");
-  $("#watchSub").textContent =
-    `entro ${fmtDate(watch.arrive_by)} · budget ${watch.max_price != null ? euro(watch.max_price) : "libero"} · ` +
-    `ogni ${watch.interval_min} min · raggio ${watch.radius_km} km · ${sources}` +
-    (watch.from_point ? ` · partenza: ${watch.from_point}` : "") +
-    (watch.to_point ? ` · arrivo: ${watch.to_point}` : "") +
-    (passNames ? ` · abbonamenti: ${passNames}` : "");
+  // I criteri della ricerca come chip: una riga leggibile invece di un muro
+  // di testo. L'elenco delle fonti non sta qui: ogni riga di offerta dice la
+  // sua fonte, ogni scheda vuota spiega come è andata, e in Impostazioni si
+  // scelgono.
+  const criteri = [`entro ${fmtDate(watch.arrive_by)}`];
+  if (watch.max_price != null) criteri.push(`budget ${euro(watch.max_price)}`);
+  if (watch.interval_min) criteri.push(`ogni ${watch.interval_min} min`);
+  if (watch.radius_km != null) criteri.push(`raggio ${watch.radius_km} km`);
+  if (watch.from_point) criteri.push(`ritrovo: ${watch.from_point}`);
+  if (watch.to_point) criteri.push(`arrivo: ${watch.to_point}`);
+  if (passNames) criteri.push(`abbonamenti: ${passNames}`);
+  $("#watchSub").innerHTML = criteri
+    .map((c) => `<span class="crit">${esc(c)}</span>`)
+    .join("");
 
   $("#btnToggleWatch").textContent = watch.active ? "Pausa" : "Riprendi";
 
@@ -928,7 +941,7 @@ function renderDetail() {
 
   $("#statCount").textContent = state.offers.length;
   const transitCount = state.offers.filter((o) => o.mode === "transit").length;
-  $("#statCountNote").textContent = transitCount ? `${transitCount} combinazioni mezzi` : "offerte attive";
+  $("#statCountNote").textContent = transitCount ? `${transitCount} combinazioni mezzi` : "";
 
   $("#statLastRun").textContent = watch.last_run_at ? relative(watch.last_run_at) : "mai";
   const lastRun = state.runs[0];
@@ -942,6 +955,7 @@ function renderDetail() {
   $("#countAll").textContent = state.offers.length;
   renderPlan();
   renderQuestions();
+  anima($("#detail"));
 }
 
 /* ------------------------------------------------------------------ */
@@ -1163,7 +1177,9 @@ function renderPlan() {
     <div class="plan-meta">
       ${plan.partial ? "<span>prezzo parziale</span>" : ""}
       ${(plan.steps || []).length === 1
-        ? "<span>tratta diretta</span>"
+        ? (changes === 0
+            ? "<span>tratta diretta</span>"
+            : "<span>1 tratta</span>")
         : `<span>${(plan.steps || []).length} tratte</span>`}
     </div>
     ${watchouts ? `<div class="plan-watchouts">${watchouts}</div>` : ""}
@@ -1253,13 +1269,14 @@ async function answerFree(questionId, form) {
 function renderTab() {
   const panel = $("#tabPanel");
   if (!state.watch) return;
-  if (state.tab === "best") return renderBest(panel);
-  if (state.tab === "all") return renderAll(panel);
-  if (state.tab === "map") return renderMap(panel);
-  if (state.tab === "nearby") return renderNearby(panel);
-  if (state.tab === "links") return renderLinks(panel);
-  if (state.tab === "runs") return renderRuns(panel);
-  if (state.tab === "ask") return renderChat(panel);
+  if (state.tab === "best") renderBest(panel);
+  else if (state.tab === "all") renderAll(panel);
+  else if (state.tab === "map") renderMap(panel);
+  else if (state.tab === "nearby") renderNearby(panel);
+  else if (state.tab === "links") renderLinks(panel);
+  else if (state.tab === "runs") renderRuns(panel);
+  else if (state.tab === "ask") renderChat(panel);
+  anima(panel);
 }
 
 function isInitialRun() {
@@ -1407,9 +1424,13 @@ function renderBest(panel) {
     .sort((a, b) => (b.score || 0) - (a.score || 0));
 
   if (!offers.length) {
-    const notes = (state.runs[0]?.notes || []).slice(0, 2).join(" ");
-    const text = "L'agente sta cercando. Puoi forzare un controllo con “Cerca ora”." + (notes ? " " + notes : "");
-    panel.innerHTML = emptyTab("Ancora nessuna offerta con prezzo", text, true);
+    const notes = (state.runs[0]?.notes || []).slice(0, 4);
+    panel.innerHTML = emptyTab(
+      "Ancora nessuna offerta con prezzo",
+      "L'agente sta cercando. Puoi forzare un controllo con “Cerca ora”.",
+      true,
+      notes
+    );
     return;
   }
   const initial = isInitialRun();
@@ -1603,10 +1624,11 @@ function renderRuns(panel) {
     </div>`).join("")}</div>`;
 }
 
-function emptyTab(title, text, withLinks = false) {
+function emptyTab(title, text, withLinks = false, notes = []) {
   return `<div class="empty-tab">
     <h2>${esc(title)}</h2>
     <p>${esc(text)}</p>
+    ${notes.length ? `<div class="src-notes">${notes.map((n) => `<span>${esc(n)}</span>`).join("")}</div>` : ""}
     <div class="empty-tab-actions">
       <button class="btn" onclick="runNow()">Cerca ora</button>
       ${withLinks ? `<button class="btn ghost" onclick="document.querySelector('[data-tab=links]').click()">Link utili</button>` : ""}

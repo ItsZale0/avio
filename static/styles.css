@@ -149,7 +149,10 @@ code {
   font-size: var(--fs-s); color: var(--meta); font-variant-numeric: tabular-nums;
 }
 .watch-meta .price { color: var(--text); font-weight: 600; }
-.watch-name { font-size: var(--fs-s); color: var(--meta); margin-top: 3px; }
+.watch-name {
+  font-size: var(--fs-s); color: var(--meta); margin-top: 3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .watch-status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--positive); display: inline-block; flex: none; }
 .watch-item.paused .watch-status-dot { background: var(--meta); }
 
@@ -174,7 +177,15 @@ code {
 .detail-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
 .route-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .route-line h1 { font-size: var(--fs-title); font-weight: 600; letter-spacing: -0.015em; }
-.detail-title p { margin-top: 7px; font-size: var(--fs-b); color: var(--muted); max-width: 72ch; }
+/* i criteri della ricerca: chip neutri, una riga ordinata al posto del muro */
+.detail-title p {
+  margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; max-width: none;
+}
+.crit {
+  font-size: 12.5px; line-height: 1.4; color: var(--muted);
+  background: var(--raised); border-radius: var(--rp);
+  padding: 3px 11px; white-space: nowrap;
+}
 .detail-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 .pill {
@@ -254,11 +265,21 @@ code {
 .empty-tab h2 { font-size: var(--fs-sec); font-weight: 600; }
 .empty-tab p { margin-top: 8px; font-size: 14px; color: var(--muted); line-height: 1.5; }
 .empty-tab-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 18px; }
+/* nota per fonte dello stato vuoto: righe separate, non un paragrafo unico */
+.src-notes {
+  display: flex; flex-direction: column; gap: 5px;
+  margin-top: 14px; font-size: var(--fs-s); color: var(--meta); line-height: 1.5;
+}
 
 .tab-panel { min-height: 180px; }
 .tab-pane { display: none; }
 .tab-pane.active { display: block; }
 .loading { color: var(--meta); font-size: var(--fs-b); padding: 14px 0; }
+/* barre piatte alla misura reale, senza lampeggio: il contenuto sta arrivando */
+.skel { display: block; height: 14px; border-radius: 4px; background: var(--raised); margin-bottom: 10px; }
+.skel.w60 { width: 60%; }
+.skel.w85 { width: 85%; }
+.skel.w45 { width: 45%; }
 .group-title { font-size: var(--fs-s); font-weight: 500; color: var(--meta); margin: var(--gap) 0 10px; }
 .group-title:first-child { margin-top: 0; }
 /* ---------- pannello: la card del piano ---------------------------------- */
@@ -663,6 +684,46 @@ select { cursor: pointer; }
 .toast.error { border-left-color: var(--negative); }
 .toast.warn { border-left-color: var(--warning); }
 @keyframes slidein { from { opacity: 0; transform: translateY(8px); } }
+
+/* ---------- movimento: nessun moto a riposo, solo risposta a un evento --- */
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+@keyframes appear { from { opacity: 0; } }
+@keyframes edged-in { from { opacity: 0; transform: translateX(14px); } }
+
+/* Arrivo della schermata: titolo, KPI, piano, schede — scalare, fermo in 400ms. */
+.detail.enter > * { animation: rise .26s ease both; }
+.detail.enter > *:nth-child(1) { animation-delay: 0ms; }
+.detail.enter > *:nth-child(2) { animation-delay: 45ms; }
+.detail.enter > *:nth-child(3) { animation-delay: 90ms; }
+.detail.enter > *:nth-child(n + 4) { animation-delay: 135ms; }
+
+/* Contenuto nuovo nella scheda aperta. */
+.tab-panel.enter { animation: rise .18s ease both; }
+
+/* I risultati appena arrivati: righe una dopo l'altra, coda massima 160ms. */
+.offers .offer { animation: rise .2s ease both; }
+.offers .offer:nth-child(1) { animation-delay: 0ms; }
+.offers .offer:nth-child(2) { animation-delay: 20ms; }
+.offers .offer:nth-child(3) { animation-delay: 40ms; }
+.offers .offer:nth-child(4) { animation-delay: 60ms; }
+.offers .offer:nth-child(5) { animation-delay: 80ms; }
+.offers .offer:nth-child(6) { animation-delay: 100ms; }
+.offers .offer:nth-child(7) { animation-delay: 120ms; }
+.offers .offer:nth-child(8) { animation-delay: 140ms; }
+.offers .offer:nth-child(n + 9) { animation-delay: 160ms; }
+
+/* Aperture: entra il pannello, niente voli da lontano. */
+.modal-backdrop, .drawer-backdrop, .auth-screen { animation: appear .16s ease both; }
+.modal { animation: rise .18s ease both; }
+.drawer { animation: edged-in .2s ease both; }
+
+/* Ultimo messaggio della chat appena arrivato. */
+.chat-msg:last-child { animation: rise .18s ease both; }
+
+/* Passaggi di stato: il cambio di selezione si segue con lo sguardo. */
+.watch-item { transition: background .15s ease; }
+.watch-item .watch-route { transition: color .15s ease; }
+.tab { transition: color .12s ease; }
 
 /* ---------- responsive ---------------------------------------------------- */
 @media (max-width: 1200px) { :root { --pad: 24px; } }
