@@ -13,11 +13,12 @@
 #   sudo bash scripts/setup_oracle_https.sh
 #
 # Cosa fa:
-#   1. installa Certbot (snap, per avere la versione >= 5.4);
+#   1. installa Certbot >= 5.4 (snap, o venv pip se lo snap non c'e');
 #   2. scopre l'IP pubblico della VM;
-#   3. scrive la configurazione Nginx (80 per la challenge, 443 per l'app);
-#   4. chiede il certificato per l'IP, con il rinnovo automatico;
-#   5. mette in un timer orario il controllo della scadenza (con avviso
+#   3. apre le porte 80 e 443 nel firewall della VM;
+#   4. chiede il certificato per l'IP (staging, poi quello vero);
+#   5. mette Nginx su HTTPS con quel certificato;
+#   6. installa due timer: il controllo orario della scadenza (con avviso
 #      Telegram/email) e l'aggiornamento del codice dal branch main.
 set -euo pipefail
 
@@ -33,7 +34,7 @@ die() { printf '\n\033[1;31mERRORE:\033[1m %s\033[0m\n' "$*" >&2; exit 1; }
 [[ -d "$APP_DIR" ]] || die "La cartella $APP_DIR non c'è: prima lancia install_oracle.sh"
 
 # --------------------------------------------------------------------------
-# 1. Certbot
+# 1. Certbot >= 5.4 (serve --ip-address)
 # --------------------------------------------------------------------------
 log "Installazione di Certbot (serve >= 5.4 per --ip-address)"
 if ! command -v snap >/dev/null 2>&1; then
@@ -43,7 +44,25 @@ fi
 snap install core24 >/dev/null 2>&1 || true
 snap refresh core24 >/dev/null 2>&1 || true
 snap install certbot --classic >/dev/null 2>&1 || true
-CERTBOT=$(command -v certbot || echo /snap/bin/certbot)
+
+# Lo snap e' la versione nuova; quella di apt spesso e' troppo vecchia.
+CERTBOT=""
+for candidato in /snap/bin/certbot "$(command -v certbot || true)"; do
+    [[ -x "$candidato" ]] || continue
+    versione=$("$candidato" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+    if [[ -n "$versione" ]] && [[ "$(printf '%s\n5.4.0\n' "$versione" | sort -V | head -1)" == "5.4.0" ]]; then
+        CERTBOT="$candidato"
+        break
+    fi
+done
+if [[ -z "$CERTBOT" ]]; then
+    # Ultimo tentativo: pip in un ambiente dedicato.
+    log "Certbot >= 5.4 non trovato: lo installo con pip"
+    python3 -m venv /opt/certbot
+    /opt/certbot/bin/pip install --quiet --upgrade pip
+    /opt/certbot/bin/pip install --quiet certbot
+    CERTBOT=/opt/certbot/bin/certbot
+fi
 "$CERTBOT" --version || true
 
 # --------------------------------------------------------------------------
@@ -80,9 +99,72 @@ else
 fi
 
 # --------------------------------------------------------------------------
-# 4. Nginx: la porta 80 serve la challenge, la 443 fa da proxy all'app
+# 4. Nginx, prima fase: la porta 80 (challenge + app)
 # --------------------------------------------------------------------------
-log "Configurazione di Nginx (HTTPS sull'IP)"
+log "Configurazione di Nginx (fase 1: porta 80)"
+cat > /etc/nginx/sites-available/carpool <<EOF
+server {
+    listen 80;
+    server_name _;
+    client_max_body_size 8m;
+
+    # La challenge di Let's Encrypt vive qui: la porta 80 resta aperta.
+    location /.well-known/acme-challenge/ {
+        root $WEBROOT;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_read_timeout 120s;
+    }
+}
+EOF
+ln -sf /etc/nginx/sites-available/carpool /etc/nginx/sites-enabled/carpool
+rm -f /etc/nginx/sites-enabled/default
+systemctl enable --now nginx
+nginx -t && systemctl reload nginx
+
+# --------------------------------------------------------------------------
+# 5. Il certificato (prima in staging, poi quello vero)
+# --------------------------------------------------------------------------
+log "Richiesta del certificato per l'IP $PUBLIC_IP (staging: non costa nulla)"
+if ! "$CERTBOT" certonly --non-interactive --agree-tos --register-unsafely-without-email \
+    --preferred-profile shortlived \
+    --webroot --webroot-path "$WEBROOT" \
+    --ip-address "$PUBLIC_IP" \
+    --staging; then
+    log "Lo staging non e' riuscito: di solito vuol dire che la porta 80 non e' aperta."
+    log "Controlla le regole di ingresso (Security List) della VCN: TCP 80 e 443 da 0.0.0.0/0."
+fi
+
+if [[ ! -f "/etc/letsencrypt/live/$PUBLIC_IP/fullchain.pem" ]]; then
+    log "Richiesta del certificato vero (quello che il browser si fida)"
+    "$CERTBOT" certonly --non-interactive --agree-tos --register-unsafely-without-email \
+        --preferred-profile shortlived \
+        --webroot --webroot-path "$WEBROOT" \
+        --ip-address "$PUBLIC_IP" \
+        --deploy-hook "systemctl reload nginx" || \
+        die "Certbot non ha emesso il certificato: guarda 'certbot certificates'"
+fi
+[[ -f "/etc/letsencrypt/live/$PUBLIC_IP/fullchain.pem" ]] || \
+    die "Il certificato non c'e': la porta 80 dev'essere raggiungibile da internet"
+
+# Il deploy-hook resta in giro per i rinnovi futuri.
+mkdir -p /etc/letsencrypt/renewal-hooks/deploy
+cat > /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh <<'EOF'
+#!/bin/sh
+systemctl reload nginx
+EOF
+chmod +x /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+
+# --------------------------------------------------------------------------
+# 6. Nginx, seconda fase: HTTPS con il certificato
+# --------------------------------------------------------------------------
+log "Configurazione di Nginx (fase 2: HTTPS)"
 cat > /etc/nginx/sites-available/carpool <<EOF
 server {
     listen 80;
@@ -117,42 +199,10 @@ server {
     }
 }
 EOF
-ln -sf /etc/nginx/sites-available/carpool /etc/nginx/sites-enabled/carpool
-rm -f /etc/nginx/sites-enabled/default
-systemctl enable --now nginx
-nginx -t
+nginx -t && systemctl reload nginx
 
 # --------------------------------------------------------------------------
-# 5. Il certificato (prima in staging, poi quello vero)
-# --------------------------------------------------------------------------
-log "Richiesta del certificato per l'IP $PUBLIC_IP (staging: non costa nulla)"
-"$CERTBOT" certonly --non-interactive --agree-tos --register-unsafely-without-email \
-    --preferred-profile shortlived \
-    --webroot --webroot-path "$WEBROOT" \
-    --ip-address "$PUBLIC_IP" \
-    --staging || log "Lo staging e' fallito: riprovo con il certificato vero"
-
-if [[ -f "/etc/letsencrypt/live/$PUBLIC_IP/fullchain.pem" ]]; then
-    log "Richiesta del certificato vero (quello che il browser si fida)"
-    "$CERTBOT" certonly --non-interactive --agree-tos --register-unsafely-without-email \
-        --preferred-profile shortlived \
-        --webroot --webroot-path "$WEBROOT" \
-        --ip-address "$PUBLIC_IP" \
-        --deploy-hook "systemctl reload nginx"
-else
-    die "Certbot non ha emesso il certificato: guarda 'certbot certificates' e i log"
-fi
-
-# Il deploy-hook resta in giro per i rinnovi futuri.
-mkdir -p /etc/letsencrypt/renewal-hooks/deploy
-cat > /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh <<'EOF'
-#!/bin/sh
-systemctl reload nginx
-EOF
-chmod +x /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
-
-# --------------------------------------------------------------------------
-# 6. L'URL pubblico nel .env
+# 7. L'URL pubblico nel .env
 # --------------------------------------------------------------------------
 if [[ -f "$APP_DIR/.env" ]]; then
     sed -i "s|^CARPOOL_PUBLIC_URL=.*|CARPOOL_PUBLIC_URL=https://$PUBLIC_IP|" "$APP_DIR/.env"
@@ -164,7 +214,7 @@ if [[ -f "$APP_DIR/.env" ]]; then
 fi
 
 # --------------------------------------------------------------------------
-# 7. Sorvegliante: ogni ora controlla la scadenza e avvisa su Telegram
+# 8. Sorvegliante: ogni ora controlla la scadenza e avvisa su Telegram
 # --------------------------------------------------------------------------
 log "Timer di controllo del certificato"
 cat > /etc/systemd/system/carpool-certcheck.service <<EOF
@@ -197,7 +247,7 @@ systemctl daemon-reload
 systemctl enable --now carpool-certcheck.timer
 
 # --------------------------------------------------------------------------
-# 8. Aggiornamento automatico del codice (come il frontend su Pages)
+# 9. Aggiornamento automatico del codice (come il frontend su Pages)
 # --------------------------------------------------------------------------
 log "Timer di aggiornamento del codice"
 cat > /etc/systemd/system/carpool-update.service <<EOF
