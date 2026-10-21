@@ -9,6 +9,7 @@ Uso:
     python -m app.cli list               # elenca le ricerche
     python -m app.cli users              # elenca gli account
     python -m app.cli user-add NOME      # crea un account (amministratore se e' il primo)
+    python -m app.cli cert-check         # controlla il certificato HTTPS
 """
 
 from __future__ import annotations
@@ -17,7 +18,11 @@ import argparse
 import asyncio
 import getpass
 import json
+import os
+import ssl
+import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
 
 from . import auth, db, store
 from .gtfs import status as gtfs_status
@@ -45,6 +50,102 @@ async def _run(force_all: bool, limit: int) -> int:
         if result.get("status") == "error":
             failures += 1
     return 1 if failures else 0
+
+
+def _cert_scadenza(percorso: str) -> datetime | None:
+    """Quando scade il certificato PEM. None se non si capisce."""
+    try:
+        # Funzione standard (non pubblica) ma la piu' affidabile su Linux.
+        info = ssl._ssl._test_decode_cert(percorso)  # type: ignore[attr-defined]
+        return datetime.strptime(info["notAfter"], "%b %d %H:%M:%S %Y %Z").replace(
+            tzinfo=timezone.utc
+        )
+    except Exception:
+        pass
+    try:
+        esito = subprocess.run(
+            ["openssl", "x509", "-enddate", "-noout", "-in", percorso],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if esito.returncode == 0 and "notAfter=" in esito.stdout:
+            return datetime.strptime(
+                esito.stdout.split("notAfter=")[1].strip(), "%b %d %H:%M:%S %Y %Z"
+            ).replace(tzinfo=timezone.utc)
+    except Exception:
+        pass
+    return None
+
+
+def _cerca_certificato(percorso: str) -> str:
+    """Il certificato da controllare: l'indicato, la variabile d'ambiente
+    o quello di Let's Encrypt (l'unica cartella con dentro l'IP)."""
+    if percorso:
+        return percorso
+    percorso = (os.getenv("CARPOOL_TLS_CERT") or "").strip()
+    if percorso:
+        return percorso
+    base = "/etc/letsencrypt/live"
+    if os.path.isdir(base):
+        for nome in sorted(os.listdir(base)):
+            candidato = os.path.join(base, nome, "fullchain.pem")
+            if os.path.exists(candidato):
+                return candidato
+    return ""
+
+
+async def _avvisa_certificato(titolo: str, testo: str) -> None:
+    """L'avviso esce dai canali gia' configurati (Telegram, email)."""
+    from . import notify
+
+    try:
+        ok, errore = await notify.send_telegram(f"{titolo}\n\n{testo}")
+        print(f"  Telegram: {'inviato' if ok else 'non inviato'} ({errore})")
+    except Exception as exc:
+        print(f"  Telegram: errore {exc}", file=sys.stderr)
+    try:
+        ok, errore = await notify.send_email(titolo, testo)
+        print(f"  Email: {'inviato' if ok else 'non inviato'} ({errore})")
+    except Exception as exc:
+        print(f"  Email: errore {exc}", file=sys.stderr)
+
+
+def _cert_check(percorso: str, warn_days: int) -> int:
+    """Controlla la scadenza del certificato e avvisa se sta per finire.
+
+    Serve per i certificati brevi (6 giorni) che si emettono per l'IP
+    pubblico: se il rinnovo fallisce, l'app resta senza HTTPS e senza
+    accetto. Il controllo gira ogni ora da un timer systemd.
+    """
+    db.init_db()
+    percorso = _cerca_certificato(percorso)
+    if not percorso or not os.path.exists(percorso):
+        asyncio.run(
+            _avvisa_certificato(
+                "Carpool Hunter: certificato HTTPS assente",
+                f"Il file {percorso or '(non trovato)'} non c'è.\n"
+                "L'app non accetterà più collegamenti finché non è rinnovato.",
+            )
+        )
+        return 1
+    scadenza = _cert_scadenza(percorso)
+    if scadenza is None:
+        print(f"  Non riesco a leggere la scadenza di {percorso}")
+        return 1
+    giorni = (scadenza - datetime.now(timezone.utc)).total_seconds() / 86400
+    print(f"  Certificato: {percorso}")
+    print(f"  Scade: {scadenza.isoformat()} (fra {giorni:.1f} giorni)")
+    if giorni < warn_days:
+        asyncio.run(
+            _avvisa_certificato(
+                "Carpool Hunter: il certificato HTTPS sta per scadere",
+                f"Scade fra {giorni:.1f} giorni ({scadenza.isoformat()}).\n"
+                "Se il rinnovo automatico fallisce, l'app resta senza HTTPS.",
+            )
+        )
+        return 1
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -78,6 +179,12 @@ def main(argv: list[str] | None = None) -> int:
     gtfs_parser = sub.add_parser("gtfs-update", help="scarica e importa gli orari GTFS")
     gtfs_parser.add_argument("--feed", action="append", help="id del feed (ripetibile); default: tutti")
     gtfs_parser.add_argument("--force", action="store_true", help="riscarica anche se gia' presente")
+
+    cert_parser = sub.add_parser(
+        "cert-check", help="controlla il certificato HTTPS e avvisa se sta per scadere"
+    )
+    cert_parser.add_argument("--cert", default="", help="percorso del certificato PEM")
+    cert_parser.add_argument("--warn-days", type=int, default=3, help="giorni di preavviso")
 
     args = parser.parse_args(argv)
 
@@ -165,6 +272,9 @@ def main(argv: list[str] | None = None) -> int:
         access.revoke_all_sessions()
         print("Password d'accesso impostata.")
         return 0
+
+    if args.command == "cert-check":
+        return _cert_check(args.cert, args.warn_days)
 
     if args.command == "gtfs-list":
         for row in gtfs_status():

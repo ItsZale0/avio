@@ -168,13 +168,9 @@ Con un dominio tuo (es. carpool.tuodominio.it):
   3. metti in .env:  CARPOOL_PUBLIC_URL=https://carpool.tuodominio.it
   4. sudo systemctl restart carpool
 
-Senza dominio: usa il tunnel Cloudflare (gratis, HTTPS gia' incluso):
-  1. sudo cloudflared tunnel login
-  2. sudo cloudflared tunnel create carpool
-  3. sudo cloudflared tunnel route dns carpool carpool.tuodominio.it
-  4. sudo cloudflared service install
-  5. sudo systemctl restart cloudflank
-  (oppure: cloudflared tunnel --url http://127.0.0.1:8787)
+Senza dominio (certificato sull'IP pubblico, gratis):
+  sudo bash scripts/setup_oracle_https.sh
+  (Certbot per l'IP, Nginx su 443, sorvegliante e aggiornamento automatico)
 
 Poi aggiorna la variabile del repo GitHub:
   CARPOOL_API_BASE = https://<il-tuoo-url>

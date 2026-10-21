@@ -4,6 +4,10 @@ Oracle Cloud offre un piano **Always Free**: una VM Linux gratuita 24/7, con
 IP pubblico, che puoi usare come server per l'agente. Cosi' l'agente gira
 anche quando il PC e' spento.
 
+> **Non serve un dominio.** Da gennaio 2026 Let's Encrypt emette certificati
+> anche per gli indirizzi IP: la VM puo' rispondere su `https://<IP>` con un
+> certificato valido, rinnovato da solo. Vedi § "Senza dominio" piu' in basso.
+
 | Risorsa | Quota Always Free | Serve a noi |
 | --- | --- | --- |
 | VM.Standard.A1.Flex (ARM) | 2 OCPU + 12 GB RAM (era 4/24, dimezzato a luglio 2026) | l'agente |
@@ -110,6 +114,37 @@ Ora l'account `zampe` e le tue ricerche esistono anche sul server.
 Il frontend su GitHub Pages chiama l'API: serve HTTPS, altrimenti il browser
 rifiuta il cookie di sessione.
 
+### Senza dominio (0 €): certificato sull'IP pubblico
+
+Da gennaio 2026 Let's Encrypt emette **certificati per indirizzi IP** (profilo
+"shortlived", validi 6 giorni, rinnovati in automatico). Il comando e' gia' in
+`scripts/setup_oracle_https.sh`:
+
+```bash
+sudo bash scripts/setup_oracle_https.sh
+```
+
+Lo script fa tutto:
+
+1. installa Certbot via snap (serve >= 5.4 per il flag `--ip-address`);
+2. scopre l'IP pubblico della VM;
+3. scrive la configurazione Nginx (porta 80 per la challenge ACME, 443 per l'app);
+4. chiede il certificato per l'IP (prima in staging, poi quello vero);
+5. mette `CARPOOL_PUBLIC_URL=https://<IP>` nel `.env`;
+6. installa due timer:
+   - **`carpool-certcheck.timer`** (ogni ora): controlla la scadenza del
+     certificato e, se mancano meno di 3 giorni, **ti avvisa su Telegram**
+     (o email) con i canali gia' configurati nell'app;
+   - **`carpool-update.timer`** (ogni ora): `git pull` + `systemctl restart
+     carpool` — il backend si aggiorna da solo come il frontend su Pages.
+
+In pratica non scarichi mai un certificato a mano: il timer di Certbot rinnova
+ogni ~4 giorni e il deploy-hook ricarica Nginx.
+
+> Con un dominio tuo salta tutta questa parte: metti il record DNS sul tuo
+> dominio e usa `sudo certbot --nginx -d nome.dominio` (certificato da 90
+> giorni, la via comoda).
+
 ### Con un dominio tuo (metodo consigliato, URL stabile)
 
 1. Porta il dominio su Cloudflare (nameserver autoritativi).
@@ -145,6 +180,20 @@ Poi configura Nginx per il tunnel, oppure fai girare il tunnel verso la porta
 > ma cambia URL a ogni riavvio: scomodo per la PWA.
 
 ## 6. Collegare GitHub Pages
+
+L'API ora vive sulla VM: il frontend su GitHub Pages deve puntare li'.
+
+### Il modo veloce (dalla VM, con un token)
+
+```bash
+# sulla VM, con GITHUB_TOKEN nell'ambiente (scope repo)
+python /opt/carpool/scripts/publish_backend.py https://<IP_PUBBLICO>
+```
+
+Lo script scrive `backend.json` sul branch (il frontend lo vede subito) e
+aggiorna la variabile `CARPOOL_API_BASE`, poi rilancia il deploy di Pages.
+
+### Il modo manuale
 
 Nel repo → **Settings → Secrets and variables → Actions → Variables**:
 
@@ -186,16 +235,25 @@ Always Free, ma l'istanza non verrà più spenta.
 Se invece resta su Always Free e la spengono, i dati sono al sicuro (il
 volume persiste): basta riavviarla dalla console.
 
+> Attenzione: se l'istanza viene **ricreata**, l'IP pubblico cambia e con
+> lui il certificato. Con il piano Pay As You Go non succede; se succede,
+> riemetti il certificato (`sudo certbot renew --cert-name <IP>`) e rilancia
+> `python /opt/carpool/scripts/publish_backend.py https://<NUOVO_IP>`.
+
 ## Manutenzione
 
 ```bash
 sudo systemctl restart carpool      # riavvia l'agente
 sudo journalctl -u carpool -f       # log in tempo reale
 cd /opt/carpool && sudo git pull    # aggiornamenti (poi restart)
+sudo certbot certificates           # i certificati e le scadenze
+systemctl list-timers               # i timer (certificato, aggiornamenti)
 ```
 
 Il codice resta su GitHub: l'agente non ha bisogno del PC, ma il repo
-resta il posto dove modifichi e versioni tutto.
+resta il posto dove modifichi e versioni tutto. E con `carpool-update.timer`
+il backend si aggiorna da solo, senza che tu debba ricordarti di fare
+`git pull` sulla VM.
 
 ## Costi
 
