@@ -55,7 +55,15 @@ jobs:
             echo "Le trovi in docs/ORACLE.md (sezione 'Se l'app non risponde')."
             exit 0
           fi
-          pip install --quiet --disable-pip-version-check oci
+          # La CLI OCI in un ambiente suo: il Python del runner e' "gestito
+          # dall'esterno" e un pip install diretto viene rifiutato.
+          python3 -m venv "$HOME/oci-venv"
+          "$HOME/oci-venv/bin/pip" install --quiet --disable-pip-version-check oci
+          export PATH="$HOME/oci-venv/bin:$PATH"
+          if ! command -v oci >/dev/null 2>&1; then
+            echo "::error::la CLI OCI non si e' installata"
+            exit 1
+          fi
           mkdir -p "$HOME/.oci"
           printf '%s' "$OCI_PRIVATE_KEY" > "$HOME/.oci/key.pem"
           chmod 600 "$HOME/.oci/key.pem"
