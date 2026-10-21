@@ -55,15 +55,30 @@ jobs:
             echo "Le trovi in docs/ORACLE.md (sezione 'Se l'app non risponde')."
             exit 0
           fi
-          # La CLI OCI in un ambiente suo: il Python del runner e' "gestito
-          # dall'esterno" e un pip install diretto viene rifiutato.
-          python3 -m venv "$HOME/oci-venv"
-          "$HOME/oci-venv/bin/pip" install --quiet --disable-pip-version-check oci
-          export PATH="$HOME/oci-venv/bin:$PATH"
+          # La CLI OCI: prima l'installer ufficiale (binario autonomo),
+          # poi pipx, poi un ambiente virtuale. Uno dei tre va.
           if ! command -v oci >/dev/null 2>&1; then
-            echo "::error::la CLI OCI non si e' installata"
+            echo "installo la CLI OCI (installer ufficiale)..."
+            bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" \
+              -- --accept-licenses --install-dir "$HOME/oci-cli" || true
+            export PATH="$HOME/oci-cli/bin:$PATH"
+          fi
+          if ! command -v oci >/dev/null 2>&1; then
+            echo "l'installer non ha funzionato: provo pipx"
+            pipx install oci || true
+            export PATH="$HOME/.local/bin:$PATH"
+          fi
+          if ! command -v oci >/dev/null 2>&1; then
+            echo "l'installer non ha funzionato: provo un ambiente virtuale"
+            python3 -m venv "$HOME/oci-venv" || true
+            "$HOME/oci-venv/bin/pip" install --quiet --disable-pip-version-check oci || true
+            export PATH="$HOME/oci-venv/bin:$PATH"
+          fi
+          if ! command -v oci >/dev/null 2>&1; then
+            echo "::error::nessun modo per installare la CLI OCI"
             exit 1
           fi
+          oci --version
           mkdir -p "$HOME/.oci"
           printf '%s' "$OCI_PRIVATE_KEY" > "$HOME/.oci/key.pem"
           chmod 600 "$HOME/.oci/key.pem"
