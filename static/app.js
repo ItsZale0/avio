@@ -203,7 +203,7 @@ const MODE_COLOR = {
   rideshare: "#e8833a",
   bus: "#2f7d4f",
   train: "#3563c9",
-  tram: "#8b5cf6",
+  tram: "#c76b84",
   flight: "#0e9aa7",
   carsharing: "#d19b12",
   transit: "#7b8794",
@@ -914,9 +914,9 @@ function renderDetail() {
   $("#watchSub").textContent =
     `entro ${fmtDate(watch.arrive_by)} · budget ${watch.max_price != null ? euro(watch.max_price) : "libero"} · ` +
     `ogni ${watch.interval_min} min · raggio ${watch.radius_km} km · ${sources}` +
-    (watch.from_point ? ` · 📍 ${watch.from_point}` : "") +
-    (watch.to_point ? ` → 📍 ${watch.to_point}` : "") +
-    (passNames ? ` · 🎟️ ${passNames}` : "");
+    (watch.from_point ? ` · partenza: ${watch.from_point}` : "") +
+    (watch.to_point ? ` · arrivo: ${watch.to_point}` : "") +
+    (passNames ? ` · abbonamenti: ${passNames}` : "");
 
   $("#btnToggleWatch").textContent = watch.active ? "Pausa" : "Riprendi";
 
@@ -993,7 +993,7 @@ function renderConfronti(confronti) {
     .join("");
   const nessunRisparmio = confronti.every((c) => Number(c.delta_prezzo || 0) >= -0.01);
   return `<div class="confronti">
-    <h4>🪓 Tratte singole invece del biglietto unico</h4>
+    <h4>Tratte singole invece del biglietto unico</h4>
     ${righe}
     ${nessunRisparmio
       ? '<small class="conf-note">Nessun risparmio: spezzando il viaggio si paga uguale o di più, conviene il biglietto unico.</small>'
@@ -1015,7 +1015,7 @@ function renderPlan() {
     if (motivo) {
       vuoto.classList.remove("hidden");
       vuoto.innerHTML = `
-        <div class="eyebrow">🧮 Nessun piano</div>
+        <h4 class="noplan-title">Nessun piano per questo viaggio</h4>
         <p class="noplan-motivo">${esc(motivo)}</p>
         <p class="muted" style="margin:8px 0 12px">
           Le fonti sono state interrogate e i prezzi sono quelli veri: cambiando
@@ -1025,7 +1025,7 @@ function renderPlan() {
         <div class="noplan-actions">
           <button class="btn ghost" id="btnNoPlanEdit">Modifica i filtri</button>
           <button class="btn ghost" id="btnNoPlanRun">Cerca ora</button>
-          <button class="btn ghost" id="btnNoPlanChat">💬 Chiedi all'agente</button>
+          <button class="btn ghost" id="btnNoPlanChat">Chiedi all'agente</button>
         </div>`;
       $("#btnNoPlanEdit")?.addEventListener("click", () => openWatchModal(state.watch));
       $("#btnNoPlanRun")?.addEventListener("click", runNow);
@@ -1056,7 +1056,7 @@ function renderPlan() {
              <span>${esc(b.da || "")} → ${esc(b.a || "")}</span>
              <span class="tk-time">${b.partenza ? fmtTime(b.partenza) : ""} → ${b.arrivo ? fmtTime(b.arrivo) : ""}</span>
            </div>`).join("")}
-           <div class="ps-save">🎫 risparmi ${euro(step.risparmio)} rispetto al biglietto unico (${euro(step.prezzo_diretto)})</div>
+           <div class="ps-save">risparmi ${euro(step.risparmio)} rispetto al biglietto unico (${euro(step.prezzo_diretto)})</div>
          </div>`
       : "";
 
@@ -1075,7 +1075,7 @@ function renderPlan() {
 
   const duration = fmtDuration(plan.total_duration_min);
   const confidence = plan.confidence != null ? Math.round(Number(plan.confidence) * 100) : null;
-  const watchouts = (plan.watchouts || []).map((w) => `<span>⚠️ ${esc(w)}</span>`).join("");
+  const watchouts = (plan.watchouts || []).map((w) => `<span>${esc(w)}</span>`).join("");
   const changes = plan.changes || 0;
   const changeLabel = changes === 0
     ? "nessun cambio"
@@ -1103,14 +1103,14 @@ function renderPlan() {
     const partenza = new Date(plan.depart_at);
     if (Number.isNaN(partenza.getTime())) return "";
     partenza.setMinutes(partenza.getMinutes() - walkOut);
-    return `🏠 esci di casa alle ${partenza.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}`;
+    return `esci di casa alle ${partenza.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}`;
   })();
   const walkNote =
     walkOut || walkIn
-      ? `<span>🚶 ${walkOut ? walkOut + " min" : ""}${walkOut && walkIn ? " + " : ""}${walkIn ? walkIn + " min" : ""} a piedi</span>`
+      ? `<span>${walkOut ? walkOut + " min" : ""}${walkOut && walkIn ? " + " : ""}${walkIn ? walkIn + " min" : ""} a piedi</span>`
       : "";
   const walkNote2 = walkIn
-    ? `<span>🚶 ${walkIn} min a piedi fino alla destinazione</span>`
+    ? `<span>${walkIn} min a piedi fino alla destinazione</span>`
     : "";
   const alts = state.planAlternatives.length
     ? `<div class="plan-alts">
@@ -1133,8 +1133,7 @@ function renderPlan() {
   box.innerHTML = `
     <div class="plan-head">
       <div>
-        <div class="eyebrow">${plan.ai ? "🧠 Piano AI" : "🧮 Piano"}${plan.profile ? " · " + esc(ALT_PROFILE[plan.profile] || "") : ""}${plan.partial ? " · prezzo parziale" : ""}</div>
-        <div class="plan-title">${esc(plan.title || "")}</div>
+        <div class="plan-title">${esc(plan.title || "")}${plan.profile ? `<span class="alt-profile">${esc(ALT_PROFILE[plan.profile] || "")}</span>` : ""}</div>
       </div>
       <div class="plan-price">
         <strong>${effective != null ? euro(effective) : "—"}</strong>
@@ -1149,23 +1148,23 @@ function renderPlan() {
     </div>
     <div class="plan-explanation">${esc(plan.explanation || "")}</div>
     <div class="plan-facts">
-      ${plan.depart_at ? `<span>🛫 partenza ${fmtDate(plan.depart_at)}</span>` : ""}
-      ${plan.arrive_at ? `<span>🏁 arrivo ${fmtDate(plan.arrive_at)}</span>` : ""}
-      ${duration ? `<span>⏱ ${duration}</span>` : ""}
-      <span>🔁 ${changeLabel}</span>
+      ${plan.depart_at ? `<span>partenza ${fmtDate(plan.depart_at)}</span>` : ""}
+      ${plan.arrive_at ? `<span>arrivo ${fmtDate(plan.arrive_at)}</span>` : ""}
+      ${duration ? `<span>${duration}</span>` : ""}
+      <span>${changeLabel}</span>
       ${walkNote}
       ${walkNote2}
       ${partiDiCasa ? `<span>${partiDiCasa}</span>` : ""}
-      ${doorToDoor && (walkOut || walkIn) ? `<span>🚶 porta a porta ${fmtDuration(doorToDoor)}</span>` : ""}
-      ${covered ? `<span>🎟️ coperto da ${esc(passNames || "abbonamento")}</span>` : ""}
-      ${plan.transfer_km != null ? `<span>🚶 ${plan.transfer_km} km a piedi nel cambio</span>` : ""}
+      ${doorToDoor && (walkOut || walkIn) ? `<span>porta a porta ${fmtDuration(doorToDoor)}</span>` : ""}
+      ${covered ? `<span>coperto da ${esc(passNames || "abbonamento")}</span>` : ""}
+      ${plan.transfer_km != null ? `<span>${plan.transfer_km} km a piedi nel cambio</span>` : ""}
     </div>
     ${steps ? `<div class="plan-steps">${steps}</div>` : ""}
     <div class="plan-meta">
-      ${plan.partial ? "<span>💶 prezzo parziale</span>" : ""}
+      ${plan.partial ? "<span>prezzo parziale</span>" : ""}
       ${(plan.steps || []).length === 1
-        ? "<span>🎯 tratta diretta</span>"
-        : `<span>🔁 ${(plan.steps || []).length} tratte</span>`}
+        ? "<span>tratta diretta</span>"
+        : `<span>${(plan.steps || []).length} tratte</span>`}
     </div>
     ${watchouts ? `<div class="plan-watchouts">${watchouts}</div>` : ""}
     ${renderConfronti(plan.confronti)}
@@ -1182,7 +1181,7 @@ function renderQuestions() {
   }
   box.classList.remove("hidden");
   box.innerHTML = `
-    <h4>❓ L'agente ha bisogno di un'informazione</h4>
+    <h4>L'agente ha bisogno di un'informazione</h4>
     ${questions.map((question) => {
       const options = (question.options || []).map((option) =>
         `<button class="btn" data-qid="${question.id}" data-answer="${esc(option.id)}">${esc(option.label)}</button>`
@@ -1294,7 +1293,6 @@ function offerCard(offer, suppressNew = false) {
     : [];
 
   const detailBits = [];
-  if (duration) detailBits.push(`⏱ ${duration}`);
   // I minuti a piedi arrivano solo dal percorso reale delle mappe (il
   // backend li calcola quando l'utente ha scelto un punto esatto): qui non
   // si stima nulla.
@@ -1302,32 +1300,32 @@ function offerCard(offer, suppressNew = false) {
   const walkMin = offer.details?.minuti_pickup_a_piedi;
   if (walkMin != null && walkMin > 0) {
     detailBits.push(
-      `🚶 ${walkMin} min a piedi fino al ritrovo` +
+      `${walkMin} min a piedi fino al ritrovo` +
         (walkKmReale != null && walkKmReale > 0.05 ? ` (${walkKmReale} km)` : "")
     );
   }
   const changes = offer.details?.cambi;
   if (changes != null) {
     detailBits.push(
-      changes === 0 ? "🎯 diretto, nessun cambio" : `🔁 ${changes} ${changes === 1 ? "cambio" : "cambi"}`
+      changes === 0 ? "diretto, nessun cambio" : `${changes} ${changes === 1 ? "cambio" : "cambi"}`
     );
   }
-  if (offer.seats) detailBits.push(`👤 ${offer.seats} posti`);
-  if (offer.rating) detailBits.push(`★ ${Number(offer.rating).toFixed(1)}`);
+  if (offer.seats) detailBits.push(`${offer.seats} posti`);
+  if (offer.rating) detailBits.push(`valutazione ${Number(offer.rating).toFixed(1)}`);
   if (effective != null && offer.price != null && Math.abs(effective - offer.price) > 0.01) {
-    detailBits.push(`💶 costo eff. ${euro(effective)}`);
+    detailBits.push(`costo effettivo ${euro(effective)}`);
   }
   if (offer.details?.partenza_alternativa) {
-    detailBits.push(`🚩 partenza da ${esc(offer.details.partenza_alternativa)} (~${offer.details.distanza_partenza_km || 0} km)`);
+    detailBits.push(`partenza da ${esc(offer.details.partenza_alternativa)} (~${offer.details.distanza_partenza_km || 0} km)`);
   }
   if (offer.details?.arrivo_alternativo) {
-    detailBits.push(`🏁 arrivo a ${esc(offer.details.arrivo_alternativo)} (~${offer.details.distanza_arrivo_km || 0} km)`);
+    detailBits.push(`arrivo a ${esc(offer.details.arrivo_alternativo)} (~${offer.details.distanza_arrivo_km || 0} km)`);
   }
   if (offer.details?.tariffa) detailBits.push(esc(offer.details.tariffa));
   if (offer.details?.disponibilita) detailBits.push(esc(offer.details.disponibilita));
   if (offer.details?.spezzatura) {
     detailBits.push(
-      `🎫 2 biglietti invece di 1: risparmi ${euro(offer.details.risparmio)} ` +
+      `2 biglietti invece di 1: risparmi ${euro(offer.details.risparmio)} ` +
       `(diretto ${euro(offer.details.prezzo_diretto)})`
     );
   }
@@ -1336,7 +1334,7 @@ function offerCard(offer, suppressNew = false) {
     if (tariffa) {
       // Pass a tariffa chilometrica: non e' gratis, si paga il km.
       detailBits.push(
-        `🎟️ ${esc(offer.details.pass)}: ${esc(tariffa)}, ` +
+        `${esc(offer.details.pass)}: ${esc(tariffa)}, ` +
         `${offer.details.pass_km} km tariffati (~${euro(offer.details.pass_costo_km)})`
       );
     } else {
@@ -1346,7 +1344,7 @@ function offerCard(offer, suppressNew = false) {
         ? ` · ${offer.details.pass_note_parziale}`
         : "";
       detailBits.push(
-        `🎟️ coperto${quanto} da ${esc(offer.details.pass)}${parz}: non lo paghi`
+        `coperto${quanto} da ${esc(offer.details.pass)}${parz}: non lo paghi`
       );
     }
   }
@@ -1386,7 +1384,7 @@ function offerCard(offer, suppressNew = false) {
         ${detailBits.length ? `<div class="details-line">${detailBits.map((b) => `<span>${b}</span>`).join("")}</div>` : ""}
         ${tappe.length > 1 ? `
           <details class="tappe">
-            <summary>🛣️ ${tappe.length} tratte · dove ferma e cambia</summary>
+            <summary>${tappe.length} tratte · dove ferma e cambia</summary>
             <ol>${tappe.map((t, i) => `
               <li>
                 <span class="tappe-n">${i + 1}</span>
@@ -1606,12 +1604,12 @@ function renderRuns(panel) {
 }
 
 function emptyTab(title, text, withLinks = false) {
-  return `<div class="empty" style="margin-top:40px"><div class="empty-emoji">🕵️</div>
-    <h2 style="font-size:18px">${esc(title)}</h2>
-    <p style="font-size:13px">${esc(text)}</p>
-    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-      <button class="btn" onclick="runNow()">▶ Cerca ora</button>
-      ${withLinks ? `<button class="btn ghost" onclick="document.querySelector('[data-tab=links]').click()">🔗 Link utili</button>` : ""}
+  return `<div class="empty-tab">
+    <h2>${esc(title)}</h2>
+    <p>${esc(text)}</p>
+    <div class="empty-tab-actions">
+      <button class="btn" onclick="runNow()">Cerca ora</button>
+      ${withLinks ? `<button class="btn ghost" onclick="document.querySelector('[data-tab=links]').click()">Link utili</button>` : ""}
     </div></div>`;
 }
 
@@ -1824,7 +1822,7 @@ async function checkGeo(fieldId) {
       return;
     }
     const short = (result.name || query).split(",").slice(0, 2).join(",");
-    hint.textContent = `✓ ${short} (${result.lat.toFixed(3)}, ${result.lon.toFixed(3)})`;
+    hint.textContent = `trovato: ${short} (${result.lat.toFixed(3)}, ${result.lon.toFixed(3)})`;
     hint.className = "field-hint ok";
   } catch (error) {
     hint.textContent = error.message;
@@ -1975,7 +1973,7 @@ function fillModelSelect(select, selected) {
     const ctx = model.context_length
       ? ` · ${Math.round(model.context_length / 1000)}k ctx`
       : "";
-    const mark = model.id === selected ? " ✓" : "";
+    const mark = model.id === selected ? " (attivo)" : "";
     options.push(
       `<option value="${esc(model.id)}"${model.id === selected ? " selected" : ""}>` +
         `${esc(model.id)}${esc(ctx)}${mark}</option>`
@@ -2017,7 +2015,7 @@ async function loadModelOptions(smart, fast) {
     fastSelect.innerHTML = `<option value="">— modello predefinito —</option>`;
     smartSelect.disabled = false;
     fastSelect.disabled = false;
-    hint.textContent = "✗ " + error.message;
+    hint.textContent = "errore: " + error.message;
     hint.className = "field-hint err";
   }
 }
@@ -2269,7 +2267,7 @@ async function loadTelegramChats() {
       })
     );
   } catch (error) {
-    info.textContent = "✗ " + error.message;
+    info.textContent = "errore: " + error.message;
   }
 }
 
@@ -2279,7 +2277,7 @@ async function loadGtfsStatus() {
   try {
     renderGtfs(await api("/api/gtfs"));
   } catch (error) {
-    $("#gtfsStatus").textContent = "✗ " + error.message;
+    $("#gtfsStatus").textContent = "errore: " + error.message;
     $("#gtfsStatus").className = "field-hint err";
     $("#gtfsFeeds").innerHTML = "";
   }
@@ -2311,7 +2309,7 @@ async function updateGtfs() {
   try {
     await api("/api/gtfs/update", { method: "POST" });
   } catch (error) {
-    hint.textContent = "✗ " + error.message;
+    hint.textContent = "errore: " + error.message;
     hint.className = "field-hint err";
     return;
   }
@@ -2358,7 +2356,7 @@ async function renderPushStatus() {
       : `Non attive su questo dispositivo · ${data.subscriptions} dispositivi collegati`;
     hint.className = "field-hint" + (subscription ? " ok" : "");
   } catch (error) {
-    hint.textContent = "✗ " + error.message;
+    hint.textContent = "errore: " + error.message;
     hint.className = "field-hint err";
   }
 }
@@ -2393,7 +2391,7 @@ async function enablePush() {
     toast("Notifiche push attivate");
     await renderPushStatus();
   } catch (error) {
-    hint.textContent = "✗ " + error.message;
+    hint.textContent = "errore: " + error.message;
     hint.className = "field-hint err";
   }
 }
@@ -2413,7 +2411,7 @@ async function disablePush() {
     toast("Notifiche push disattivate");
     await renderPushStatus();
   } catch (error) {
-    hint.textContent = "✗ " + error.message;
+    hint.textContent = "errore: " + error.message;
     hint.className = "field-hint err";
   }
 }
@@ -2427,7 +2425,7 @@ async function testPush() {
     if (!data.ok) throw new Error(data.error || "nessun dispositivo raggiunto");
     toast("Notifica di prova inviata");
   } catch (error) {
-    hint.textContent = "✗ " + error.message;
+    hint.textContent = "errore: " + error.message;
     hint.className = "field-hint err";
     return;
   }
@@ -2441,10 +2439,10 @@ async function testTelegram() {
   try {
     await api("/api/settings", { method: "PUT", body: JSON.stringify(settingsPayload()) });
     const result = await api("/api/settings/test-telegram", { method: "POST" });
-    hint.textContent = result.ok ? "✓ messaggio inviato" : "✗ " + result.error;
+    hint.textContent = result.ok ? "messaggio inviato" : "errore: " + result.error;
     hint.className = "field-hint " + (result.ok ? "ok" : "err");
   } catch (error) {
-    hint.textContent = "✗ " + error.message;
+    hint.textContent = "errore: " + error.message;
     hint.className = "field-hint err";
   }
 }
@@ -2516,7 +2514,7 @@ function renderChat(panel) {
     <div class="chat">
       <div class="chat-head">
         <div class="chat-head-row">
-          <strong>💬 Chiedi all'agente</strong>
+          <strong>Chiedi all'agente</strong>
           <div class="chat-azioni">
             ${
               messaggi.length
@@ -2541,7 +2539,7 @@ function renderChat(panel) {
                     <span class="chat-testi">${esc(m.testo)}</span>
                     ${
                       m.cambiamenti && m.cambiamenti.length
-                        ? `<small class="chat-cambio">🔄 ${esc(m.cambiamenti.join(", "))}</small>`
+                        ? `<small class="chat-cambio">aggiornato: ${esc(m.cambiamenti.join(", "))}</small>`
                         : ""
                     }
                   </div>`
@@ -2772,9 +2770,9 @@ function renderPromos(data) {
       quello che trovi qui e' quello che vale adesso, non un archivio.
       ${updated ? `Ultimo aggiornamento: ${esc(updated)}.` : ""}
     </p>
-    <div class="section-title">🔥 Offerte del momento</div>
+    <div class="section-title">Offerte del momento</div>
     ${offersHtml}
-    <div class="section-title">🎟️ Codici sconto &amp; voucher</div>
+    <div class="section-title">Codici sconto &amp; voucher</div>
     <p class="muted" style="margin:0 0 10px">
       I codici veri stanno nelle pagine ufficiali del vettore: le apri con un
       tocco e trovi quello attivo.
@@ -2794,15 +2792,15 @@ async function testAi() {
     await api("/api/settings", { method: "PUT", body: JSON.stringify(settingsPayload()) });
     const result = await api("/api/ai/test", { method: "POST" });
     if (result.ok) {
-      hint.textContent = `✓ risposta da ${shortModel(result.model)}: “${result.reply}”`;
+      hint.textContent = `risposta da ${shortModel(result.model)}: “${result.reply}”`;
       hint.className = "field-hint ok";
       await loadStatus();
     } else {
-      hint.textContent = "✗ " + (result.error || "nessuna risposta");
+      hint.textContent = "errore: " + (result.error || "nessuna risposta");
       hint.className = "field-hint err";
     }
   } catch (error) {
-    hint.textContent = "✗ " + error.message;
+    hint.textContent = "errore: " + error.message;
     hint.className = "field-hint err";
   }
 }
@@ -2816,7 +2814,7 @@ async function listAiModels() {
     await api("/api/settings", { method: "PUT", body: JSON.stringify(settingsPayload()) });
     await loadModelOptions($("#sAiSmart").value, $("#sAiFast").value);
   } catch (error) {
-    hint.textContent = "✗ " + error.message;
+    hint.textContent = "errore: " + error.message;
     hint.className = "field-hint err";
   }
 }

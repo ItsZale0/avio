@@ -665,16 +665,22 @@ def _is_regional_train(offer: Any) -> bool:
 _AREA_CACHE: dict[str, list[tuple[float, float]]] = {}
 
 
-def _area_points(pass_info: dict[str, Any]) -> list[tuple[float, float]]:
-    tipo_id = str(pass_info.get("tipo") or "")
-    if tipo_id in _AREA_CACHE:
-        return _AREA_CACHE[tipo_id]
+def _area_points(definizione: dict[str, Any], chiave: str) -> list[tuple[float, float]]:
+    """I centri dell'area di un abbonamento, per id del pass.
+
+    La cache e' keyed sull'id del pass e non sulla categoria ("ferrovia"):
+    altrimenti il primo abbonamento ferroviario risolto riempie la cache
+    per tutti gli altri, e "trenitalia_regionale" (che non ha area fissa)
+    azzera la copertura parziale degli abbonamenti regionali di una regione.
+    """
+    if chiave in _AREA_CACHE:
+        return _AREA_CACHE[chiave]
     points: list[tuple[float, float]] = []
-    for name in pass_info.get("area") or []:
+    for name in definizione.get("area") or []:
         coords = CITIES.get(str(name).lower())
         if coords:
             points.append((coords[0], coords[1]))
-    _AREA_CACHE[tipo_id] = points
+    _AREA_CACHE[chiave] = points
     return points
 
 
@@ -884,7 +890,7 @@ def _copertura_base(
     else:
         fattore = 1.0
 
-    punti_area = _area_points(tipo)
+    punti_area = _area_points(tipo, str(pass_info.get("tipo") or ""))
     if not punti_area and str(pass_info.get("tipo")) == "trenitalia_regionale":
         # Abbonamento regionale "quello di casa": l'area e' quella da cui
         # parte il viaggio.

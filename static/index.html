@@ -3,57 +3,95 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#0b1220" />
+  <meta name="theme-color" content="#171719" />
   <title>Carpool Hunter</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap" />
   <link rel="stylesheet" href="styles.css?v=__BUILD__" />
 </head>
 <body>
-  <div class="ambient"></div>
-
-  <header class="topbar">
-    <div class="brand">
-      <span class="brand-mark">🚗</span>
-      <div>
-        <h1>Carpool Hunter</h1>
-        <p>passaggi, bus e carsharing · Italia</p>
-      </div>
+  <!-- Barra a icone: marchio, ricerche, avvisi, offerte, impostazioni. -->
+  <nav class="rail" aria-label="Strumenti">
+    <div class="rail-brand" title="Carpool Hunter" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+        <circle cx="5" cy="19" r="2.4" fill="currentColor" />
+        <circle cx="19" cy="5" r="2.4" fill="currentColor" />
+        <path d="M7 17.4C10.5 14.6 12.8 11.6 16.8 7.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+      </svg>
     </div>
-    <div class="topbar-right">
-      <div class="agent-pill" id="agentStatus" title="Stato dell'agente">
-        <span class="dot"></span><span id="agentText">connessione…</span>
-      </div>
-      <div class="ai-pill" id="aiStatus" title="Intelligenza Groq">
-        <span class="dot"></span><span id="aiText">AI…</span>
-      </div>
-      <button class="btn icon hidden" id="btnInstall" title="Installa l'app">⬇️</button>
-      <button class="btn primary" id="btnNew">+ Nuova ricerca</button>
-      <button class="btn icon" id="btnAlerts" title="Avvisi">
-        🔔<span class="badge hidden" id="alertBadge">0</span>
+    <div class="rail-group">
+      <button class="rail-btn" id="btnNew" title="Nuova ricerca" aria-label="Nuova ricerca">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+        <span class="rail-label">Nuova</span>
       </button>
-      <button class="btn icon" id="btnPromos" title="Offerte e codici sconto">🏷️</button>
-      <button class="btn icon" id="btnSettings" title="Impostazioni">⚙️</button>
-      <button class="btn icon" id="btnLogout" title="Esci">🚪</button>
+      <button class="rail-btn" id="btnAlerts" title="Avvisi" aria-label="Avvisi">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M6 9a6 6 0 0 1 12 0c0 4.5 1.8 5.8 1.8 5.8H4.2S6 13.5 6 9z" />
+          <path d="M10 18.5a2.2 2.2 0 0 0 4 0" />
+        </svg>
+        <span class="rail-label">Avvisi</span>
+        <span class="badge hidden" id="alertBadge">0</span>
+      </button>
+      <button class="rail-btn" id="btnPromos" title="Offerte e codici sconto" aria-label="Offerte e codici sconto">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12.4 3.5H19.5V10.6L11 19.1 4.2 12.3 12.4 3.5z" />
+          <circle cx="16" cy="7" r="1.3" />
+        </svg>
+        <span class="rail-label">Offerte</span>
+      </button>
+      <button class="rail-btn" id="btnSettings" title="Impostazioni" aria-label="Impostazioni">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+          <path d="M4 8h9M17.5 8H20M4 16h3.5M12 16h8" />
+          <circle cx="15" cy="8" r="2.2" />
+          <circle cx="9.5" cy="16" r="2.2" />
+        </svg>
+        <span class="rail-label">Impostazioni</span>
+      </button>
     </div>
-  </header>
+    <div class="rail-group rail-foot">
+      <button class="rail-btn hidden" id="btnInstall" title="Installa l'app" aria-label="Installa l'app">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 4v11M7.5 10.5 12 15l4.5-4.5" />
+          <path d="M5 19.5h14" />
+        </svg>
+        <span class="rail-label">Installa</span>
+      </button>
+      <button class="rail-btn" id="btnLogout" title="Esci" aria-label="Esci">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M13 4.5H5.5v15H13" />
+          <path d="M10.5 12h8M15.5 9l3 3-3 3" />
+        </svg>
+        <span class="rail-label">Esci</span>
+      </button>
+    </div>
+  </nav>
 
   <main class="layout">
     <aside class="sidebar">
       <div class="sidebar-head">
-        <span>Ricerche</span>
-        <span class="count" id="watchCount">0</span>
+        <span class="side-title">Carpool Hunter</span>
+        <span class="side-label">Ricerche <span class="count" id="watchCount">0</span></span>
       </div>
       <div class="watch-list" id="watchList"></div>
       <div class="sidebar-foot">
+        <div class="agent-pill" id="agentStatus" title="Stato dell'agente">
+          <span class="dot"></span><span id="agentText">connessione…</span>
+        </div>
+        <div class="ai-pill" id="aiStatus" title="Intelligenza artificiale">
+          <span class="dot"></span><span id="aiText">AI…</span>
+        </div>
         <span class="hint">L'agente controlla ogni ora le fonti attive e ti avvisa solo quando trova qualcosa di nuovo.</span>
       </div>
     </aside>
 
     <section class="content">
       <div class="empty" id="emptyState">
-        <div class="empty-emoji">🛣️</div>
         <h2>Nessuna ricerca ancora</h2>
         <p>Dimmi da dove parti, dove devi arrivare e entro quando. Ci pensa l'agente a cercare ogni ora sulle fonti che scegli.</p>
         <button class="btn primary big" id="btnEmptyNew">Crea la prima ricerca</button>
@@ -63,13 +101,13 @@
         <div class="detail-head">
           <div class="detail-title">
             <div class="route-line">
-              <h2 id="watchTitle">—</h2>
+              <h1 id="watchTitle">—</h1>
               <span class="pill" id="watchState">attiva</span>
             </div>
             <p class="muted" id="watchSub">—</p>
           </div>
           <div class="detail-actions">
-            <button class="btn" id="btnRunNow">▶ Cerca ora</button>
+            <button class="btn primary" id="btnRunNow">Cerca ora</button>
             <button class="btn ghost" id="btnToggleWatch">Pausa</button>
             <button class="btn ghost" id="btnEditWatch">Modifica</button>
             <button class="btn danger-ghost" id="btnDeleteWatch">Elimina</button>
@@ -108,14 +146,16 @@
     <div class="modal">
       <div class="modal-head">
         <h3 id="watchModalTitle">Nuova ricerca</h3>
-        <button class="btn icon ghost" data-close="watchModal">✕</button>
+        <button class="btn icon ghost" data-close="watchModal" aria-label="Chiudi">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
       </div>
       <form id="watchForm" class="modal-body">
         <div class="ai-box">
           <label for="fAiText">Descrivi il viaggio a parole (facoltativo)</label>
           <textarea id="fAiText" rows="2" placeholder="Es. Da Thiene a Trento, devo arrivare entro domani alle 11, budget 20€, ho una valigia"></textarea>
           <div class="ai-box-actions">
-            <button type="button" class="btn primary small" id="btnAiFill">✨ Compila con l'AI</button>
+            <button type="button" class="btn primary small" id="btnAiFill">Compila con l'AI</button>
             <small class="field-hint" id="aiFillHint"></small>
           </div>
         </div>
@@ -130,7 +170,7 @@
             <label for="fFrom">Da <span class="req">*</span></label>
             <div class="input-row">
               <input id="fFrom" name="from_place" required placeholder="Milano" />
-              <button type="button" class="btn ghost tiny" data-geo="fFrom">📍</button>
+              <button type="button" class="btn ghost tiny" data-geo="fFrom" title="Usa la mia posizione" aria-label="Usa la mia posizione"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 21s6-5.3 6-9.5a6 6 0 1 0-12 0C6 15.7 12 21 12 21z" /><circle cx="12" cy="11" r="2" /></svg></button>
             </div>
             <small class="field-hint" id="geoFrom"></small>
           </div>
@@ -138,7 +178,7 @@
             <label for="fTo">A <span class="req">*</span></label>
             <div class="input-row">
               <input id="fTo" name="to_place" required placeholder="Roma" />
-              <button type="button" class="btn ghost tiny" data-geo="fTo">📍</button>
+              <button type="button" class="btn ghost tiny" data-geo="fTo" title="Usa la mia posizione" aria-label="Usa la mia posizione"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 21s6-5.3 6-9.5a6 6 0 1 0-12 0C6 15.7 12 21 12 21z" /><circle cx="12" cy="11" r="2" /></svg></button>
             </div>
             <small class="field-hint" id="geoTo"></small>
           </div>
@@ -234,7 +274,9 @@
     <div class="modal">
       <div class="modal-head">
         <h3>Impostazioni</h3>
-        <button class="btn icon ghost" data-close="settingsModal">✕</button>
+        <button class="btn icon ghost" data-close="settingsModal" aria-label="Chiudi">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
       </div>
       <form id="settingsForm" class="modal-body">
         <div class="tabs" id="settingsTabs">
@@ -438,10 +480,12 @@
   <div class="modal-backdrop hidden" id="promosModal">
     <div class="modal">
       <div class="modal-head">
-        <h3>🏷️ Offerte &amp; codici sconto</h3>
+        <h3>Offerte &amp; codici sconto</h3>
         <div>
           <button class="btn ghost tiny" id="btnRefreshPromos">Aggiorna</button>
-          <button class="btn icon ghost" data-close="promosModal">✕</button>
+          <button class="btn icon ghost" data-close="promosModal" aria-label="Chiudi">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
         </div>
       </div>
       <div class="modal-body" id="promosBody">
@@ -457,7 +501,9 @@
         <h3>Avvisi</h3>
         <div>
           <button class="btn ghost tiny" id="btnReadAll">Segna letti</button>
-          <button class="btn icon ghost" data-close="alertsDrawer">✕</button>
+          <button class="btn icon ghost" data-close="alertsDrawer" aria-label="Chiudi">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
         </div>
       </div>
       <div class="drawer-body" id="alertsList"></div>
@@ -470,7 +516,13 @@
   <div class="auth-screen hidden" id="authScreen">
     <div class="auth-card">
       <div class="auth-brand">
-        <span class="brand-mark">🚗</span>
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="26" height="26" fill="none">
+            <circle cx="5" cy="19" r="2.4" fill="currentColor" />
+            <circle cx="19" cy="5" r="2.4" fill="currentColor" />
+            <path d="M7 17.4C10.5 14.6 12.8 11.6 16.8 7.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          </svg>
+        </span>
         <div>
           <h1>Carpool Hunter</h1>
           <p>passaggi, bus e carsharing · Italia</p>
@@ -491,7 +543,8 @@
   </div>
 
   <button class="chat-fab" id="chatFab" type="button" title="Chiedi all'agente">
-    💬 <span>Chiedi</span>
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 5.5h15v10h-8.5L7 19v-3.5H4.5z" /></svg>
+    <span>Chiedi</span>
   </button>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
