@@ -316,6 +316,42 @@ EOF
 systemctl daemon-reload
 systemctl enable --now carpool-update.timer
 
+# --------------------------------------------------------------------------
+# 10. Backup dei dati: una copia cifrata esce dalla VM ogni notte
+# --------------------------------------------------------------------------
+# Se Oracle spegne l'istanza i dati restano sul volume; se la cancella,
+# no. Il backup gira come l'utente del servizio e spedisce il file
+# cifrato su Telegram (canale che funziona anche senza l'app).
+log "Timer di backup del database"
+cat > /etc/systemd/system/carpool-backup.service <<EOF
+[Unit]
+Description=Fai una copia cifrata del database e la manda su Telegram
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=$SERVICE_USER
+Group=$SERVICE_USER
+WorkingDirectory=$APP_DIR
+EnvironmentFile=$APP_DIR/.env
+ExecStart=$APP_DIR/.venv/bin/python $APP_DIR/scripts/backup_db.py
+EOF
+
+cat > /etc/systemd/system/carpool-backup.timer <<EOF
+[Unit]
+Description=Ogni notte fa un backup cifrato del database di Carpool Hunter
+
+[Timer]
+OnCalendar=*-*-* 03:17:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now carpool-backup.timer
+
 log "Fatto. HTTPS attivo su https://$PUBLIC_IP"
 cat <<EOF
 

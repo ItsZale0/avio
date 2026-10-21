@@ -390,6 +390,23 @@ async def telegram_delete_chat(chat_id: str, request: Request):
 # --------------------------------------------------------------------------- #
 # Stato e fonti
 # --------------------------------------------------------------------------- #
+@app.get("/api/ping")
+async def ping():
+    """Segnale di vita: pubblico, senza dati.
+
+    Serve al sorvegliante esterno (GitHub Actions) per capire se l'app
+    risponde. E' l'unico controllo che gira FUORI dalla VM: se la VM e'
+    spenta, il controllo lo vede e puo' riavviarla.
+    Non contiene nulla di sensibile: solo l'ora e la versione.
+    """
+    return {
+        "ok": True,
+        "app": APP_NAME,
+        "version": __version__,
+        "time": now_utc().isoformat(),
+    }
+
+
 @app.get("/api/status")
 async def status(request: Request):
     user = deps.require_user(request)

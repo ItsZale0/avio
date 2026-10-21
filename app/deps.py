@@ -25,6 +25,9 @@ PUBLIC_PATHS = {
     "/api/auth/logout",
     "/api/status",
     "/api/sources",
+    # Segnale di vita per il sorvegliante esterno: deve rispondere
+    # anche con l'accesso chiuso, altrimenti non serve a nessuno.
+    "/api/ping",
 }
 
 # --------------------------------------------------------------------------- #

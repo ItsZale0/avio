@@ -128,6 +128,18 @@ class SecurityTests(unittest.TestCase):
         self.assertEqual(risposta.json()["user"]["username"], "capo")
 
     # ------------------------------------------------------------------ #
+    # Segnale di vita: deve rispondere anche a accesso chiuso
+    # ------------------------------------------------------------------ #
+    def test_ping_risponde_senza_sessione(self):
+        risposta = self.client.get("/api/ping")
+        self.assertEqual(risposta.status_code, 200)
+        corpo = risposta.json()
+        self.assertTrue(corpo["ok"])
+        # Niente dati dell'utente: e' un endpoint pubblico.
+        self.assertNotIn("user", corpo)
+        self.assertNotIn("watches", corpo)
+
+    # ------------------------------------------------------------------ #
     # IP reale: gli header inoltrati non si credono da soli
     # ------------------------------------------------------------------ #
     def test_client_ip_usa_l_header_inoltrato_solo_da_proxy_locale(self):

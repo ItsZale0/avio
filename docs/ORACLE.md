@@ -224,21 +224,58 @@ sudo netfilter-persistent save
 ## Attenzione: il ripristino delle istanze inattive
 
 Oracle può **spegnere** le istanze Always Free che considera inattive. Il
-criterio (finestra di 7 giorni): CPU, rete e memoria sotto il 15% al 95°
-percentile. Il tuo agente fa ricerche ogni ora e tiene ~100 MB di RAM su
-12 GB: probabilmente rientra nella soglia della CPU.
+criterio (finestra di 7 giorni): CPU, rete e memoria sotto il 20% al 95°
+percentile. Oracle avvisa **una settimana prima** di spegnerla.
 
-**Come evitarlo**: appena creato l'account, passa al piano **Pay As You Go**
-(Billing → Plans). Non ti verrà addebitato nulla finché resti entro le quote
-Always Free, ma l'istanza non verrà più spenta.
+**Cosa succede davvero quando la spegne**: l'istanza viene *spenta*, non
+cancellata. Restano il volume (quindi ricerche, preferenze e chiavi), l'IP
+pubblico (l'IP effimero resta assegnato all'istanza ferma) e il certificato
+HTTPS. Per rimettere tutto online basta premere **Start** dalla console: i
+servizi systemd (`carpool`, Nginx, i timer) sono abilitati al boot e
+ripartono da soli.
 
-Se invece resta su Always Free e la spengono, i dati sono al sicuro (il
-volume persiste): basta riavviarla dalla console.
+**Come evitarla del tutto**: passare al piano **Pay As You Go**
+(Billing & Cost Management → *Upgrade and Manage Payment*). L'upgrade chiede
+un metodo di pagamento e blocca **100 $ (93 €)** sulla carta come
+*autorizzazione di verifica*: con una carta di credito il blocco è sul
+plafond e non servono soldi sul conto, con una carta di debito il conto
+deve avere quei 93 €. L'autorizzazione è annullata subito da Oracle e
+scompare dallo stesso estratto conto in 3-5 giorni. Dopo l'upgrade **non
+ti viene addebitato nulla** finché resti entro le quote Always Free (la tua
+VM: 1 micro istanza, 47 GB di volume, nessun NAT gateway → tutto gratis).
 
-> Attenzione: se l'istanza viene **ricreata**, l'IP pubblico cambia e con
-> lui il certificato. Con il piano Pay As You Go non succede; se succede,
-> riemetti il certificato (`sudo certbot renew --cert-name <IP>`) e rilancia
+Restando su Always Free, la rete di sicurezza è questa:
+
+| Protezione | Come funziona |
+| --- | --- |
+| Sorvegliante esterno | `uptime.yml` su GitHub Actions controlla `/api/ping` ogni 30 minuti: se l'app non risponde prova a **riavviare l'istanza** e avvisa su Telegram |
+| Backup dei dati | ogni notte il database viene copiato, cifrato e spedito su Telegram (`carpool-backup.timer`) |
+| Ripristino manuale | premere **Start** nella console: l'app torna in piedi da sola |
+| Avviso di Oracle | Oracle manda una email una settimana prima di spegnere |
+
+> Attenzione: se l'istanza viene **cancellata** (non solo spenta), l'IP
+> pubblico cambia e con lui il certificato. In quel caso: riemetti il
+> certificato (`sudo certbot renew --cert-name <IP>`) e rilancia
 > `python /opt/carpool/scripts/publish_backend.py https://<NUOVO_IP>`.
+> I dati non si perdono: sono nel backup cifrato.
+
+## Se l'app non risponde
+
+1. **Il link del giorno**: `https://itszale0.github.io/carpool-intelligence/`
+   porta sulla VM. Se non risponde, il problema è la VM (non il frontend).
+2. **La console Oracle**: Compute → Instances → la tua istanza → **Start**
+   (se è *Stopped*). Attendi 1-2 minuti: Nginx, l'app e i timer ripartono
+   da soli.
+3. **Controlla da SSH**: `systemctl status carpool nginx` e
+   `sudo journalctl -u carpool -n 50`.
+4. **Se il certificato è scaduto** (l'app è stata spenta per giorni):
+   `sudo certbot renew --cert-name <IP> --force-renewal` e poi
+   `sudo systemctl reload nginx`.
+5. **Per non dipendere da te**: aggiungi le credenziali OCI come secret del
+   repository (`OCI_TENANCY_OCID`, `OCI_USER_OCID`, `OCI_COMPARTMENT_OCID`,
+   `OCI_INSTANCE_OCID`, `OCI_FINGERPRINT`, `OCI_PRIVATE_KEY`) e il
+   sorvegliante riavvia l'istanza da solo. Le trovi in Identity →
+   Domains → *Users* → OCID utente, e Tenancy → *API Keys* → *Add API key*.
 
 ## Sicurezza della VM (cosa fanno gli script)
 

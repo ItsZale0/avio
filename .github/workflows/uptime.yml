@@ -1,0 +1,95 @@
+name: Sorvegliante app
+
+# Questo controllo gira FUORI dalla VM: e' l'unica cosa che funziona
+# anche quando la VM e' spenta (Oracle puo' spegnere le istanze Always
+# Free che considera inattive).
+#
+# Se l'app non risponde:
+#   1. prova a riavviare l'istanza (se le credenziali OCI sono configurate);
+#   2. avvisa su Telegram;
+#   3. fa fallire il controllo, cosi' GitHub manda anche l'email.
+
+on:
+  schedule:
+    - cron: "13,43 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  controllo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: L'app risponde?
+        env:
+          URL: ${{ vars.CARPOOL_API_BASE }}
+        run: |
+          set -u
+          if [ -z "${URL:-}" ]; then
+            echo "::error::la variabile CARPOOL_API_BASE non e' impostata"
+            exit 1
+          fi
+          code=$(curl -s -o /tmp/ping.json -w "%{http_code}" --max-time 30 "$URL/api/ping" || echo 000)
+          echo "Chiamata a $URL/api/ping -> HTTP $code"
+          cat /tmp/ping.json 2>/dev/null || true
+          echo
+          if [ "$code" != "200" ]; then
+            echo "::error::l'app non risponde (HTTP $code)"
+            exit 1
+          fi
+
+      - name: Riavvia l'istanza Oracle (se le credenziali ci sono)
+        if: failure()
+        env:
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          OCI_INSTANCE_OCID: ${{ secrets.OCI_INSTANCE_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+        run: |
+          set -u
+          if [ -z "${OCI_INSTANCE_OCID:-}" ] || [ -z "${OCI_PRIVATE_KEY:-}" ]; then
+            echo "Credenziali OCI non configurate: il riavvio automatico e' disattivato."
+            echo "Le trovi in docs/ORACLE.md (sezione 'Se l'app non risponde')."
+            exit 0
+          fi
+          pip install --quiet --disable-pip-version-check oci
+          mkdir -p "$HOME/.oci"
+          printf '%s' "$OCI_PRIVATE_KEY" > "$HOME/.oci/key.pem"
+          chmod 600 "$HOME/.oci/key.pem"
+          cat > "$HOME/.oci/config" <<EOF
+          [DEFAULT]
+          user=$OCI_USER_OCID
+          fingerprint=$OCI_FINGERPRINT
+          tenancy=$OCI_TENANCY_OCID
+          region=eu-milan-1
+          key_file=$HOME/.oci/key.pem
+          EOF
+          oci compute instance action \
+            --action START \
+            --instance-id "$OCI_INSTANCE_OCID" \
+            --compartment-id "$OCI_COMPARTMENT_OCID" || true
+
+      - name: Avvisa su Telegram
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          set -u
+          if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
+            echo "Token Telegram non configurati: l'avviso arriva dalla notifica GitHub."
+            exit 0
+          fi
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="$TELEGRAM_CHAT_ID" \
+            -d text="Carpool Hunter non risponde. La VM potrebbe essere stata spenta da Oracle: si prova a riavvarla, se non basta si avvia a mano dalla console." \
+            > /dev/null || true
+
+      - name: Segnala il fallimento (GitHub avvisa via email)
+        if: failure()
+        run: |
+          echo "::error::l'app non risponde: controlla la VM su Oracle"
+          exit 1
