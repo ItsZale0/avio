@@ -145,25 +145,31 @@ nginx -t && systemctl reload nginx
 # --------------------------------------------------------------------------
 # 5. Il certificato (prima in staging, poi quello vero)
 # --------------------------------------------------------------------------
-log "Richiesta del certificato per l'IP $PUBLIC_IP (staging: non costa nulla)"
-if ! "$CERTBOT" certonly --non-interactive --agree-tos --register-unsafely-without-email \
-    --preferred-profile shortlived \
-    --webroot --webroot-path "$WEBROOT" \
-    --ip-address "$PUBLIC_IP" \
-    --staging; then
-    log "Lo staging non e' riuscito: di solito vuol dire che la porta 80 non e' aperta."
-    log "Controlla le regole di ingresso (Security List) della VCN: TCP 80 e 443 da 0.0.0.0/0."
-fi
-
-if [[ ! -f "/etc/letsencrypt/live/$PUBLIC_IP/fullchain.pem" ]]; then
-    log "Richiesta del certificato vero (quello che il browser si fida)"
+log "Richiesta del certificato per l'IP $PUBLIC_IP"
+# Prima una prova in staging (non costa nulla e non fissa il limite di
+# emissione): con CERT_STAGING=1 la richiesta resta in staging.
+if [[ "${CERT_STAGING:-0}" == "1" ]]; then
     "$CERTBOT" certonly --non-interactive --agree-tos --register-unsafely-without-email \
         --preferred-profile shortlived \
         --webroot --webroot-path "$WEBROOT" \
         --ip-address "$PUBLIC_IP" \
-        --deploy-hook "systemctl reload nginx" || \
-        die "Certbot non ha emesso il certificato: guarda 'certbot certificates'"
+        --staging || log "Lo staging e' fallito: guarda i log di certbot."
+    log "Finito in staging: il certificato non e' valido per i browser."
+    exit 0
 fi
+
+# Se resta un certificato di staging con lo stesso nome, va rimosso:
+# altrimenti certbot lo considera "gia' rinnovabile" e non riemette nulla.
+"$CERTBOT" delete --cert-name "$PUBLIC_IP" --non-interactive >/dev/null 2>&1 || true
+
+"$CERTBOT" certonly --non-interactive --agree-tos --register-unsafely-without-email \
+    --preferred-profile shortlived \
+    --webroot --webroot-path "$WEBROOT" \
+    --ip-address "$PUBLIC_IP" \
+    --cert-name "$PUBLIC_IP" \
+    --deploy-hook "systemctl reload nginx" || \
+    die "Certbot non ha emesso il certificato: guarda 'certbot certificates'"
+
 [[ -f "/etc/letsencrypt/live/$PUBLIC_IP/fullchain.pem" ]] || \
     die "Il certificato non c'e': la porta 80 dev'essere raggiungibile da internet"
 
