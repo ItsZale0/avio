@@ -109,14 +109,20 @@
           </div>
           <div class="detail-actions">
             <button class="btn primary" id="btnRunNow">Cerca ora</button>
-            <button class="btn ghost" id="btnToggleWatch">Pausa</button>
-            <button class="btn ghost" id="btnEditWatch">Modifica</button>
-            <button class="btn danger-ghost" id="btnDeleteWatch">Elimina</button>
+            <div class="action-icons">
+              <button class="icon-btn" id="btnToggleWatch" type="button" aria-label="Metti in pausa" title="Metti in pausa"></button>
+              <button class="icon-btn" id="btnEditWatch" type="button" aria-label="Modifica la ricerca" title="Modifica la ricerca">
+                <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.2 2.3l2.5 2.5L6 12.5 2.8 13.2l.7-3.2z" /></svg>
+              </button>
+              <button class="icon-btn danger" id="btnDeleteWatch" type="button" aria-label="Elimina la ricerca" title="Elimina la ricerca">
+                <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8h5.6l.7-8" /></svg>
+              </button>
+            </div>
           </div>
         </div>
 
         <div class="stat-grid">
-          <div class="stat"><span class="stat-label">Miglior prezzo</span><strong id="statBest">—</strong><small id="statBestNote">&nbsp;</small></div>
+          <div class="stat" id="statBestCell"><span class="stat-label">Miglior prezzo</span><strong id="statBest">—</strong><small id="statBestNote">&nbsp;</small></div>
           <div class="stat"><span class="stat-label">Offerte attive</span><strong id="statCount">—</strong><small id="statCountNote">&nbsp;</small></div>
           <div class="stat"><span class="stat-label">Ultima ricerca</span><strong id="statLastRun">—</strong><small id="statLastRunNote">&nbsp;</small></div>
           <div class="stat"><span class="stat-label">Prossima ricerca</span><strong id="statNextRun">—</strong><small id="statNextRunNote">&nbsp;</small></div>

@@ -202,8 +202,24 @@ code {
 }
 .detail-actions {
   grid-column: 2; grid-row: 1; justify-self: end;
-  display: flex; gap: var(--space-xs); flex-wrap: wrap;
+  display: flex; gap: var(--space-xs); align-items: center; flex-wrap: wrap;
 }
+/* Azioni secondarie: tre segni, non tre bottoni. Il testo si sposta nel
+   title/aria-label cosi' la testata resta leggibile. */
+.action-icons { display: flex; gap: var(--space-2xs); }
+.icon-btn {
+  width: var(--ctl); height: var(--ctl); padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--rule); border-radius: var(--radius-md);
+  background: transparent; color: var(--meta); cursor: pointer;
+  transition:
+    background var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out),
+    color var(--dur-micro) var(--ease-out);
+}
+.icon-btn:hover { background: var(--raised); border-color: var(--control); color: var(--text); }
+.icon-btn.danger { color: var(--ink-neg); }
+.icon-btn.danger:hover { background: var(--tint-neg); border-color: var(--border-neg); }
 
 .pill {
   font-family: var(--font-body);
@@ -253,6 +269,8 @@ code {
   border-bottom: 1px solid var(--border);
   margin: 0 0 var(--space-lg);
 }
+/* Senza il piano il prezzo resta nella striscia: tre celle, non quattro. */
+.stat-grid.compact { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .stat { padding: var(--space-md) var(--space-lg); border-left: 1px solid var(--rule); min-width: 0; }
 .stat:first-child { border-left: 0; }
 .stat-label { display: block; font-size: var(--text-xs); color: var(--meta); }
@@ -261,7 +279,7 @@ code {
   font-family: var(--font-display); font-size: var(--text-md); font-weight: 600;
   letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.15;
 }
-.stat:first-child strong { font-size: var(--text-xl); }
+#statBestCell strong { font-size: var(--text-xl); }
 .stat small {
   display: block; margin-top: var(--space-2xs); font-size: var(--text-xs);
   color: var(--meta); line-height: 1.4;
@@ -355,9 +373,18 @@ code {
   white-space: nowrap; font-variant-numeric: tabular-nums;
 }
 .plan-price small { display: block; margin-top: 2px; font-size: var(--text-xs); color: var(--meta); }
+/* Il ragionamento viene dopo i dati: prima la tabella, poi la spiegazione.
+   Su schermi larghi stanno in due colonne: dati a sinistra, "perche'" a
+   destra, con un filetto a dividerli. */
+.plan-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: var(--space-xl); align-items: start;
+}
+.plan-why { border-left: 1px solid var(--rule); padding-left: var(--space-lg); }
 .plan-explanation {
-  margin-top: var(--space-sm); font-size: var(--text-sm); color: var(--muted);
-  line-height: var(--leading-prose); max-width: 68ch;
+  font-size: var(--text-sm); color: var(--muted);
+  line-height: var(--leading-prose); max-width: 62ch;
 }
 .plan-facts {
   display: flex; gap: var(--space-md); flex-wrap: wrap;
@@ -414,7 +441,7 @@ code {
   margin-top: var(--space-sm); font-size: var(--text-xs); color: var(--meta);
 }
 .plan-watchouts {
-  margin-top: var(--space-sm); padding-top: var(--space-sm);
+  margin-top: var(--space-md); padding-top: var(--space-sm);
   border-top: 1px solid var(--rule);
   font-size: var(--text-sm); color: var(--muted);
   display: flex; flex-direction: column; gap: var(--space-2xs);
@@ -435,6 +462,10 @@ code {
 .plan-alt {
   display: flex; justify-content: space-between; gap: 12px;
   font-size: var(--text-sm); color: var(--muted); padding: 4px 0;
+}
+.plan-alt .alt-name {
+  font-size: var(--text-xs); color: var(--meta); font-weight: 600;
+  white-space: nowrap; flex: none;
 }
 .plan-alt b {
   color: var(--text); font-family: var(--font-display); font-weight: 600;
@@ -507,6 +538,11 @@ code {
   background: var(--tint-pos); color: var(--accent);
 }
 .tag.spezzato, .tag.estimate { background: var(--tint-warn); color: var(--ink-warn); }
+/* Gli aggettivi che restano sono metadati: testo semplice, niente pastiglie. */
+.tag-meta {
+  font-size: var(--text-xs); color: var(--meta); font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 
 .times {
   display: flex; align-items: baseline; gap: var(--space-xs); flex-wrap: wrap;
@@ -942,9 +978,20 @@ select { cursor: pointer; }
   .watch-route { white-space: nowrap; max-width: 100%; }
   .sidebar-foot { display: none; }
   .content { overflow: visible; }
-  .stat-grid { grid-template-columns: 1fr 1fr; }
+  .stat-grid, .stat-grid.compact { grid-template-columns: 1fr 1fr; }
   .stat:nth-child(3) { border-left: 0; }
   .stat:nth-child(n + 3) { border-top: 1px solid var(--rule); }
+  /* Con tre celle l'ultima occupa tutta la riga. */
+  .stat-grid.compact .stat:nth-child(3) { border-left: 1px solid var(--rule); }
+  .stat-grid.compact .stat:last-child {
+    grid-column: 1 / -1; border-left: 0;
+  }
+  /* Sotto i 960px il piano torna su una colonna sola. */
+  .plan-body { grid-template-columns: 1fr; gap: var(--space-md); }
+  .plan-why {
+    border-left: 0; border-top: 1px solid var(--rule);
+    padding-left: 0; padding-top: var(--space-md);
+  }
 }
 
 @media (max-width: 760px) {

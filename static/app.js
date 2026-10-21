@@ -194,6 +194,11 @@ const BADGES = {
   orario: "Orario",
 };
 
+/* Icone delle azioni secondarie: lo stato della ricerca si legge dal segno,
+   non da un bottone pieno. */
+const ICON_PAUSE = '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6 3.5v9M10 3.5v9" /></svg>';
+const ICON_PLAY = '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 3.5l7 4.5-7 4.5z" /></svg>';
+
 const MODE_LABEL = {
   rideshare: "Passaggio",
   bus: "Autobus",
@@ -964,7 +969,13 @@ function renderDetail() {
     .map((c) => `<span class="crit">${esc(c)}</span>`)
     .join("");
 
-  $("#btnToggleWatch").textContent = watch.active ? "Pausa" : "Riprendi";
+  const btnToggle = $("#btnToggleWatch");
+  if (btnToggle) {
+    const etichetta = watch.active ? "Metti in pausa" : "Riprendi la ricerca";
+    btnToggle.setAttribute("aria-label", etichetta);
+    btnToggle.setAttribute("title", etichetta);
+    btnToggle.innerHTML = watch.active ? ICON_PAUSE : ICON_PLAY;
+  }
 
   const priced = state.offers.filter((o) => o.price != null && !o.price_is_estimate);
   const best = priced.length ? Math.min(...priced.map((o) => o.price)) : null;
@@ -988,6 +999,11 @@ function renderDetail() {
   $("#countAll").textContent = state.offers.length;
   renderPlan();
   renderQuestions();
+  // Il prezzo lo mostra il pannello; nella striscia resta solo se non c'e'
+  // un piano, cosi' lo stesso numero non compare due volte a schermo.
+  const codaPrezzo = !!state.plan;
+  $("#statBestCell")?.classList.toggle("hidden", codaPrezzo);
+  $("#statBestCell")?.closest(".stat-grid")?.classList.toggle("compact", codaPrezzo);
   if (state.enteredWatch !== watch.id) {
     anima($("#detail"));
     state.enteredWatch = watch.id;
@@ -1044,12 +1060,11 @@ function renderConfronti(confronti) {
     .join("");
   const nessunRisparmio = confronti.every((c) => Number(c.delta_prezzo || 0) >= -0.01);
   return `<div class="confronti">
-    <h4>Tratte singole invece del biglietto unico</h4>
+    <h4 title="Confronto reale sui prezzi Trenitalia: quanto costa e quanto tempo cambia spezzando il viaggio.">Tratte singole invece del biglietto unico</h4>
     ${righe}
     ${nessunRisparmio
       ? '<small class="conf-note">Nessun risparmio: spezzando il viaggio si paga uguale o di più, conviene il biglietto unico.</small>'
       : ""}
-    <small>Confronto reale sui prezzi Trenitalia: quanto costa e quanto tempo cambia spezzando il viaggio.</small>
   </div>`;
 }
 
@@ -1091,10 +1106,12 @@ function renderPlan() {
   vuoto.innerHTML = "";
   box.classList.remove("hidden");
 
-  const steps = (plan.steps || []).map((step) => {
+  const steps = (plan.steps || []).map((step, i) => {
     const dep = step.depart_at ? fmtTime(step.depart_at) : "—";
     const arr = step.arrive_at ? fmtTime(step.arrive_at) : "—";
     const day = step.depart_at ? fmtDay(step.depart_at) : "";
+    // Con una sola tratta il prezzo e' gia' quello del piano: non si ripete.
+    const unicaTratta = (plan.steps || []).length === 1;
     const price = step.price != null ? euro(step.price) : "da verificare";
     const link = step.deeplink
       ? ` <a href="${esc(step.deeplink)}" target="_blank" rel="noreferrer">apri ↗</a>`
@@ -1115,12 +1132,12 @@ function renderPlan() {
       <div class="plan-step">
         <span class="idx">${step.leg || 1}</span>
         <div class="ps-main">
-          <b>${esc(step.operator || step.source || "")}</b>
+          <b>${esc(step.operator || step.source || "")}</b>${link ? ` ${link}` : ""}
           <small>${esc(MODE_LABEL[step.mode] || step.mode || "")} · ${dep} → ${arr} ${day} ·
-            ${esc(step.pickup_name || "")} → ${esc(step.dropoff_name || "")}${step.price_is_estimate ? " · stima" : ""}</small>
+            ${esc(step.pickup_name || "")} → ${esc(step.dropoff_name || "")}${step.price_is_estimate ? " · stima" : ""}${i === 0 ? ` · ${(plan.steps || []).length === 1 ? (plan.changes === 0 ? "tratta diretta" : "1 tratta") : `${(plan.steps || []).length} tratte`}` : ""}</small>
           ${biglietti}
         </div>
-        <span class="ps-price">${price}${link}</span>
+        ${unicaTratta ? "" : `<span class="ps-price">${price}</span>`}
       </div>`;
   }).join("");
 
@@ -1173,7 +1190,7 @@ function renderPlan() {
              : alt.total_price;
            return `
            <div class="plan-alt">
-             <span class="alt-profile">${esc(ALT_PROFILE[alt.profile] || "Alternativa")}</span>
+             <span class="alt-name">${esc(ALT_PROFILE[alt.profile] || "Alternativa")}</span>
              <span>${esc(alt.title || "")}${alt.total_duration_min ? " · " + fmtDuration(alt.total_duration_min) : ""}${alt.changes ? " · " + (alt.changes === 1 ? "1 cambio" : alt.changes + " cambi") : ""}${alt.door_to_door_min && alt.door_to_door_min > (alt.total_duration_min || 0) ? " · p.a.p. " + fmtDuration(alt.door_to_door_min) : ""}${altCovered ? " · coperto" : ""}</span>
              <b>${altNet != null ? euro(altNet) : "—"}${altCovered && alt.total_price != null ? `<span class="was">${euro(alt.total_price)}</span>` : ""}</b>
            </div>`;
@@ -1197,29 +1214,28 @@ function renderPlan() {
         ${!covered && hasAccess && plan.total_price != null ? `<small>biglietti ${euro(plan.total_price)} + ${euro(accessCost)} spostamento</small>` : ""}
       </div>
     </div>
-    <div class="plan-explanation">${esc(plan.explanation || "")}</div>
-    <div class="plan-facts">
-      ${plan.depart_at ? `<span>partenza ${fmtDate(plan.depart_at)}</span>` : ""}
-      ${plan.arrive_at ? `<span>arrivo ${fmtDate(plan.arrive_at)}</span>` : ""}
-      ${duration ? `<span>${duration}</span>` : ""}
-      <span>${changeLabel}</span>
-      ${walkNote}
-      ${walkNote2}
-      ${partiDiCasa ? `<span>${partiDiCasa}</span>` : ""}
-      ${doorToDoor && (walkOut || walkIn) ? `<span>porta a porta ${fmtDuration(doorToDoor)}</span>` : ""}
-      ${covered ? `<span>coperto da ${esc(passNames || "abbonamento")}</span>` : ""}
-      ${plan.transfer_km != null ? `<span>${plan.transfer_km} km a piedi nel cambio</span>` : ""}
+    <div class="plan-body">
+      <div class="plan-main">
+        <div class="plan-facts">
+          ${plan.depart_at ? `<span>partenza ${fmtDate(plan.depart_at)}</span>` : ""}
+          ${plan.arrive_at ? `<span>arrivo ${fmtDate(plan.arrive_at)}</span>` : ""}
+          ${duration ? `<span>${duration}</span>` : ""}
+          <span>${changeLabel}</span>
+          ${plan.partial ? "<span>prezzo parziale</span>" : ""}
+          ${walkNote}
+          ${walkNote2}
+          ${partiDiCasa ? `<span>${partiDiCasa}</span>` : ""}
+          ${doorToDoor && (walkOut || walkIn) ? `<span>porta a porta ${fmtDuration(doorToDoor)}</span>` : ""}
+          ${covered ? `<span>coperto da ${esc(passNames || "abbonamento")}</span>` : ""}
+          ${plan.transfer_km != null ? `<span>${plan.transfer_km} km a piedi nel cambio</span>` : ""}
+        </div>
+        ${steps ? `<div class="plan-steps">${steps}</div>` : ""}
+      </div>
+      <div class="plan-why">
+        <div class="plan-explanation">${esc(plan.explanation || "")}</div>
+        ${watchouts ? `<div class="plan-watchouts">${watchouts}</div>` : ""}
+      </div>
     </div>
-    ${steps ? `<div class="plan-steps">${steps}</div>` : ""}
-    <div class="plan-meta">
-      ${plan.partial ? "<span>prezzo parziale</span>" : ""}
-      ${(plan.steps || []).length === 1
-        ? (changes === 0
-            ? "<span>tratta diretta</span>"
-            : "<span>1 tratta</span>")
-        : `<span>${(plan.steps || []).length} tratte</span>`}
-    </div>
-    ${watchouts ? `<div class="plan-watchouts">${watchouts}</div>` : ""}
     ${renderConfronti(plan.confronti)}
     ${alts}`;
 }
@@ -1338,9 +1354,18 @@ function offerCard(offer, suppressNew = false) {
   const isNew = offer.first_seen && (Date.now() - new Date(offer.first_seen).getTime() < 2 * 3600 * 1000);
   if (isNew && !suppressNew && !badges.includes("new")) badges.unshift("new");
 
-  const tagHtml = badges.map((b) =>
-    `<span class="tag ${b === "new" ? "new" : b}">${b === "new" ? "Nuovo" : BADGES[b]}</span>`
-  ).join("");
+  // Una sola pastiglia per riga (il verdetto), gli altri aggettivi restano
+  // testo semplice: cinque chip colorati facevano rumore senza informare.
+  const VERDETTO = ["best_value", "cheapest", "spezzato", "coperto", "under_budget", "price_drop", "fastest", "closest"];
+  const idxVerdetto = badges.findIndex((b) => VERDETTO.includes(b));
+  const etichettaVerdetto = idxVerdetto >= 0 ? badges[idxVerdetto] : null;
+  const altri = badges
+    .filter((b, i) => i !== idxVerdetto)
+    .map((b) => (b === "new" ? "Nuovo" : BADGES[b]));
+  const tagHtml = etichettaVerdetto
+    ? `<span class="tag ${etichettaVerdetto}">${esc(BADGES[etichettaVerdetto])}</span>`
+    : "";
+  const altriHtml = altri.length ? `<span class="tag-meta">${altri.map(esc).join(" · ")}</span>` : "";
 
   const dep = offer.depart_at ? fmtTime(offer.depart_at) : "—";
   const arr = offer.arrive_at ? fmtTime(offer.arrive_at) : "—";
@@ -1433,6 +1458,7 @@ function offerCard(offer, suppressNew = false) {
           <span class="operator">${esc(offer.operator || offer.source)}</span>
           <span class="source-tag">${esc(MODE_LABEL[offer.mode] || offer.mode)}</span>
           ${tagHtml}
+          ${altriHtml}
         </div>
         <div class="times">
           <strong>${dep}</strong><span class="sep">→</span><strong>${arr}</strong>

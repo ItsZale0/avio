@@ -75,9 +75,26 @@ rectangles, not capsules.
 - The canvas is the ground. Panels are `--surface` with a 1px `--rule` border;
   the app never stacks a bordered card inside a bordered card.
 - The KPI strip is **not** a card: it is a ruled band with vertical hairlines.
+  Three cells (offerte, ultima ricerca, prossima ricerca); the price cell
+  appears only when there is no plan, because the plan already shows the price.
 - The offers list is **not** a card: flush rows on the ground, 1px rules,
   hover paints the row.
 - Shadows exist only on overlays (modal, drawer, toast, auth).
+
+## Density rules (the anti-clutter contract)
+
+- **One price on screen.** The plan panel owns it; the strip, the step row and
+  the alternatives never repeat the same figure.
+- **One verdict per offer.** The badge is a single chip; the other qualifiers
+  ("Nuovo", "Più veloce", "Più vicino") are plain meta text, not chips.
+- **One primary action per view.** "Cerca ora" is the only filled button; the
+  secondary actions (pause, edit, delete) are 34px icon buttons with
+  `aria-label` + `title`.
+- **Data before reasoning.** In the plan panel the structured row (partenza,
+  arrivo, durata, cambi) and the journey sit on the left, the explanation on
+  the right, separated by a hairline; comparisons run full width below.
+- **No empty right side.** A zone that ends halfway leaves the panel
+  unbalanced: either it goes two columns or it ends at the measure.
 
 ## Motion
 
@@ -105,6 +122,9 @@ rectangles, not capsules.
 - **Primary:** solid paper (`--paper oklch(0.955 0.003 265)`) with `--paper-ink`,
   4px radius, 34px height, 14px/600, sentence case ("Cerca ora", "Salva").
 - **Secondary / ghost:** transparent with `--control` border, or text-only.
+- **Icon actions (`.icon-btn`):** 34px square, 1px `--rule` border, `--meta`
+  ink that warms to `--text` on hover; the destructive one keeps `--ink-neg`
+  and tints only on hover. Used for the head's secondary actions.
 - **Destructive:** ghost with `--ink-neg` text (the row action), solid
   `--negative` with `--danger-ink` inside the confirmation dialog.
 
