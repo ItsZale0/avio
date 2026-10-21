@@ -1114,7 +1114,7 @@ function renderPlan() {
     const unicaTratta = (plan.steps || []).length === 1;
     const price = step.price != null ? euro(step.price) : "da verificare";
     const link = step.deeplink
-      ? ` <a href="${esc(step.deeplink)}" target="_blank" rel="noreferrer">apri ↗</a>`
+      ? ` <a class="ext-link" href="${esc(step.deeplink)}" target="_blank" rel="noreferrer">apri ↗</a>`
       : "";
     // Spezzatura: un passo che racchiude due biglietti.
     const biglietti = step.spezzatura && step.biglietti && step.biglietti.length
@@ -1483,7 +1483,7 @@ function offerCard(offer, suppressNew = false) {
       <div class="offer-side">
         ${priceHtml}
         ${offer.score != null ? `<div class="score">punteggio <b>${Math.round(offer.score)}</b>/100</div>` : ""}
-        ${offer.deeplink ? `<a class="btn small" href="${esc(offer.deeplink)}" target="_blank" rel="noreferrer">Apri ↗</a>` : ""}
+        ${offer.deeplink ? `<a class="ext-link" href="${esc(offer.deeplink)}" target="_blank" rel="noreferrer">apri ↗</a>` : ""}
       </div>
     </article>`;
 }

@@ -93,6 +93,10 @@ rectangles, not capsules.
 - **Data before reasoning.** In the plan panel the structured row (partenza,
   arrivo, durata, cambi) and the journey sit on the left, the explanation on
   the right, separated by a hairline; comparisons run full width below.
+- **One way out of the app.** Every external page opens with the same quiet
+  text link — `apri ↗` (`.ext-link`), muted, accent underline on hover —
+  both in the plan's step and in the offer rows. The "Link utili" cards keep
+  their own pattern because there the whole card is the link.
 - **No empty right side.** A zone that ends halfway leaves the panel
   unbalanced: either it goes two columns or it ends at the measure.
 

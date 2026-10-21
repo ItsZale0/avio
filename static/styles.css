@@ -45,6 +45,15 @@ a {
   text-decoration-color: var(--control); text-underline-offset: 2px;
 }
 a:hover { text-decoration-color: var(--accent); }
+/* Un solo modo per uscire dall'app: link quieto con la freccia, identico
+   nel piano e nelle offerte. */
+.ext-link {
+  color: var(--muted); text-decoration: none;
+  font-size: var(--text-xs); font-weight: 500; white-space: nowrap;
+  padding-bottom: 1px; border-bottom: 1px solid transparent;
+  transition: color var(--dur-micro) var(--ease-out), border-color var(--dur-micro) var(--ease-out);
+}
+.ext-link:hover { color: var(--accent); border-bottom-color: var(--accent); }
 .muted { color: var(--muted); }
 .hidden { display: none !important; }
 code {
