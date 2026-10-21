@@ -267,30 +267,31 @@ const RAW_BACKEND =
 /* Tutti i backend conosciuti, in ordine di preferenza. */
 let API_FALLBACKS = [];
 
-/* Se il tunnel ngrok non e' ancora stato "sbloccato" dal browser, ogni
-   richiesta si ferma alla pagina di avviso di ngrok e il browser blocca la
-   risposta (CORS). Il rimedio e' aprire una volta l'indirizzo del tunnel e
-   cliccare "Visit Site". */
+/* Se il backend non risponde, si spiega dove intervenire: il backend e' il
+   server (la VM) che tiene l'app e l'API sulla stessa origine. */
 const MESSAGGIO_TUNNEL =
-  "Server non raggiungibile. Se usi il tunnel ngrok, apri l'indirizzo del " +
-  'tunnel in una nuova scheda, clicca "Visit Site" e poi torna qui.';
+  "Server non raggiungibile. Controlla la connessione e ricarica la pagina; " +
+  "se l'app e' aperta su un altro indirizzo, apri l'app direttamente dal " +
+  "backend: l'app e l'API devono stare sulla stessa origine, altrimenti il " +
+  "browser blocca il cookie di accesso.";
 
 async function api(path, options = {}) {
   let response;
   let lastError = null;
 
-  // L'header dice a ngrok di non mettere la pagina di avviso al posto
-  // della risposta: senza, ogni chiamata da GitHub Pages riceverebbe
-  // l'HTML "You are about to visit..." invece del JSON.
+  // L'header serve per il caso in cui il backend sia ancora un tunnel
+  // gratuito (ngrok): senza, quello mette la sua pagina di avviso al posto
+  // della risposta e il browser blocca la chiamata. Con la VM non serve,
+  // ma innocuo.
   const headers = {
     "Content-Type": "application/json",
     "ngrok-skip-browser-warning": "1",
     ...(options.headers || {}),
   };
 
-  // Il tunnel puo' essere riavviato in qualunque momento e cambiare URL:
-  // se la richiesta fallisce a livello di rete si prova un altro backend
-  // conosciuto (config.json di Pages, puntatore fresco su GitHub).
+  // Il backend puo' cambiare indirizzo (un tunnel riavviato, una VM
+  // ricreata): se la richiesta fallisce a livello di rete si prova un altro
+  // backend conosciuto (config.json di Pages, puntatore fresco su GitHub).
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
       response = await fetch(API_BASE + path, {
@@ -445,9 +446,39 @@ async function loadRuntimeConfig() {
   API_FALLBACKS = [scelto.base, ...unici.map((i) => i.base).filter((b) => b !== scelto.base)];
   API_BASE = scelto.base;
   showApiHint();
-  // Si passa al tunnel solo se ha risposto: su un indirizzo morto si
-  // resterebbe bloccati, meglio la pagina di GitHub che riprova da sola.
-  if (vivo) passaAlTunnel();
+  // Se il backend serve anche l'app, la porta giusta e' la sua: stessa
+  // origine, niente CORS e niente cookie di terze parti (il browser li
+  // blocca, e l'accesso non passerebbe). Con ?resta=1 l'app resta dove e'.
+  if (vivo && !new URLSearchParams(location.search).has("resta")) {
+    passaAlBackend();
+  }
+}
+
+/* Il backend (la VM) serve anche il frontend: se l'app e' aperta su GitHub
+   Pages, si passa a lui conservando la chiave d'accesso nell'URL. */
+async function passaAlBackend() {
+  let target;
+  try {
+    const origine = new URL(API_BASE).origin;
+    if (origine === location.origin) return;
+    target = new URL(origine);
+  } catch (_) {
+    return;
+  }
+  // Solo se quel backend serve davvero l'app: un'API sola non deve rubare
+  // il passaggio.
+  try {
+    const risposta = await fetch(target.origin + "/", { cache: "no-store" });
+    if (!risposta.ok) return;
+    const testo = await risposta.text();
+    if (!testo.includes('id="watchList"')) return;
+  } catch (_) {
+    return;
+  }
+  target.pathname = "/";
+  target.search = location.search;
+  target.hash = location.hash;
+  location.replace(target.toString());
 }
 
 /* L'API risponde? (un tunnel "vivo" ma appeso non risponde: si scarta).
@@ -476,27 +507,9 @@ async function backendVivo(base, ms = 4000) {
   }
 }
 
-/* Passare al tunnel attivo non e' automatico: ngrok, sui account gratuiti,
-   mette davanti la pagina di avviso ("You are about to visit...") a ogni
-   browser nuovo, e li' l'app sembra spenta. L'app su GitHub Pages parla
-   gia' con l'API attraverso il tunnel (con l'header che salta l'avviso e
-   SameSite=None sul cookie di sessione), quindi si resta dove si e'.
-   Con ?tunnel=1 si chiede esplicitamente il passaggio al tunnel. */
-function passaAlTunnel() {
-  if (!API_BASE || API_BASE === location.origin) return;
-  if (!/(^|\.)github\.io$/.test(location.hostname)) return;
-  const query = new URLSearchParams(location.search);
-  if (query.has("resta") || !query.has("tunnel")) return;
-  try {
-    const target = new URL(API_BASE);
-    target.pathname = "/";
-    // La chiave d'accesso viaggia nella query (?key=...): va conservata,
-    // altrimenti il passaggio al tunnel perderebbe l'accesso in un tocco.
-    target.search = location.search;
-    target.hash = location.hash;
-    location.replace(target.toString());
-  } catch (_) { /* URL strano: si resta qui */ }
-}
+/* Il backend (la VM) serve anche il frontend: li' frontend e API sono sulla
+   stessa origine, il cookie di sessione e' di prima parte e l'accesso passa.
+   Il passaggio dal link GitHub avviene in automatico (passaAlBackend). */
 
 /* Se la pagina e' su un dominio diverso dall'API, il browser potrebbe
    bloccare il cookie di sessione: si mostra l'indirizzo diretto del backend,
@@ -511,7 +524,8 @@ function showApiHint() {
   hint.innerHTML =
     "Se non riesci a entrare, apri l'app direttamente qui: " +
     `<a href="${esc(API_BASE)}" target="_blank" rel="noopener">${esc(API_BASE)}</a>` +
-    " — la prima volta ngrok chiede una conferma: clicca «Visit Site».";
+    " — l'app e l'API devono stare sulla stessa origine, altrimenti il browser " +
+    "blocca il cookie di accesso.";
 }
 
 /* Se l'API non risponde, il tunnel potrebbe essere stato riavviato con un
