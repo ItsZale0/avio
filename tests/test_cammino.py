@@ -1,4 +1,4 @@
-"""Il cammino a piedi: distanza reale, stazione vera, uscita di casa."""
+"""Il cammino a piedi: percorso reale dalle mappe, solo da punti esatti."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.adapters.base import Offer, SearchContext
 from app.ai import planner
-from app.geo import walking_km, walking_minutes
+from app.routing import percorso_a_piedi
 
 ROME = timezone(timedelta(hours=2))
 DEPART = datetime(2026, 10, 22, 6, 0, tzinfo=timezone.utc)
@@ -60,65 +60,113 @@ def make_offer(pickup=STAZIONE, dropoff=(46.0722, 11.1193)):
     )
 
 
-class DetourTests(unittest.TestCase):
-    def test_the_walk_is_longer_than_the_straight_line(self):
-        # 1 km in linea d'aria sono circa 1,25 km a piedi.
-        self.assertAlmostEqual(walking_km(1.0), 1.25, places=3)
+class RoutingTests(unittest.IsolatedAsyncioTestCase):
+    """Il percorso a piedi arriva dal servizio di mappe, non da una formula."""
 
-    def test_a_few_metres_stay_the_same(self):
-        self.assertAlmostEqual(walking_km(0.05), 0.05, places=3)
+    async def asyncSetUp(self):
+        from app import routing
 
-    def test_none_stays_none(self):
-        self.assertIsNone(walking_km(None))
+        self.routing = routing
+        self._fetch = routing._fetch
+        self._cache = routing._CACHE
+        routing._CACHE = {}
 
-    def test_the_minutes_follow_the_walking_distance(self):
-        # 1,25 km a 4,5 km/h sono 17 minuti, non 13.
-        self.assertEqual(walking_minutes(walking_km(1.0)), 17)
+    async def asyncTearDown(self):
+        self.routing._fetch = self._fetch
+        self.routing._CACHE = self._cache
+
+    async def test_usa_il_percorso_reale_delle_mappe(self):
+        async def finto(url):
+            return {"routes": [{"distance": 2044.8, "duration": 1638}]}
+
+        self.routing._fetch = finto
+        percorso = await percorso_a_piedi(
+            CENTRO[0], CENTRO[1], STAZIONE[0], STAZIONE[1]
+        )
+        self.assertIsNotNone(percorso)
+        self.assertAlmostEqual(percorso["km"], 2.04, places=2)
+        self.assertEqual(percorso["minuti"], 27)
+
+    async def test_se_il_servizio_non_risponde_non_si_inventa(self):
+        async def finto(url):
+            raise RuntimeError("servizio non raggiungibile")
+
+        self.routing._fetch = finto
+        self.assertIsNone(
+            await percorso_a_piedi(CENTRO[0], CENTRO[1], STAZIONE[0], STAZIONE[1])
+        )
+
+    async def test_senza_coordinate_non_c_e_percorso(self):
+        self.assertIsNone(await percorso_a_piedi(None, 11.4, 45.7, 11.4))
+
+    async def test_pochi_metri_sono_zero(self):
+        percorso = await percorso_a_piedi(CENTRO[0], CENTRO[1], CENTRO[0], CENTRO[1])
+        self.assertEqual(percorso, {"km": 0.0, "minuti": 0})
 
 
 class WalkTimesTests(unittest.TestCase):
-    def test_the_walk_to_the_pickup_is_counted(self):
-        from app.geo import haversine_km
-
-        ctx = make_ctx()
-        out_min, in_min, out_km, in_km = planner._walk_times([make_offer()], ctx)
-        self.assertGreater(out_min, 0)
-        dritta = haversine_km(CENTRO[0], CENTRO[1], STAZIONE[0], STAZIONE[1])
-        self.assertAlmostEqual(out_km, walking_km(dritta), places=3)
-        # E il cammino e' piu' lungo della retta.
-        self.assertGreater(out_km, dritta)
-
-    def test_no_walk_when_the_station_is_the_destination(self):
-        # L'utente sceglie la stazione di Trento come destinazione: il
-        # treno arriva li', quindi non c'e' cammino.
-        stazione_trento = (46.0722, 11.1193)
-        ctx = make_ctx(to_point=stazione_trento)
-        offer = make_offer(dropoff=stazione_trento)
-        out_min, in_min, out_km, in_km = planner._walk_times([offer], ctx)
+    def test_usa_i_minuti_del_percorso_reale(self):
+        offer = make_offer()
+        offer.details["piedi_pickup"] = {"km": 1.1, "minuti": 15}
+        out_min, in_min, out_km, in_km = planner._walk_times([offer], make_ctx())
+        self.assertEqual(out_min, 15)
+        self.assertAlmostEqual(out_km, 1.1)
         self.assertEqual(in_min, 0)
-        self.assertAlmostEqual(in_km or 0.0, 0.0, places=3)
 
-    def test_the_walk_is_not_counted_backwards(self):
-        # Se la destinazione e' la stazione, il centro citta' non c'entra.
-        stazione_trento = (46.0722, 11.1193)
-        ctx = make_ctx(to_point=stazione_trento)
-        offer = make_offer(dropoff=(46.1030, 11.1297))  # centro citta'
-        _, in_min, _, _ = planner._walk_times([offer], ctx)
-        self.assertGreater(in_min, 0)
+    def test_senza_percorso_reale_non_si_stima(self):
+        # L'utente ha indicato solo la citta': il centro citta' non e' la
+        # sua porta di casa, quindi non si aggiunge nessun cammino.
+        out_min, in_min, out_km, in_km = planner._walk_times([make_offer()], make_ctx())
+        self.assertEqual(out_min, 0)
+        self.assertEqual(in_min, 0)
+        self.assertIsNone(out_km)
+        self.assertIsNone(in_km)
 
 
 class LeaveHomeTests(unittest.TestCase):
     def test_the_plan_says_when_to_leave_home(self):
         ctx = make_ctx()
         offer = make_offer()
+        offer.details["piedi_pickup"] = {"km": 1.1, "minuti": 15}
         candidates = planner.build_candidates([offer], ctx)
         self.assertTrue(candidates)
         piano = candidates[0].as_dict()
-        self.assertTrue(piano["walk_out_min"] > 0)
+        self.assertEqual(piano["walk_out_min"], 15)
         # Si esce prima: il treno parte dopo i minuti di cammino.
         partenza = datetime.fromisoformat(piano["depart_at"])
         uscita = datetime.fromisoformat(piano["leave_home_at"])
         self.assertEqual((partenza - uscita).total_seconds() / 60, piano["walk_out_min"])
+
+
+class AnnotationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_annota_solo_con_un_punto_esatto(self):
+        from app import routing
+
+        chiamate: list[tuple] = []
+
+        async def finto(lat1, lon1, lat2, lon2):
+            chiamate.append((lat1, lon1, lat2, lon2))
+            return {"km": 0.4, "minuti": 5}
+
+        originale = routing.percorso_a_piedi
+        routing.percorso_a_piedi = finto
+
+        async def ripristina():
+            routing.percorso_a_piedi = originale
+
+        self.addAsyncCleanup(ripristina)
+
+        offer = make_offer()
+        await routing.annota_offerte([offer], make_ctx())
+        # Solo la citta': nessun cammino inventato dal centro.
+        self.assertNotIn("piedi_pickup", offer.details)
+        self.assertEqual(chiamate, [])
+
+        ctx = make_ctx(from_point=(45.7000, 11.4800))
+        await routing.annota_offerte([offer], ctx)
+        self.assertIn("piedi_pickup", offer.details)
+        self.assertEqual(offer.details["piedi_pickup"]["minuti"], 5)
+        self.assertEqual(len(chiamate), 1)
 
 
 class TrenitaliaStationTests(unittest.TestCase):

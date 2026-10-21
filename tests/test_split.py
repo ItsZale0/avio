@@ -207,18 +207,54 @@ class PassiSullaSpezzaturaTests(unittest.TestCase):
         self.assertAlmostEqual(confronto["delta_prezzo"], -6.30, places=2)
         self.assertTrue(confronto["conveniente"])
 
-    def test_xgo_and_flex_together_take_the_cheapest(self):
+    def test_xgo_non_vale_se_il_viaggio_tocca_l_alto_adige(self):
+        # X-GO non vale in Trentino/Alto Adige: niente sconto ne' sul
+        # diretto ne' sulle tratte, altrimenti il confronto sarebbe gonfiato.
         confronto = self._confronto()
         split_tickets.applica_abbonamenti(  # type: ignore[list-item]
             [confronto], self.FLEX, sconto_xgo=0.2
         )
         prima, seconda = confronto["tratte"]
-        # X-GO porta 8,00 a 6,40, ma il Flex (4,96) e' meglio.
         self.assertAlmostEqual(prima["prezzo_effettivo"], 4.96, places=2)
-        self.assertEqual(prima["sconto_xgo"], 1.60)
-        # Seconda tratta: X-GO 20% (10,04), il Flex non la copre.
-        self.assertEqual(seconda["prezzo_effettivo"], 10.04)
-        self.assertAlmostEqual(confronto["totale_effettivo"], 15.00, places=2)
+        self.assertNotIn("sconto_xgo", prima)
+        # Seconda tratta: nessun X-GO, resta 12,55 (il Flex non la copre).
+        self.assertEqual(seconda["prezzo_effettivo"], 12.55)
+        self.assertAlmostEqual(confronto["totale_effettivo"], 17.51, places=2)
+        self.assertAlmostEqual(confronto["diretto_effettivo"], 23.81, places=2)
+
+    def test_xgo_si_applica_fuori_dalle_regioni_escluse(self):
+        offer = Offer(
+            source="trenitalia",
+            external_id="milano-bologna",
+            mode="train",
+            operator="Trenitalia",
+            depart_at=datetime(2026, 10, 22, 7, 0, tzinfo=timezone.utc),
+            arrive_at=datetime(2026, 10, 22, 9, 0, tzinfo=timezone.utc),
+            price=23.81,
+            pickup_name="Milano Centrale",
+            dropoff_name="Bologna Centrale",
+            pickup_lat=45.4863,
+            pickup_lon=9.2044,
+            dropoff_lat=44.5060,
+            dropoff_lon=11.3430,
+            details={"treni": "Regionale"},
+        )
+        confronto = {
+            "via": "Piacenza",
+            "tratte": [
+                {"da": "Milano Centrale", "a": "Piacenza", "prezzo": 8.00},
+                {"da": "Piacenza", "a": "Bologna Centrale", "prezzo": 12.55},
+            ],
+            "totale": 20.55,
+            "diretto_prezzo": 23.81,
+            "offer": offer,
+        }
+        split_tickets.applica_abbonamenti([confronto], [], sconto_xgo=0.2)  # type: ignore[list-item]
+        prima, seconda = confronto["tratte"]
+        self.assertAlmostEqual(prima["prezzo_effettivo"], 6.40, places=2)
+        self.assertAlmostEqual(seconda["prezzo_effettivo"], 10.04, places=2)
+        self.assertAlmostEqual(confronto["totale_effettivo"], 16.44, places=2)
+        self.assertAlmostEqual(confronto["diretto_effettivo"], 19.05, places=2)
 
     def test_without_passes_the_ticket_prices_are_kept(self):
         confronto = self._confronto()
@@ -297,6 +333,88 @@ class SplitPointTests(unittest.TestCase):
         self.assertIn("Bolzano", points)
         # Una sola volta, anche se arriva sia dal percorso sia dalle tappe.
         self.assertEqual(sum(1 for p in points if split_tickets._chiave_punto(p) == "bolzano"), 1)
+
+
+class StesseCorseTests(unittest.IsolatedAsyncioTestCase):
+    """Le tratte singole dello stesso treno: si sommano i biglietti reali."""
+
+    async def asyncSetUp(self):
+        self._lookup = split_tickets._lookup_station
+        self._price = split_tickets._segment_price
+
+    async def asyncTearDown(self):
+        split_tickets._lookup_station = self._lookup
+        split_tickets._segment_price = self._price
+
+    async def test_trova_il_taglio_piu_economico_sulle_stesse_corse(self):
+        # (prezzo, minuti) dei biglietti unici fra due stazioni.
+        prezzi = {
+            ("Thiene", "Vicenza"): (4.05, 30),
+            ("Vicenza", "Trento"): (11.65, 112),
+            ("Thiene", "Verona Porta Nuova"): (7.90, 79),
+            ("Verona Porta Nuova", "Trento"): (7.85, 61),
+        }
+
+        async def lookup(client, name, lat=None, lon=None):
+            return {"id": name, "name": name}
+
+        async def price(client, a, b, when):
+            importo, minuti = prezzi[(a, b)]
+            return [
+                {
+                    "price": importo,
+                    "depart_at": when,
+                    "arrive_at": when + timedelta(minutes=minuti),
+                    "origin": a,
+                    "destination": b,
+                    "id": "x",
+                }
+            ]
+
+        split_tickets._lookup_station = lookup
+        split_tickets._segment_price = price
+        offer = Offer(
+            source="trenitalia",
+            external_id="thiene-trento",
+            mode="train",
+            operator="Trenitalia",
+            depart_at=datetime(2026, 10, 22, 7, 21, tzinfo=ROME),
+            arrive_at=datetime(2026, 10, 22, 9, 50, tzinfo=ROME),
+            price=13.10,
+            pickup_name="Thiene",
+            dropoff_name="Trento",
+            details={
+                "treni": "Regionale",
+                "tappe": [
+                    {
+                        "da": "Thiene",
+                        "a": "Vicenza",
+                        "partenza": "2026-10-22T07:21:00+02:00",
+                        "arrivo": "2026-10-22T07:51:00+02:00",
+                    },
+                    {
+                        "da": "Vicenza",
+                        "a": "Verona Porta Nuova",
+                        "partenza": "2026-10-22T07:58:00+02:00",
+                        "arrivo": "2026-10-22T08:40:00+02:00",
+                    },
+                    {
+                        "da": "Verona Porta Nuova",
+                        "a": "Trento",
+                        "partenza": "2026-10-22T08:49:00+02:00",
+                        "arrivo": "2026-10-22T09:50:00+02:00",
+                    },
+                ],
+            },
+        )
+        confronto = await split_tickets._same_trains_comparison(None, offer)
+        self.assertIsNotNone(confronto)
+        # Il taglio migliore e' a Vicenza: 4,05 + 11,65 = 15,70.
+        self.assertAlmostEqual(confronto["totale"], 15.70, places=2)
+        self.assertAlmostEqual(confronto["delta_prezzo"], 2.60, places=2)
+        self.assertFalse(confronto["conveniente"])
+        self.assertEqual(len(confronto["tratte"]), 2)
+        self.assertEqual(confronto["tratte"][1]["da"], "Vicenza")
 
 
 class SplitOfferTests(unittest.TestCase):

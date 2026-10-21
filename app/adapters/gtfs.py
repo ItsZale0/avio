@@ -142,7 +142,7 @@ class GtfsAdapter(Adapter):
                         leg.get("dep_name"),
                         start.isoformat(),
                         _local_dt(day, leg["dep_sec"]).isoformat(),
-                        f"a piedi · {max(50, int(round(walk_km * 1000 / 50) * 50))} m",
+                        f"a piedi · ~{max(50, int(round(walk_km * 1000 / 50) * 50))} m",
                     )
                 )
             tappe.append(

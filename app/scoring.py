@@ -16,7 +16,6 @@ import math
 from datetime import datetime
 
 from .adapters.base import Offer, SearchContext
-from .geo import walking_km, walking_minutes
 
 # Pesi di base: il prezzo guida, ma tempo e comodita' contano davvero.
 BASE_WEIGHTS = {
@@ -137,12 +136,42 @@ def _reliability_score(offer: Offer) -> float:
 
 
 def _access_cost(offer: Offer, ctx: SearchContext) -> float:
-    """Stima € per raggiungere il punto di ritrovo (a piedi sotto 1.2 km)."""
-    distance = offer.pickup_distance_km(ctx)
-    if distance is None or distance <= 1.2:
+    """Stima € per raggiungere il punto di ritrovo.
+
+    Senza un punto di partenza esatto il ritrovo in citta' non si conta: si
+    parte da li' e basta (nessun cammino inventato dal centro). Un ritrovo
+    fuori citta' invece richiede un mezzo, e quello si stima. Con il punto
+    esatto si usa il percorso a piedi reale (mappe), se c'e'.
+    """
+    esatto = ctx.from_point_lat is not None and ctx.from_point_lon is not None
+    percorso = (offer.details or {}).get("piedi_pickup")
+    if esatto and isinstance(percorso, dict):
+        distance = float(percorso.get("km") or 0)
+    else:
+        distance = offer.pickup_distance_km(ctx)
+    if distance is None:
+        return 0.0
+    if not esatto and distance <= 5:
+        # Stessa citta': ci si arriva con i piedi o con un mezzo locale,
+        # senza aggiungere un costo inventato al viaggio.
+        return 0.0
+    if distance <= 1.2:
         return 0.0
     # mezzi pubblici ~2€, altrimenti taxi ~1,1€/km con minimo 6€
     return round(min(2.0, distance * 0.9) if distance <= 5 else max(6.0, distance * 1.1), 2)
+
+
+def _percorso(offer: Offer, chiave: str) -> tuple[float | None, int | None]:
+    """Km e minuti del percorso a piedi reale, se calcolato dalle mappe."""
+    percorso = (offer.details or {}).get(chiave)
+    if not isinstance(percorso, dict):
+        return None, None
+    try:
+        km = round(float(percorso.get("km") or 0), 1)
+        minuti = int(percorso.get("minuti") or 0)
+    except (TypeError, ValueError):
+        return None, None
+    return km, minuti
 
 
 def _cost_of(offer: Offer) -> float | None:
@@ -246,33 +275,29 @@ def score_offers(offers: list[Offer], ctx: SearchContext) -> dict[str, dict]:
             # Gli orari senza prezzo non concorrono al badge "miglior valore":
             # non conosciamo il costo, quindi non possiamo dire che sia il migliore.
 
+        details = {
+            "distanza_pickup_km": _round(offer.pickup_distance_km(ctx)),
+            "distanza_dropoff_km": _round(offer.dropoff_distance_km(ctx)),
+            "costo_accesso_stimato": access,
+            "costo_effettivo": round(costo + access, 2) if costo is not None else None,
+            "durata_min": offer.duration_min,
+            "cambi": _changes_count(offer),
+        }
+        # Il cammino e' quello vero delle mappe (quando l'utente ha indicato
+        # un punto esatto): niente stime ricavate dalla linea d'aria.
+        km_pickup, min_pickup = _percorso(offer, "piedi_pickup")
+        km_dropoff, min_dropoff = _percorso(offer, "piedi_dropoff")
+        if km_pickup is not None:
+            details["km_pickup_a_piedi"] = km_pickup
+            details["minuti_pickup_a_piedi"] = min_pickup
+        if km_dropoff is not None:
+            details["km_dropoff_a_piedi"] = km_dropoff
+            details["minuti_dropoff_a_piedi"] = min_dropoff
+
         result[offer.fingerprint] = {
             "score": score,
             "badges": [],
-            "details": {
-                "distanza_pickup_km": _round(offer.pickup_distance_km(ctx)),
-                "distanza_dropoff_km": _round(offer.dropoff_distance_km(ctx)),
-                # I minuti a piedi calcolati dal backend (percorso reale,
-                # non linea d'aria): il frontend non deve ricalcolarli.
-                "minuti_pickup_a_piedi": _minuti_a_piedi(
-                    offer.pickup_distance_km(ctx)
-                ),
-                "minuti_dropoff_a_piedi": _minuti_a_piedi(
-                    offer.dropoff_distance_km(ctx)
-                ),
-                # I km realmente percorsi a piedi (non la retta): cosi' i
-                # minuti e i km nella card dicono la stessa cosa.
-                "km_pickup_a_piedi": _round(
-                    walking_km(offer.pickup_distance_km(ctx))
-                ),
-                "km_dropoff_a_piedi": _round(
-                    walking_km(offer.dropoff_distance_km(ctx))
-                ),
-                "costo_accesso_stimato": access,
-                "costo_effettivo": round(costo + access, 2) if costo is not None else None,
-                "durata_min": offer.duration_min,
-                "cambi": _changes_count(offer),
-            },
+            "details": details,
         }
 
     if offers:
@@ -323,11 +348,6 @@ def score_offers(offers: list[Offer], ctx: SearchContext) -> dict[str, dict]:
             info["badges"].append("diretto")
 
     return result
-
-
-def _minuti_a_piedi(distanza_km: float | None) -> int | None:
-    """Minuti a piedi per una distanza in linea d'aria (percorso reale)."""
-    return walking_minutes(walking_km(distanza_km))
 
 
 def _round(value: float | None) -> float | None:

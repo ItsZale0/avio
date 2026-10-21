@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -156,6 +157,11 @@ def _chiave_punto(nome: str | None) -> str:
     return rail_km.stazione(nome) or str(nome or "").strip().lower()
 
 
+def _nome_stazione(nome: str) -> str:
+    """Toglie la citta' fra parentesi: "Povo-Mesiano (Trento)" -> "Povo-Mesiano"."""
+    return re.sub(r"\s*\([^)]*\)\s*$", "", str(nome or "")).strip()
+
+
 def _split_points(offer: Offer, ctx: SearchContext) -> list[str]:
     """Le citta' dove provare a spezzare il biglietto, in ordine di promessa.
 
@@ -233,6 +239,146 @@ def _duration(depart: datetime | None, arrive: datetime | None) -> int:
     return max(0, int((arrive - depart).total_seconds() // 60))
 
 
+async def same_trains_comparison(
+    offer: Offer,
+    passes: list[dict[str, Any]] | None = None,
+    sconto_xgo: float = 0.0,
+) -> dict[str, Any] | None:
+    """Il confronto "tratte singole" per l'offerta scelta come piano.
+
+    Si calcola dopo la scelta del piano: il confronto deve parlare del treno
+    che l'utente vede nella card, non di un'altra offerta piu' economica ma
+    scartata (troppo lenta, fuori orario, ...).
+    """
+    async with httpx.AsyncClient(timeout=25, headers=HEADERS) as client:
+        confronto = await _same_trains_comparison(client, offer)
+    if not confronto:
+        return None
+    applica_abbonamenti([confronto], passes, sconto_xgo)
+    return _comparison(confronto)
+
+
+async def _corsa_alle(
+    client: httpx.AsyncClient,
+    da: str,
+    a: str,
+    partenza: datetime,
+    arrivo: datetime,
+) -> dict[str, Any] | None:
+    """La soluzione che parte e arriva agli orari indicati (stessa corsa)."""
+    origine = await _lookup_station(client, _nome_stazione(da))
+    destinazione = await _lookup_station(client, _nome_stazione(a))
+    if not origine or not destinazione:
+        log.debug("stesse corse: stazione non trovata (%s -> %s)", da, a)
+        return None
+    soluzioni = await _segment_price(
+        client, origine["id"], destinazione["id"], partenza
+    )
+    return next(
+        (
+            s
+            for s in soluzioni
+            if abs((s["depart_at"] - partenza).total_seconds()) <= 90
+            and abs((s["arrive_at"] - arrivo).total_seconds()) <= 90
+        ),
+        None,
+    )
+
+
+async def _same_trains_comparison(
+    client: httpx.AsyncClient,
+    offer: Offer,
+) -> dict[str, Any] | None:
+    """Lo stesso itinerario comprato a pezzi: stesse corse, due biglietti.
+
+    Serve a rispondere a "conviene comprare tratte singole?": si prova a
+    tagliare il viaggio in ogni stazione intermedia, comprando **due**
+    biglietti per le stesse corse (stessi orari, nessuna attesa in piu').
+    Si tiene il taglio piu' economico. Se un taglio non ha prezzi certi non
+    si inventa nulla e si passa al successivo.
+    """
+    tappe = [t for t in (offer.details.get("tappe") or []) if isinstance(t, dict)]
+    if len(tappe) < 2:
+        return None
+
+    stazioni: list[str] = []
+    for step in tappe:
+        da = str(step.get("da") or "").strip()
+        a = str(step.get("a") or "").strip()
+        if not da or not a:
+            return None
+        if not stazioni:
+            stazioni.append(da)
+        stazioni.append(a)
+
+    partenza = parse_dt(tappe[0].get("partenza"))
+    arrivo = parse_dt(tappe[-1].get("arrivo"))
+    if not partenza or not arrivo:
+        return None
+
+    migliore: tuple[int, dict[str, Any], dict[str, Any], float] | None = None
+    for i in range(1, len(stazioni) - 1):
+        cambio_arrivo = parse_dt(tappe[i - 1].get("arrivo"))
+        cambio_partenza = parse_dt(tappe[i].get("partenza"))
+        if not cambio_arrivo or not cambio_partenza:
+            continue
+        prima = await _corsa_alle(
+            client, stazioni[0], stazioni[i], partenza, cambio_arrivo
+        )
+        dopo = await _corsa_alle(
+            client, stazioni[i], stazioni[-1], cambio_partenza, arrivo
+        )
+        if not prima or not dopo:
+            continue
+        totale = round(prima["price"] + dopo["price"], 2)
+        if migliore is None or totale < migliore[3]:
+            migliore = (i, prima, dopo, totale)
+
+    if migliore is None:
+        return None
+    i, prima, dopo, totale = migliore
+    tratte = [
+        {
+            "da": stazioni[0],
+            "a": stazioni[i],
+            "prezzo": prima["price"],
+            "partenza": iso(prima["depart_at"]),
+            "arrivo": iso(prima["arrive_at"]),
+            "durata_min": _duration(prima["depart_at"], prima["arrive_at"]),
+        },
+        {
+            "da": stazioni[i],
+            "a": stazioni[-1],
+            "prezzo": dopo["price"],
+            "partenza": iso(dopo["depart_at"]),
+            "arrivo": iso(dopo["arrive_at"]),
+            "durata_min": _duration(dopo["depart_at"], dopo["arrive_at"]),
+        },
+    ]
+
+    # Se l'offerta ha gia' ricevuto lo sconto X-GO, il confronto parte dal
+    # listino: cosi' lo sconto non viene applicato due volte al diretto.
+    diretto = float((offer.details or {}).get("prezzo_listino") or offer.price or 0)
+    durata = offer.duration_min or _duration(offer.depart_at, offer.arrive_at)
+    return {
+        "via": "tratte singole (stesse corse)",
+        "tratte": tratte,
+        "totale": totale,
+        "diretto_prezzo": diretto,
+        "delta_prezzo": round(totale - diretto, 2),
+        "durata_min": durata,
+        "diretto_durata_min": durata,
+        "delta_minuti": 0,
+        "partenza": tratte[0]["partenza"],
+        "arrivo": tratte[-1]["arrivo"],
+        "diretto_partenza": iso(offer.depart_at),
+        "diretto_arrivo": iso(offer.arrive_at),
+        "cambi": max(0, len(tratte) - 1),
+        "conveniente": totale < diretto,
+        "offer": offer,
+    }
+
+
 async def _split_via(
     client: httpx.AsyncClient,
     offer: Offer,
@@ -251,7 +397,7 @@ async def _split_via(
     coords = CITIES.get(point.strip().lower())
     middle = await _lookup_station(
         client,
-        point,
+        _nome_stazione(point),
         coords[0] if coords else None,
         coords[1] if coords else None,
     )
@@ -411,12 +557,28 @@ def applica_abbonamenti(
             confronto.setdefault("diretto_effettivo", confronto.get("diretto_prezzo"))
         return
 
+    from . import discounts as discounts_service
+
     for confronto in comparisons:
+        # X-GO non vale sui viaggi che toccano Trentino/Alto Adige (e le
+        # altre regioni escluse): in quel caso non si sconta nemmeno la
+        # spezzatura, altrimenti il confronto sembrerebbe piu' conveniente
+        # del vero. Meglio stimare per difetto che per eccesso.
+        sconto = sconto_xgo
+        diretta = confronto.get("offer")
+        if sconto and diretta is not None:
+            quando = getattr(diretta, "depart_at", None)
+            ammesso, _motivo = discounts_service._xgo_ammissibile(
+                diretta, quando.date() if isinstance(quando, datetime) else None
+            )
+            if not ammesso:
+                sconto = 0.0
+
         totale_effettivo = 0.0
         for tratta in confronto.get("tratte") or []:
             listino = float(tratta.get("prezzo") or 0)
-            scontato = _scontato(listino, sconto_xgo)
-            if sconto_xgo and scontato < listino:
+            scontato = _scontato(listino, sconto)
+            if sconto and scontato < listino:
                 tratta["sconto_xgo"] = round(listino - scontato, 2)
             costo, nome = passes_service.netto_tratta(
                 passes or [], tratta.get("da") or "", tratta.get("a") or "", scontato
@@ -431,9 +593,8 @@ def applica_abbonamenti(
                     tratta["pass_km"] = round(km, 1)
             totale_effettivo += costo
 
-        diretta = confronto.get("offer")
         listino_diretto = float(getattr(diretta, "price", 0) or 0)
-        scontato_diretto = _scontato(listino_diretto, sconto_xgo)
+        scontato_diretto = _scontato(listino_diretto, sconto)
         diretto_eff, nome_diretto = passes_service.netto_tratta(
             passes or [],
             getattr(diretta, "pickup_name", "") or "",
@@ -474,6 +635,11 @@ async def analyze_splits(
         for offer in offers
         if offer.mode == "train" and offer.price and (offer.details.get("tappe") or [])
     ]
+    log.debug(
+        "spezzatura: %d treni con tappe su %d offerte",
+        len(candidates),
+        len(offers),
+    )
     if not candidates:
         return [], []
 
@@ -507,6 +673,7 @@ async def analyze_splits(
                 for result in results:
                     if isinstance(result, dict):
                         comparisons.append(result)
+            log.debug("spezzatura: %d confronti", len(comparisons))
     except Exception as exc:  # noqa: BLE001
         log.debug("spezzatura non disponibile: %s", exc)
         return [], []
@@ -537,6 +704,9 @@ async def analyze_splits(
                 and confronto["delta_prezzo"] <= MAX_EXTRA_PRICE
             ):
                 continue
+        if "leg1" not in confronto or "leg2" not in confronto:
+            # Confronto informativo (stesse corse): non e' un piano diverso.
+            continue
         leg1 = confronto["leg1"]
         leg2 = confronto["leg2"]
         offer = confronto["offer"]

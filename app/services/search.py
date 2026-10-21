@@ -22,6 +22,90 @@ _lock = asyncio.Lock()
 BASE_URL = f"http://{HOST}:{PORT}"
 
 
+async def _same_trains_row(
+    plan: dict[str, Any],
+    offers: list[Offer],
+    passes: list[dict[str, Any]],
+    sconto_xgo: float,
+    errors: list[str],
+) -> None:
+    """Aggiunge al piano il confronto con le tratte singole dello stesso treno.
+
+    Si fa dopo la scelta del piano: il confronto deve parlare della corsa che
+    l'utente vede nella card, non di un'altra offerta scartata.
+    """
+    steps = plan.get("steps") or []
+    if len(steps) != 1:
+        return
+    offer_id = str(steps[0].get("offer_id") or "")
+    offer = next((o for o in offers if o.fingerprint == offer_id), None)
+    if offer is None or offer.mode != "train":
+        return
+    try:
+        confronto = await split_tickets.same_trains_comparison(
+            offer, passes, sconto_xgo
+        )
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"stesse corse: {type(exc).__name__}: {exc}")
+        return
+    if not confronto:
+        return
+    altri = [
+        c
+        for c in plan.get("confronti") or []
+        if str(c.get("via")) != confronto["via"]
+    ]
+    plan["confronti"] = [confronto] + altri
+
+
+async def _real_transfers(
+    plan: dict[str, Any],
+    offers: list[Offer],
+    max_walk_km: float,
+) -> None:
+    """Sostituisce la distanza del cambio con il percorso a piedi reale.
+
+    Il pianificatore usa la linea d'aria solo per scartare i cambi assurdi;
+    la card deve mostrare il cammino vero (mappe). Se il percorso non e'
+    calcolabile non si mostra una stima.
+    """
+    steps = plan.get("steps") or []
+    if len(steps) < 2:
+        return
+    per_id = {offer.fingerprint: offer for offer in offers}
+    peggiore: float | None = None
+    for prima, dopo in zip(steps, steps[1:]):
+        offerta_a = per_id.get(str(prima.get("offer_id") or ""))
+        offerta_b = per_id.get(str(dopo.get("offer_id") or ""))
+        if offerta_a is None or offerta_b is None:
+            continue
+        from .. import routing
+
+        percorso = await routing.percorso_a_piedi(
+            offerta_a.dropoff_lat,
+            offerta_a.dropoff_lon,
+            offerta_b.pickup_lat,
+            offerta_b.pickup_lon,
+        )
+        if percorso is None:
+            continue
+        if peggiore is None or percorso["km"] > peggiore:
+            peggiore = float(percorso["km"])
+    if peggiore is None:
+        plan.pop("transfer_km", None)
+        return
+    plan["transfer_km"] = round(peggiore, 2)
+    # Il cambio piu' lungo deve stare dentro il limite dell'utente: se il
+    # percorso vero lo supera, va detto (non nascosto).
+    if max_walk_km and peggiore > max_walk_km + 0.05:
+        avvisi = list(plan.get("watchouts") or [])
+        avvisi.append(
+            f"Il cambio richiede {peggiore:.1f} km a piedi, oltre il limite "
+            f"di {max_walk_km:.1f} km."
+        )
+        plan["watchouts"] = avvisi
+
+
 def _prefs_of(watch: dict[str, Any]) -> dict[str, Any]:
     """Le preferenze della ricerca unite a quelle globali dell'utente.
 
@@ -331,6 +415,11 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
                 )
 
         offers = _filter_offers(gathered, ctx, late_minutes=late_minutes)
+        # I percorsi a piedi veri (mappe OpenStreetMap): solo verso i punti
+        # esatti scelti dall'utente, niente stime dal centro citta'.
+        from .. import routing
+
+        await routing.annota_offerte(offers, ctx)
         ranked = score_offers(offers, ctx)
 
         new_offers, drops = _persist(watch_id, offers, ranked)
@@ -359,6 +448,18 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
 
         plan = intel.plan
         if plan:
+            await _same_trains_row(
+                plan,
+                gathered,
+                user_passes,
+                xgo_sconto(prefs),
+                errors,
+            )
+            await _real_transfers(
+                plan,
+                gathered,
+                float(prefs.get("max_walk_km") or 0),
+            )
             store.save_plans(watch_id, run_id, plan, intel.alternatives)
             effective = plan.get("effective_cost")
             previous_best = watch.get("ai_best_price")

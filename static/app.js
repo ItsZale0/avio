@@ -991,9 +991,13 @@ function renderConfronti(confronti) {
       </div>`;
     })
     .join("");
+  const nessunRisparmio = confronti.every((c) => Number(c.delta_prezzo || 0) >= -0.01);
   return `<div class="confronti">
     <h4>🪓 Tratte singole invece del biglietto unico</h4>
     ${righe}
+    ${nessunRisparmio
+      ? '<small class="conf-note">Nessun risparmio: spezzando il viaggio si paga uguale o di più, conviene il biglietto unico.</small>'
+      : ""}
     <small>Confronto reale sui prezzi Trenitalia: quanto costa e quanto tempo cambia spezzando il viaggio.</small>
   </div>`;
 }
@@ -1152,7 +1156,7 @@ function renderPlan() {
       ${walkNote}
       ${walkNote2}
       ${partiDiCasa ? `<span>${partiDiCasa}</span>` : ""}
-      ${doorToDoor ? `<span>🚶 porta a porta ${fmtDuration(doorToDoor)}</span>` : ""}
+      ${doorToDoor && (walkOut || walkIn) ? `<span>🚶 porta a porta ${fmtDuration(doorToDoor)}</span>` : ""}
       ${covered ? `<span>🎟️ coperto da ${esc(passNames || "abbonamento")}</span>` : ""}
       ${plan.transfer_km != null ? `<span>🚶 ${plan.transfer_km} km a piedi nel cambio</span>` : ""}
     </div>
@@ -1282,8 +1286,8 @@ function offerCard(offer, suppressNew = false) {
   const arr = offer.arrive_at ? fmtTime(offer.arrive_at) : "—";
   const dayLabel = offer.depart_at ? fmtDay(offer.depart_at) : "";
   const duration = fmtDuration(offer.duration_min);
-  const pickupKm = offer.details?.distanza_pickup_km;
-  const dropoffKm = offer.details?.distanza_dropoff_km;
+  const pickupKm = offer.details?.km_pickup_a_piedi;
+  const dropoffKm = offer.details?.km_dropoff_a_piedi;
   const effective = offer.details?.costo_effettivo;
   const tappe = Array.isArray(offer.details?.tappe)
     ? offer.details.tappe.filter((t) => t && (t.da || t.a))
@@ -1291,19 +1295,16 @@ function offerCard(offer, suppressNew = false) {
 
   const detailBits = [];
   if (duration) detailBits.push(`⏱ ${duration}`);
-  // I minuti a piedi li calcola il backend (percorso reale, non linea
-  // d'aria): se non ci sono, si stimano qui con la stessa regola.
-  const walkKm = offer.details?.distanza_pickup_km;
-  const walkMin = offer.details?.minuti_pickup_a_piedi;
+  // I minuti a piedi arrivano solo dal percorso reale delle mappe (il
+  // backend li calcola quando l'utente ha scelto un punto esatto): qui non
+  // si stima nulla.
   const walkKmReale = offer.details?.km_pickup_a_piedi;
+  const walkMin = offer.details?.minuti_pickup_a_piedi;
   if (walkMin != null && walkMin > 0) {
     detailBits.push(
       `🚶 ${walkMin} min a piedi fino al ritrovo` +
         (walkKmReale != null && walkKmReale > 0.05 ? ` (${walkKmReale} km)` : "")
     );
-  } else if (walkKm != null && walkKm > 0.05) {
-    const minuti = Math.round((walkKm * 1.25 / 4.5) * 60);
-    detailBits.push(`🚶 ${minuti} min a piedi fino al ritrovo`);
   }
   const changes = offer.details?.cambi;
   if (changes != null) {
@@ -1379,8 +1380,8 @@ function offerCard(offer, suppressNew = false) {
           <span class="dur">${dayLabel}${duration ? " · " + duration : ""}</span>
         </div>
         <div class="places">
-          <span>↑ ${esc(offer.pickup_name || "—")}${pickupKm != null ? ` <span class="km">· ${pickupKm} km</span>` : ""}</span>
-          <span>↓ ${esc(offer.dropoff_name || "—")}${dropoffKm != null ? ` <span class="km">· ${dropoffKm} km</span>` : ""}</span>
+          <span>↑ ${esc(offer.pickup_name || "—")}${pickupKm != null && pickupKm > 0.05 ? ` <span class="km">· ${pickupKm} km</span>` : ""}</span>
+          <span>↓ ${esc(offer.dropoff_name || "—")}${dropoffKm != null && dropoffKm > 0.05 ? ` <span class="km">· ${dropoffKm} km</span>` : ""}</span>
         </div>
         ${detailBits.length ? `<div class="details-line">${detailBits.map((b) => `<span>${b}</span>`).join("")}</div>` : ""}
         ${tappe.length > 1 ? `

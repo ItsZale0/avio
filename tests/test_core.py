@@ -175,12 +175,29 @@ class ScoringTest(unittest.TestCase):
         self.assertIsNone(ranked[transit.fingerprint]["score"])
 
     def test_effective_cost_includes_pickup(self):
-        ctx = make_context()
+        # Con un punto di partenza esatto lo spostamento fino al ritrovo
+        # si conta (bus/taxi): il ritrovo e' lontano.
+        ctx = make_context(from_point_lat=45.4642, from_point_lon=9.1900)
         far = make_offer(pickup_lat=45.55, pickup_lon=9.25)
         ranked = score_offers([far], ctx)
         details = ranked[far.fingerprint]["details"]
         self.assertGreater(details["costo_accesso_stimato"], 0)
         self.assertGreater(details["costo_effettivo"], far.price)
+
+    def test_no_pickup_cost_when_the_origin_is_only_a_city(self):
+        # "Milano" non e' una porta di casa: un ritrovo in citta' non si
+        # conta (ci si arriva localmente), senza inventare un cammino.
+        ctx = make_context()
+        near = make_offer(pickup_lat=45.48, pickup_lon=9.20)
+        details = score_offers([near], ctx)[near.fingerprint]["details"]
+        self.assertEqual(details["costo_accesso_stimato"], 0.0)
+
+    def test_far_pickup_still_needs_a_transfer_even_without_a_door(self):
+        # Un ritrovo fuori citta' richiede un mezzo: quello si stima.
+        ctx = make_context()
+        far = make_offer(pickup_lat=45.55, pickup_lon=9.25)
+        details = score_offers([far], ctx)[far.fingerprint]["details"]
+        self.assertGreater(details["costo_accesso_stimato"], 0)
 
 
 class LinksTest(unittest.TestCase):

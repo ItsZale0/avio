@@ -204,39 +204,48 @@ def _walk_times(
 ) -> tuple[int, int, float | None, float | None]:
     """Il tempo a piedi all'inizio e alla fine del viaggio.
 
-    Il punto di ritrovo e' quello che l'utente ha indicato (o, se non c'e',
-    il centro citta'): 20 minuti a piedi possono valere piu' di 20 euro.
+    I minuti sono quelli del percorso reale calcolato dalle mappe (vedi
+    ``app.routing``) e ci sono solo se l'utente ha indicato un punto esatto.
+    Se ha scritto solo la citta' non si inventa un cammino dal centro.
     """
-    from ..geo import walking_km, walking_minutes
-
+    if not legs:
+        return 0, 0, None, None
+    uscita = (legs[0].details or {}).get("piedi_pickup")
+    rientro = (legs[-1].details or {}).get("piedi_dropoff")
     out_km: float | None = None
     in_km: float | None = None
-    if legs:
-        first = legs[0]
-        origin = ctx.origin_coords
-        if origin and first.pickup_lat is not None and first.pickup_lon is not None:
-            out_km = walking_km(
-                haversine_km(origin[0], origin[1], first.pickup_lat, first.pickup_lon)
-            )
-        last = legs[-1]
-        destination = ctx.destination_coords
-        if destination and last.dropoff_lat is not None and last.dropoff_lon is not None:
-            in_km = walking_km(
-                haversine_km(
-                    last.dropoff_lat, last.dropoff_lon, destination[0], destination[1]
-                )
-            )
-    return (
-        walking_minutes(out_km) or 0,
-        walking_minutes(in_km) or 0,
-        out_km,
-        in_km,
-    )
+    out_min = 0
+    in_min = 0
+    if isinstance(uscita, dict):
+        out_km = float(uscita.get("km") or 0)
+        out_min = int(uscita.get("minuti") or 0)
+    if isinstance(rientro, dict):
+        in_km = float(rientro.get("km") or 0)
+        in_min = int(rientro.get("minuti") or 0)
+    return out_min, in_min, out_km, in_km
 
 
 def _access_cost(offer: Offer, ctx: SearchContext) -> float:
-    distance = offer.pickup_distance_km(ctx)
-    if distance is None or distance <= 1.2:
+    """Stima € per raggiungere il punto di ritrovo.
+
+    Senza un punto di partenza esatto il ritrovo in citta' non si conta: si
+    parte da li' e basta (nessun cammino inventato dal centro). Un ritrovo
+    fuori citta' invece richiede un mezzo, e quello si stima. Con il punto
+    esatto si usa il percorso a piedi reale (mappe), se c'e'.
+    """
+    esatto = ctx.from_point_lat is not None and ctx.from_point_lon is not None
+    percorso = (offer.details or {}).get("piedi_pickup")
+    if esatto and isinstance(percorso, dict):
+        distance = float(percorso.get("km") or 0)
+    else:
+        distance = offer.pickup_distance_km(ctx)
+    if distance is None:
+        return 0.0
+    if not esatto and distance <= 5:
+        # Stessa citta': ci si arriva con i piedi o con un mezzo locale,
+        # senza aggiungere un costo inventato al viaggio.
+        return 0.0
+    if distance <= 1.2:
         return 0.0
     # Con un abbonamento urbano puoi prendere il bus: lo spostamento e' gratis.
     user_passes = normalize_passes((ctx.prefs or {}).get("passes"))
@@ -246,7 +255,11 @@ def _access_cost(offer: Offer, ctx: SearchContext) -> float:
 
 
 def _transfer_km(leg1: Offer, leg2: Offer) -> float | None:
-    """Il cammino nel cambio: distanza reale, non linea d'aria."""
+    """Distanza in linea d'aria del cambio (pre-filtro, non il cammino vero).
+
+    Serve solo a scartare subito i cambi palesemente impossibili. Il percorso
+    a piedi reale si calcola sulle mappe (``app.routing``) per il piano scelto.
+    """
     if None in (leg1.dropoff_lat, leg1.dropoff_lon, leg2.pickup_lat, leg2.pickup_lon):
         return None
     from ..geo import walking_km

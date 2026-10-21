@@ -143,6 +143,12 @@ L'agente non si limita al prezzo più basso in assoluto: cerca anche i modi
   spezzatura **solo se batte davvero** il prezzo diretto. Nella card vedi i due
   ticket con gli orari e il risparmio.
 
+  Il confronto c'è **sempre**, anche quando spezzare costa di più: oltre alle
+  combinazioni con cambio, l'agente prezza le **tratte singole dello stesso
+  treno** (stesse corse, più biglietti). Così su una tratta come Thiene→Trento
+  leggi "tratte singole 15,70 € invece di 13,10 €" (+2,60 €, 0 minuti in più)
+  e sai che il biglietto unico conviene, senza doverlo scoprire da solo.
+
 - **Mezi diversi sulla stessa tratta**: treno + bus, auto + treno, e così via.
   Il planner mette in concorrenza tutte le combinazioni possibili e sceglie
   il costo totale più basso, tempo di percorrenza compreso.
@@ -155,12 +161,22 @@ L'agente non si limita al prezzo più basso in assoluto: cerca anche i modi
 
 Un viaggio non finisce alla stazione: finisce alla **porta**. Ogni ricerca puo' avere
 due punti esatti ("Stazione di Thiene" -> "Piazza Duomo, Trento") oltre alle citta'.
-L'app li geolocalizza e calcola il **tempo porta a porta**: cammino + mezzo + cammino.
+Quando ci sono, l'app calcola il **tempo porta a porta** con il percorso pedonale
+reale: cammino + mezzo + cammino.
 
 ```
 Treno regionale    4h 08m di viaggio  +  74 min a piedi  =  5h 22m porta a porta
 Passaggio in auto  59 min porta a porta,  ~7 EUR (stima) =  59 min
 ```
+
+I minuti a piedi **non sono stimati** dalla linea d'aria: l'app chiede il percorso
+al servizio di routing pedonale su dati OpenStreetMap e usa distanza e durata
+vere. Se il servizio non risponde il dato manca, non si inventa un numero.
+
+Se hai indicato solo la citta' ("Thiene"), l'app **non** presume che tu parta dal
+centro: senza un punto esatto non aggiunge cammino, e il viaggio resta
+"stazione -> stazione". Il porta a porta compare quando c'e' un punto vero
+(indirizzo, stazione, pin sulla mappa).
 
 Senza punti esatti l'app **te lo chiede** (domanda "Dove vuoi essere preso
 esattamente?") e la risposta libera vale: scrivi "Piazza Vittoria" e il
