@@ -1,0 +1,95 @@
+/* Carpool Hunter — design tokens
+ * Hallmark · genre: modern-minimal · theme: graphite + mint · design-system: design.md
+ * Unica fonte dei valori: nessun colore, misura o curva viene scritto a mano
+ * nei componenti (styles.css usa solo var(--…)).
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* ---------- colore -------------------------------------------------- */
+  --ground: oklch(0.185 0.006 265);   /* pagina */
+  --surface: oklch(0.152 0.007 265);  /* pannelli incassati */
+  --raised: oklch(0.228 0.007 265);   /* hover, pannelli annidati */
+  --border: oklch(0.272 0.007 265);   /* filetti strutturali 1px */
+  --rule: oklch(0.236 0.006 265);     /* filetti interni */
+  --control: oklch(0.46 0.008 265);   /* bordi di campi e controlli */
+
+  --text: oklch(0.975 0.002 265);     /* inchiostro, tinto: mai #fff */
+  --muted: oklch(0.80 0.004 265);
+  --meta: oklch(0.655 0.005 265);
+
+  --accent: oklch(0.86 0.135 165);    /* unico segnale */
+  --positive: var(--accent);
+  --negative: oklch(0.64 0.19 15);
+  --warning: oklch(0.78 0.12 78);
+  --ink-neg: oklch(0.73 0.16 15);
+  --ink-warn: oklch(0.84 0.11 78);
+
+  --tint-pos: color-mix(in oklch, var(--accent) 14%, var(--surface));
+  --tint-neg: color-mix(in oklch, var(--negative) 16%, var(--surface));
+  --tint-warn: color-mix(in oklch, var(--warning) 16%, var(--surface));
+  --tint-neu: color-mix(in oklch, var(--muted) 10%, var(--surface));
+
+  --paper: oklch(0.955 0.003 265);    /* azione primaria */
+  --paper-hover: oklch(0.90 0.003 265);
+  --paper-ink: oklch(0.205 0.006 265);
+
+  --scrim: oklch(0.05 0.004 265 / 0.58);
+  --scroll-thumb: oklch(0.34 0.006 265);
+  --shadow: 0 18px 40px oklch(0.05 0.004 265 / 0.45); /* taste-skill-ignore: solo sovrapposizioni */
+
+  /* stati derivati: i mix stanno qui, mai nei componenti */
+  --danger-ink: oklch(0.16 0.02 15);
+  --danger-hover: color-mix(in oklch, var(--negative) 86%, var(--text));
+  --border-neg: color-mix(in oklch, var(--negative) 55%, transparent);
+  --border-warn: color-mix(in oklch, var(--warning) 55%, transparent);
+  --tint-accent-weak: color-mix(in oklch, var(--accent) 8%, transparent);
+
+  /* ---------- spazio (4pt, nominato) ---------------------------------- */
+  --space-3xs: 2px;
+  --space-2xs: 4px;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-3xl: 64px;
+
+  /* ---------- forma ---------------------------------------------------- */
+  --radius-sm: 3px;   /* tag, pill di stato, codice */
+  --radius-md: 4px;   /* controlli, chip, pulsanti */
+  --radius-lg: 8px;   /* pannelli */
+  --radius-xl: 12px;  /* modali, accesso */
+
+  /* ---------- tipografia ----------------------------------------------- */
+  --font-display: "Geist", "Public Sans", system-ui, sans-serif;
+  --font-body: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-code: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; /* taste-skill-ignore: solo codice */
+
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-md: 18px;
+  --text-lg: 27px;
+  --text-xl: 34px;
+
+  --leading-tight: 1.15;
+  --leading-body: 1.5;
+  --leading-prose: 1.55;
+
+  /* ---------- moto ------------------------------------------------------ */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-micro: 120ms;
+  --dur-minor: 200ms;
+  --dur-major: 320ms;
+
+  /* ---------- griglia --------------------------------------------------- */
+  --rail: 52px;
+  --col: 240px;
+  --pad: var(--space-xl);
+  --gap: var(--space-lg);
+  --card: var(--space-lg);
+  --ctl: 34px;
+  --ctl-form: 44px;   /* campi e pulsanti accanto a un campo */
+}

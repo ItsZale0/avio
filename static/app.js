@@ -15,6 +15,11 @@ const state = {
   planAlternatives: [],
   questions: [],
   tab: "best",
+  // Movimento: la scheda entra solo al cambio ricerca, il pannello solo al
+  // cambio scheda. I refresh dati non devono far ripartire nulla.
+  enteredWatch: null,
+  renderedTab: null,
+  schedaEntrata: false,
   editingId: null,
   lastAlertId: Number(localStorage.getItem("ch_last_alert") || 0),
   booted: false,
@@ -110,7 +115,7 @@ function renderPassPicker(box, selezionati, nomeCampo) {
     })
     .join("");
   box.innerHTML = `
-    <input type="search" class="pass-search" placeholder="Cerca un abbonamento (es. altoadige, ATM, IVOL)..."
+    <input type="search" class="pass-search" placeholder="Cerca un abbonamento (es. altoadige, ATM, IVOL)…"
            data-target="${esc(box.id)}" />
     <div class="pass-list">${gruppi}</div>`;
 }
@@ -509,7 +514,32 @@ function toast(message, kind = "") {
 }
 
 function openModal(id) { $("#" + id).classList.remove("hidden"); }
-function closeModal(id) { $("#" + id).classList.add("hidden"); }
+function closeModal(id) {
+  if (id === "confirmModal") { chiudiConferma(false); return; }
+  $("#" + id).classList.add("hidden");
+}
+
+/* Conferma nel linguaggio dell'app: una promessa, un dialog, nessun confirm()
+   nativo che porti il sistema operativo dentro l'interfaccia. */
+let _confirmResolve = null;
+
+function chiediConferma({ titolo, testo, conferma = "Conferma", danger = false }) {
+  $("#confirmTitle").textContent = titolo;
+  $("#confirmText").innerHTML = testo;
+  const ok = $("#confirmOk");
+  ok.textContent = conferma;
+  ok.className = danger ? "btn danger" : "btn primary";
+  openModal("confirmModal");
+  ok.focus({ preventScroll: true });
+  return new Promise((resolve) => { _confirmResolve = resolve; });
+}
+
+function chiudiConferma(valore) {
+  const resolve = _confirmResolve;
+  _confirmResolve = null;
+  $("#confirmModal")?.classList.add("hidden");
+  if (resolve) resolve(valore);
+}
 
 /* ------------------------------------------------------------------ */
 /* Accesso                                                             */
@@ -687,6 +717,7 @@ function bindEvents() {
   $("#btnToggleWatch")?.addEventListener("click", toggleWatch);
   $("#btnEditWatch")?.addEventListener("click", () => openWatchModal(state.watch));
   $("#btnDeleteWatch")?.addEventListener("click", deleteWatch);
+  $("#confirmOk")?.addEventListener("click", () => chiudiConferma(true));
 
   $("#watchForm")?.addEventListener("submit", submitWatch);
   $("#settingsForm")?.addEventListener("submit", submitSettings);
@@ -738,13 +769,15 @@ function bindEvents() {
     const geoButton = event.target.closest("[data-geo]");
     if (geoButton) checkGeo(geoButton.dataset.geo);
     if (event.target.classList.contains("modal-backdrop")) {
-      event.target.classList.add("hidden");
+      if (event.target.id === "confirmModal") chiudiConferma(false);
+      else event.target.classList.add("hidden");
     }
   });
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       $$(".modal-backdrop, .drawer-backdrop").forEach((el) => el.classList.add("hidden"));
+      chiudiConferma(false);
     }
   });
 
@@ -845,10 +878,10 @@ function renderWatchList() {
 
 async function selectWatch(id) {
   state.selectedId = id;
-  renderWatchList();
-  await loadDetail(id);
   state.tab = "best";
+  renderWatchList();
   $$(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === "best"));
+  await loadDetail(id);
 }
 
 async function loadDetail(id) {
@@ -955,7 +988,11 @@ function renderDetail() {
   $("#countAll").textContent = state.offers.length;
   renderPlan();
   renderQuestions();
-  anima($("#detail"));
+  if (state.enteredWatch !== watch.id) {
+    anima($("#detail"));
+    state.enteredWatch = watch.id;
+    state.schedaEntrata = true;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -1276,7 +1313,14 @@ function renderTab() {
   else if (state.tab === "links") renderLinks(panel);
   else if (state.tab === "runs") renderRuns(panel);
   else if (state.tab === "ask") renderChat(panel);
-  anima(panel);
+  // Dissolvenza solo quando cambia davvero scheda: al cambio ricerca ci pensa
+  // già l'ingresso della scheda (un solo movimento, non due sovrapposti).
+  const chiave = `${state.watch.id}:${state.tab}`;
+  if (state.renderedTab !== chiave && !state.schedaEntrata) anima(panel);
+  state.renderedTab = chiave;
+  state.schedaEntrata = false;
+  // Con la chat aperta il pulsante flottante è ridondante: si chiude da "Chiudi".
+  $("#chatFab")?.classList.toggle("hidden", state.tab === "ask");
 }
 
 function isInitialRun() {
@@ -1371,8 +1415,8 @@ function offerCard(offer, suppressNew = false) {
   const nettoKm = offer.details?.pass_tariffa ? offer.details.net_cost : null;
   const priceHtml = offer.price == null
     ? (offer.details?.orario_gtfs
-        ? `<div class="price" style="font-size:14px;color:var(--muted)">solo orario<small>prezzo da tariffa ufficiale</small></div>`
-        : `<div class="price" style="font-size:15px;color:var(--muted)">da verificare</div>`)
+        ? `<div class="price plain">solo orario<small>prezzo da tariffa ufficiale</small></div>`
+        : `<div class="price plain">da verificare</div>`)
     : nettoKm != null && nettoKm < offer.price
     ? `<div class="price"><span class="was">${euro(offer.price)}</span>${euro(nettoKm)}
         <small>con il tuo pass, il km</small>
@@ -1656,7 +1700,6 @@ async function toggleWatch() {
     await api(`/api/watches/${state.watch.id}/toggle`, { method: "POST" });
     await loadWatches();
     await loadDetail(state.watch.id);
-    toast(state.watch.active ? "Ricerca in pausa" : "Ricerca ripresa");
   } catch (error) {
     toast(error.message, "error");
   }
@@ -1664,15 +1707,21 @@ async function toggleWatch() {
 
 async function deleteWatch() {
   if (!state.watch) return;
-  if (!confirm(`Eliminare la ricerca ${state.watch.from_place} → ${state.watch.to_place}?`)) return;
+  const w = state.watch;
+  const ok = await chiediConferma({
+    titolo: "Eliminare la ricerca?",
+    testo: `La ricerca <b>${esc(w.from_place)} → ${esc(w.to_place)}</b> e le sue offerte vengono cancellate. Non si può annullare.`,
+    conferma: "Elimina",
+    danger: true,
+  });
+  if (!ok) return;
   try {
-    await api(`/api/watches/${state.watch.id}`, { method: "DELETE" });
+    await api(`/api/watches/${w.id}`, { method: "DELETE" });
     state.selectedId = null;
     state.watch = null;
     await loadWatches();
     if (state.watches.length) await selectWatch(state.watches[0].id);
     else showEmpty(true);
-    toast("Ricerca eliminata");
   } catch (error) {
     toast(error.message, "error");
   }
@@ -2343,7 +2392,6 @@ async function updateGtfs() {
       if (!data.running) {
         clearInterval(gtfsPoll);
         gtfsPoll = null;
-        toast("Orari GTFS aggiornati");
       }
     } catch (_) { /* ignora errori di polling */ }
   }, 3000);
@@ -2410,7 +2458,6 @@ async function enablePush() {
         label: navigator.platform || "dispositivo",
       }),
     });
-    toast("Notifiche push attivate");
     await renderPushStatus();
   } catch (error) {
     hint.textContent = "errore: " + error.message;
@@ -2430,7 +2477,6 @@ async function disablePush() {
       });
       await subscription.unsubscribe();
     }
-    toast("Notifiche push disattivate");
     await renderPushStatus();
   } catch (error) {
     hint.textContent = "errore: " + error.message;
@@ -2717,7 +2763,6 @@ async function markAllRead() {
   try {
     await api("/api/alerts/read", { method: "POST", body: JSON.stringify({}) });
     await loadAlerts(false);
-    toast("Avvisi segnati come letti");
   } catch (error) {
     toast(error.message, "error");
   }

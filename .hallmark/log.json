@@ -1,0 +1,15 @@
+[
+  {
+    "date": "2026-10-21",
+    "verb": "redesign",
+    "scope": "app",
+    "mood": "professional",
+    "macrostructure": "Workbench",
+    "theme": "custom",
+    "theme_axes": "grafite freddo / display geometrico / mint 165°",
+    "vibe": "piano strumentale, un solo segnale mint",
+    "enrichment": "none",
+    "design_system": "design.md",
+    "brief": "Carpool Hunter — app: rail + indice + canvas, striscia KPI rigata, offerte a righe, Geist + Public Sans, una sola entrata"
+  }
+]

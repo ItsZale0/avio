@@ -5,9 +5,10 @@
    I path sono relativi alla base dello SW, cosi' funziona sia in locale (/)
    sia su GitHub Pages (/carpool-intelligence/). */
 const BASE = new URL("./", self.location).pathname;
-const CACHE = "carpool-v8";
+const CACHE = "carpool-v9";
 const SHELL = [
   BASE,
+  "tokens.css",
   "styles.css",
   "app.js",
   "favicon.svg",
