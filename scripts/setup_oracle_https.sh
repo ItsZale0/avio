@@ -257,7 +257,7 @@ fi
 log "Timer di controllo del certificato"
 cat > /etc/systemd/system/carpool-certcheck.service <<EOF
 [Unit]
-Description=Controlla la scadenza del certificato HTTPS di Carpool Hunter
+Description=Controlla la scadenza del certificato HTTPS di AVIO
 After=network-online.target
 
 [Service]
@@ -270,7 +270,7 @@ EOF
 
 cat > /etc/systemd/system/carpool-certcheck.timer <<EOF
 [Unit]
-Description=Ogni ora controlla il certificato HTTPS di Carpool Hunter
+Description=Ogni ora controlla il certificato HTTPS di AVIO
 
 [Timer]
 OnCalendar=hourly
@@ -292,7 +292,7 @@ log "Timer di aggiornamento del codice"
 git config --system --add safe.directory "$APP_DIR" 2>/dev/null || true
 cat > /etc/systemd/system/carpool-update.service <<EOF
 [Unit]
-Description=Aggiorna Carpool Hunter dal branch main
+Description=Aggiorna AVIO dal branch main
 After=network-online.target
 
 [Service]
@@ -303,7 +303,7 @@ EOF
 
 cat > /etc/systemd/system/carpool-update.timer <<EOF
 [Unit]
-Description=Ogni ora aggiorna Carpool Hunter dal branch main
+Description=Ogni ora aggiorna AVIO dal branch main
 
 [Timer]
 OnCalendar=*-*-* *:17:00

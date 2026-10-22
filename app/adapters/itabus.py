@@ -22,7 +22,7 @@ STATIONS_URL = "https://www.itabus.it/on/demandware.store/Sites-ITABUS-Site/en/A
 TRAVELS_URL = "https://www.itabus.it/on/demandware.store/Sites-ITABUS-Site/en/Api-Travels"
 
 HEADERS = {
-    "user-agent": "Mozilla/5.0 (compatible; CarpoolHunter/0.1)",
+    "user-agent": "Mozilla/5.0 (compatible; AVIO/1.0)",
     "accept": "application/json",
     "referer": "https://www.itabus.it/en/search",
 }

@@ -123,7 +123,7 @@ def _cert_check(percorso: str, warn_days: int) -> int:
     if not percorso or not os.path.exists(percorso):
         asyncio.run(
             _avvisa_certificato(
-                "Carpool Hunter: certificato HTTPS assente",
+                "AVIO: certificato HTTPS assente",
                 f"Il file {percorso or '(non trovato)'} non c'è.\n"
                 "L'app non accetterà più collegamenti finché non è rinnovato.",
             )
@@ -139,7 +139,7 @@ def _cert_check(percorso: str, warn_days: int) -> int:
     if giorni < warn_days:
         asyncio.run(
             _avvisa_certificato(
-                "Carpool Hunter: il certificato HTTPS sta per scadere",
+                "AVIO: il certificato HTTPS sta per scadere",
                 f"Scade fra {giorni:.1f} giorni ({scadenza.isoformat()}).\n"
                 "Se il rinnovo automatico fallisce, l'app resta senza HTTPS.",
             )
@@ -149,7 +149,7 @@ def _cert_check(percorso: str, warn_days: int) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="app.cli", description="Carpool Hunter da riga di comando")
+    parser = argparse.ArgumentParser(prog="app.cli", description="AVIO da riga di comando")
     sub = parser.add_subparsers(dest="command", required=True)
 
     run_parser = sub.add_parser("run-due", help="esegue le ricerche scadute una volta")

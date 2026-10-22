@@ -223,10 +223,10 @@ def format_digest(
     plan: dict | None = None,
 ) -> tuple[str, str]:
     route = f"{watch['from_place']} → {watch['to_place']}"
-    subject = f"[Carpool Hunter] {len(new_offers)} nuovi passaggi · {route}"
+    subject = f"[AVIO] {len(new_offers)} nuovi passaggi · {route}"
 
     lines: list[str] = []
-    lines.append(f"🚗 {route}")
+    lines.append(route)
     lines.append(f"Arrivo entro: {human_rome(watch['arrive_by'], '%a %d %b, %H:%M')}")
     if watch.get("max_price"):
         lines.append(f"Budget: €{watch['max_price']:.2f}")
@@ -235,7 +235,7 @@ def format_digest(
     if plan:
         parziale = " (prezzo parziale: verificare le tratte senza prezzo)" if plan.get("partial") else ""
         lines.append(
-            f"🧠 Piano più economico: €{plan.get('total_price', 0):.2f}{parziale} · {plan.get('title', '')}"
+            f"Piano più economico: €{plan.get('total_price', 0):.2f}{parziale} · {plan.get('title', '')}"
         )
         explanation = (plan.get("explanation") or "").strip()
         if explanation:
@@ -248,7 +248,7 @@ def format_digest(
                 f"  {step.get('leg', 1)}. {price} · {step.get('operator') or step.get('source')} · {dep}→{arr}"
             )
         for note in (plan.get("watchouts") or [])[:2]:
-            lines.append(f"⚠️ {note}")
+            lines.append(f"{note}")
         lines.append("")
 
     if new_offers:
@@ -261,7 +261,7 @@ def format_digest(
         lines.append("")
 
     if drops:
-        lines.append("🔻 Ribassi di prezzo")
+        lines.append("Ribassi di prezzo")
         for drop in drops[:3]:
             lines.append(
                 f"• {drop.get('operator') or drop.get('source')}: "
@@ -271,17 +271,17 @@ def format_digest(
 
     if best and not plan:
         price = f"€{best['price']:.2f}" if best.get("price") is not None else "n/d"
-        lines.append(f"🏆 Migliore offerta: {price} · {best.get('operator') or ''}")
+        lines.append(f"Migliore offerta: {price} · {best.get('operator') or ''}")
         if best.get("score"):
             lines.append(f"Punteggio {best['score']:.0f}/100")
         lines.append("")
 
-    lines.append(f"🔗 Dashboard: {base_url}")
+    lines.append(f"Dashboard: {base_url}")
     return subject, "\n".join(lines)
 
 
 def format_question(question: dict, watch: dict | None = None) -> str:
-    header = f"❓ {watch['from_place']} → {watch['to_place']}" if watch else "❓ Domanda di viaggio"
+    header = f"{watch['from_place']} → {watch['to_place']}" if watch else "Domanda di viaggio"
     lines = [header, "", question.get("text", "")]
     options = question.get("options") or []
     if options:

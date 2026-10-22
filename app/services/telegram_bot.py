@@ -122,7 +122,7 @@ async def _handle_bot_added(message: dict) -> bool:
         make_default=False,
     )
     await notify.send_telegram_message(
-        f"✅ {telegram_chats.describe({'chat_id': chat_id, 'chat_type': chat_type, 'title': title, 'username': username})}\n"
+        f"{telegram_chats.describe({'chat_id': chat_id, 'chat_type': chat_type, 'title': title, 'username': username})}\n"
         "Ora qui puoi chiedermi un viaggio (“Thiene → Trento, arrivo domani alle 11”) "
         "e riceverai qui gli avvisi.",
         chat_id=chat_id,
@@ -178,7 +178,7 @@ async def _handle_callback(callback: dict) -> None:
     await notify.telegram_answer_callback(callback_id, f"Salvato: {label}")
     if chat_id and message_id:
         await notify.telegram_edit_message(
-            chat_id, int(message_id), f"✅ {question.get('text', '')}\n\nRisposta: {label}"
+            chat_id, int(message_id), f"{question.get('text', '')}\n\nRisposta: {label}"
         )
 
 
@@ -233,7 +233,7 @@ async def _handle_command(text: str, chat_id: str, message_chat: dict | None = N
 
         auth.set_telegram_chat(user_id, chat_id)
         await notify.send_telegram_message(
-            "✅ Chat collegata. Da qui in poi ti scrivo solo per le tue ricerche.",
+            "Chat collegata. Da qui in poi ti scrivo solo per le tue ricerche.",
             user_id=user_id,
         )
         return
@@ -280,7 +280,7 @@ async def _handle_command(text: str, chat_id: str, message_chat: dict | None = N
             make_default=True,
         )
         await notify.send_telegram_message(
-            f"✅ Chat registrata: {telegram_chats.describe({'chat_id': chat_id, 'chat_type': chat_type, 'title': title, 'username': username})}.\n"
+            f"Chat registrata: {telegram_chats.describe({'chat_id': chat_id, 'chat_type': chat_type, 'title': title, 'username': username})}.\n"
             "Qui riceverai gli avvisi e potrai chiedermi viaggi.",
             chat_id=chat_id,
         )
@@ -360,7 +360,7 @@ async def _handle_message(message: dict) -> None:
             int(pending[0]["id"]), text, source="telegram", user_id=user_id
         )
         if result:
-            await _reply("✅ Risposta salvata. Aggiorno la ricerca al prossimo giro.", user_id=user_id)
+            await _reply("Risposta salvata. Aggiorno la ricerca al prossimo giro.", user_id=user_id)
             return
 
     reply = await _trip_from_text(text, user_id=user_id)
@@ -373,7 +373,7 @@ async def _handle_message(message: dict) -> None:
             int(pending[0]["id"]), text, source="telegram", user_id=user_id
         )
         if result:
-            await _reply("✅ Risposta salvata. Aggiorno la ricerca al prossimo giro.", user_id=user_id)
+            await _reply("Risposta salvata. Aggiorno la ricerca al prossimo giro.", user_id=user_id)
             return
 
     await _reply(
@@ -431,14 +431,14 @@ async def _trip_from_text(text: str, *, user_id: int | None = None) -> str | Non
     summary = data.get("notes") or ""
     extra = f"\n{summary}" if summary else ""
     return (
-        f"🔎 Ricerca creata: {payload.from_place} → {payload.to_place}.{extra}\n"
+        f"Ricerca creata: {payload.from_place} → {payload.to_place}.{extra}\n"
         "Ti scrivo appena trovo la soluzione più economica."
     )
 
 
 async def send_test(*, user_id: int | None = None) -> tuple[bool, str]:
     ok, error, _ = await notify.send_telegram_message(
-        "🤖 Bot pronto: posso farti domande qui in chat e capire nuovi viaggi.",
+        "Bot pronto: posso farti domande qui in chat e capire nuovi viaggi.",
         user_id=user_id,
     )
     return ok, error

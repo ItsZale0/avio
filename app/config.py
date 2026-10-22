@@ -50,8 +50,8 @@ CORS_ORIGINS = [o.strip() for o in os.getenv("CARPOOL_CORS_ORIGINS", "").split("
 # URL pubblico di questa istanza (usato nei link dentro le notifiche).
 PUBLIC_BASE_URL = os.getenv("CARPOOL_PUBLIC_URL", "").strip()
 
-APP_NAME = "Carpool Hunter"
-USER_AGENT = "CarpoolHunter/0.1 (strumento personale di ricerca passaggi)"
+APP_NAME = "AVIO"
+USER_AGENT = "AVIO/1.0 (strumento personale di ricerca viaggi)"
 HTTP_TIMEOUT = float(os.getenv("HTTP_TIMEOUT", "18"))
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)

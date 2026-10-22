@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installa Carpool Hunter su una VM Ubuntu (Oracle Cloud Always Free).
+# Installa AVIO su una VM Ubuntu (Oracle Cloud Always Free).
 #
 # Uso (sulla VM, come utente ubuntu):
 #   git clone https://github.com/ItsZale0/carpool-intelligence.git
@@ -101,7 +101,7 @@ chown "$SERVICE_USER:$SERVICE_USER" "$APP_DIR/.env"
 log "Creazione del servizio systemd"
 cat > /etc/systemd/system/carpool.service <<EOF
 [Unit]
-Description=Carpool Hunter - agente di ricerca passaggi
+Description=AVIO - agente di ricerca viaggi
 After=network-online.target
 Wants=network-online.target
 

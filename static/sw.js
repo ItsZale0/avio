@@ -1,11 +1,11 @@
-/* Carpool Hunter - service worker minimale.
+/* AVIO - service worker minimale.
    Strategia: rete per prima (il codice cambia spesso), cache come rete di
    sicurezza quando sei offline. I dati (/api) non vengono mai messi in cache.
 
    I path sono relativi alla base dello SW, cosi' funziona sia in locale (/)
    sia su GitHub Pages (/carpool-intelligence/). */
 const BASE = new URL("./", self.location).pathname;
-const CACHE = "carpool-v9";
+const CACHE = "avio-v10";
 const SHELL = [
   BASE,
   "tokens.css",
@@ -64,9 +64,9 @@ self.addEventListener("push", (event) => {
   try {
     data = event.data ? event.data.json() : {};
   } catch (_) {
-    data = { title: "Carpool Hunter", body: event.data ? event.data.text() : "Nuova offerta" };
+    data = { title: "AVIO", body: event.data ? event.data.text() : "Nuova offerta" };
   }
-  const title = data.title || "Carpool Hunter";
+  const title = data.title || "AVIO";
   const body = (data.body || "Ci sono novita' per una tua ricerca.").slice(0, 400);
   event.waitUntil(
     self.registration.showNotification(title, {
@@ -74,7 +74,7 @@ self.addEventListener("push", (event) => {
       icon: BASE + "icons/icon-192.png",
       badge: BASE + "icons/icon-192.png",
       data: { url: data.url || BASE },
-      tag: data.tag || "carpool",
+      tag: data.tag || "avio",
     })
   );
 });

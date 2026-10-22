@@ -1,7 +1,7 @@
-# Carpool Hunter
+# AVIO
 
-Dashboard + agente che cerca **passaggi in auto, treno, autobus, carsharing e voli** su più fonti
-reali, ti mostra **il modo più economico** per fare quel viaggio (anche combinando più tratte) e ti
+Il nome viene da *avvio*. AVIO cerca **passaggi in auto, treni, autobus, voli e auto condivisa** su più
+fonti reali, mostra **il modo più economico** per fare quel viaggio (anche combinando più tratte) e
 avvisa su Telegram/email quando trova qualcosa di nuovo. Se un dato manca, **te lo chiede**.
 
 > Pensato per l'Italia. **Solo dati reali**: nessuna offerta simulata. L'agente gira

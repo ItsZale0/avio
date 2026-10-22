@@ -99,7 +99,7 @@ jobs:
           fi
           risposta=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="$TELEGRAM_CHAT_ID" \
-            -d text="Carpool Hunter non risponde. La VM potrebbe essere stata spenta da Oracle: si prova a riavvarla, se non basta si avvia a mano dalla console.")
+            -d text="AVIO non risponde. La VM potrebbe essere stata spenta da Oracle: si prova a riavvarla, se non basta si avvia a mano dalla console.")
           echo "$risposta"
           case "$risposta" in
             *'"ok":true'*) echo "avviso inviato su Telegram" ;;

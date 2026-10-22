@@ -1,7 +1,7 @@
 {
-  "name": "Carpool Hunter",
-  "short_name": "Carpool",
-  "description": "Trova il modo più economico per viaggiare in Italia: passaggi, bus, treno e carsharing.",
+  "name": "AVIO",
+  "short_name": "AVIO",
+  "description": "Il modo più economico per muoversi: passaggi in auto, bus, treni e voli, con i prezzi veri.",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",

@@ -1,4 +1,4 @@
-# Progettazione — Carpool Hunter
+# Progettazione — AVIO
 
 Documento di architettura della v0.1 e traccia per le iterazioni successive.
 

@@ -23,7 +23,7 @@ LOCATIONS_URL = "https://app.lefrecce.it/Channels.Website.BFF.WEB/app/locations"
 SOLUTIONS_URL = "https://app.lefrecce.it/Channels.Website.BFF.WEB/website/ticket/solutions"
 
 HEADERS = {
-    "user-agent": "Mozilla/5.0 (compatible; CarpoolHunter/0.1)",
+    "user-agent": "Mozilla/5.0 (compatible; AVIO/1.0)",
     "content-type": "application/json",
     "accept": "application/json",
 }

@@ -1,7 +1,19 @@
-# Carpool Hunter — design system
+# AVIO — design system
 
 > Stamp: `design-system: design.md` · `designed-as-app` · genre: **modern-minimal**
 > Verb: `hallmark redesign` · mood: **professional** · scope: **app**
+
+## Brand
+
+The name is **AVIO**, from *avvio* (departure): it says transport in general,
+not only carpools. Wordmark: `AVIO`, uppercase, tracking `-0.02em`, never in a
+badge, never with a subtitle locked to one vehicle.
+
+The mark is a **route**: two dots joined by one curve, mint on graphite, no
+vehicle silhouette. It is the same drawing in the rail, on the access card and
+in the PWA icon — `favicon.svg` is the vector twin and
+`python scripts/make_icons.py` regenerates the three PNGs (192, 512, maskable)
+without external libraries.
 
 ## Genre
 

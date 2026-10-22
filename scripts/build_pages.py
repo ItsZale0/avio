@@ -26,7 +26,7 @@ def build(api_base: str, out: Path) -> Path:
     shutil.copytree(WEB, out, ignore=shutil.ignore_patterns(*SKIP))
 
     (out / "config.json").write_text(
-        json.dumps({"apiBase": api_base.strip(), "app": "Carpool Hunter"}, ensure_ascii=False),
+        json.dumps({"apiBase": api_base.strip(), "app": "AVIO"}, ensure_ascii=False),
         encoding="utf-8",
     )
     (out / "_headers").write_text(
@@ -53,7 +53,7 @@ def main() -> None:
     args = parser.parse_args()
     target = build(args.api, Path(args.out))
     print(f"Pronto: {target}")
-    print("Deploy:  npx wrangler pages deploy dist-pages --project-name carpool-hunter")
+    print("Deploy:  npx wrangler pages deploy dist-pages --project-name avio")
     print("Oppure trascina la cartella nella dashboard Cloudflare Pages.")
 
 

@@ -779,7 +779,7 @@ async def put_settings(payload: SettingsIn, request: Request):
 async def test_telegram(request: Request):
     user = deps.require_user(request)
     ok, error = await notify.send_telegram(
-        f"âœ… {APP_NAME}: notifiche Telegram configurate correttamente.",
+        f"{APP_NAME}: notifiche Telegram configurate correttamente.",
         user_id=int(user["id"]),
     )
     return {"ok": ok, "error": error}
@@ -789,7 +789,7 @@ async def test_telegram(request: Request):
 async def test_email(request: Request):
     user = deps.require_user(request)
     ok, error = await notify.send_email(
-        f"{APP_NAME} - test", "âœ… Le notifiche email sono configurate correttamente.",
+        f"{APP_NAME} - test", "Le notifiche email sono configurate correttamente.",
         user_id=int(user["id"]),
     )
     return {"ok": ok, "error": error}
@@ -838,7 +838,7 @@ async def push_test(request: Request):
     user = deps.require_user(request)
     outcomes = await push_service.send(
         f"{APP_NAME} - prova",
-        "âœ… Se vedi questa notifica, le push funzionano. Buon viaggio!",
+        "Se vedi questa notifica, le push funzionano. Buon viaggio!",
         "/",
         user_id=int(user["id"]),
     )

@@ -1,4 +1,4 @@
-/* Carpool Hunter - frontend vanilla JS */
+/* AVIO - frontend vanilla JS */
 
 const state = {
   watches: [],
@@ -3020,7 +3020,7 @@ function maybeDesktopNotify(alerts) {
     const watch = state.watches.find((w) => w.id === alert.watch_id);
     if (!watch || !watch.notify?.includes("desktop")) continue;
     try {
-      new Notification("Carpool Hunter · " + alert.title, {
+      new Notification("AVIO · " + alert.title, {
         body: routeOfAlert(alert),
         tag: "carpool-" + alert.id,
       });

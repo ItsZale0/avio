@@ -275,7 +275,7 @@ def _avviso_finestra(watch_id: int, user_id: int | None) -> str:
         return ""
     if partenza >= arrivo:
         return (
-            "\n\n⚠️ Attenzione: con la partenza alle "
+            "\n\nAttenzione: con la partenza alle "
             f"{partenza.astimezone(ROME).strftime('%H:%M')} e l'arrivo entro le "
             f"{arrivo.astimezone(ROME).strftime('%H:%M')} la finestra e' vuota: nessun viaggio "
             "puo' stare in piedi. Dimmi di spostare l'orario (o di togliere "
@@ -383,7 +383,7 @@ def _avviso_limite_nuovo(watch_id: int, applicato: dict[str, Any]) -> str:
         return ""
     elenco = ", ".join(fuori)
     return (
-        f"\n\n⚠️ Con la partenza dopo le {limite.astimezone(ROME).strftime('%H:%M')} "
+        f"\n\nCon la partenza dopo le {limite.astimezone(ROME).strftime('%H:%M')} "
         f"restano fuori le opzioni delle {elenco}: partono prima del limite. "
         "Se una di quelle va bene, dimmi \"vai con quello\" e sistemo."
     )
@@ -417,7 +417,7 @@ def _avviso_piano(watch_id: int, user_id: int | None) -> str:
             f"{uscita.astimezone(ROME).strftime('%H:%M')} ({minuti_piedi} minuti a piedi)"
         )
     return (
-        f"\n\n⚠️ {dettaglio}: e' prima del limite delle "
+        f"\n\n{dettaglio}: e' prima del limite delle "
         f"{limite.astimezone(ROME).strftime('%H:%M')} che mi avevi dato. "
         "Se va bene lo tolgo io: scrivi \"vai con quello\"."
     )

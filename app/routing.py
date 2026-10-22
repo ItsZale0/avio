@@ -26,7 +26,7 @@ log = logging.getLogger("carpool.routing")
 
 # FOSSGIS: servizio pubblico di routing su dati OpenStreetMap, profilo a piedi.
 ROUTER_URL = "https://routing.openstreetmap.de/routed-foot/route/v1/foot"
-USER_AGENT = "CarpoolHunter/1.0 (pianificatore personale)"
+USER_AGENT = "AVIO/1.0 (pianificatore personale)"
 
 # Sotto 50 m si e' gia' li': non serve chiedere un percorso.
 MIN_KM = 0.05

@@ -1,5 +1,5 @@
 [Unit]
-Description=Ogni notte fa un backup cifrato del database di Carpool Hunter
+Description=Ogni notte fa un backup cifrato del database di AVIO
 
 [Timer]
 # Le 3:17 di notte: un orario tranquillo, lontano dal rilascio di aggiornamenti.

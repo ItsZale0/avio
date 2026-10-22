@@ -155,7 +155,7 @@ class FlixBusAdapter(Adapter):
         try:
             async with httpx.AsyncClient(
                 timeout=20,
-                headers={"User-Agent": "Mozilla/5.0 (compatible; CarpoolHunter/0.1)"},
+                headers={"User-Agent": "Mozilla/5.0 (compatible; AVIO/1.0)"},
             ) as client:
                 from_id, from_label, from_km = await self._resolve_city(
                     client, ctx.from_place, ctx.from_lat, ctx.from_lon

@@ -130,7 +130,7 @@ def invia_telegram(file_path: Path) -> bool:
                     data={
                         "chat_id": chat_id,
                         "caption": (
-                            f"Backup Carpool Hunter ({quando}). "
+                            f"Backup AVIO ({quando}). "
                             "Cifrato: serve la chiave per aprirlo."
                         ),
                     },
@@ -162,7 +162,7 @@ def invia_chiave(segnale: Path) -> bool:
         return False
     segreto = KEY_FILE.read_text(encoding="utf-8").strip()
     testo = (
-        "Chiave del backup di Carpool Hunter (serve per aprire i backup).\n"
+        "Chiave del backup di AVIO (serve per aprire i backup).\n"
         "Copiare questo testo nel gestore di password: senza, i backup cifrati "
         "non si aprono.\n\n"
         f"{segreto}"
