@@ -226,8 +226,13 @@ def scarica_ricerca(url: str, profilo: Path, timeout: int = 60) -> dict[str, Any
                 page.wait_for_timeout(1000)
                 passati += 1
             if not dati and html:
-                with open(str(profilo / "ultima_pagina.html"), "w", encoding="utf-8") as f:
-                    f.write(html)
+                # Copia della pagina per capire cosa e' andato storto. Non e'
+                # essenziale: se non si puo' scrivere, si va avanti lo stesso.
+                try:
+                    profilo.mkdir(parents=True, exist_ok=True)
+                    (profilo / "ultima_pagina.html").write_text(html, encoding="utf-8")
+                except OSError as exc:  # noqa: BLE001
+                    log.debug("pagina non salvata: %s", exc)
             if dati:
                 _CACHE[url] = (time.time(), dati)
             return dati

@@ -21,16 +21,15 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any
 
+from ..config import DATA_DIR
 from ..timeutil import ROME
 from .base import Adapter, AdapterResult, Offer, SearchContext
 
 log = logging.getLogger("carpool.blablacar")
 
-BASE = Path(__file__).resolve().parent.parent.parent
-PROFILO = BASE / "data" / "blablacar-profile"
+PROFILO = DATA_DIR / "blablacar-profile"
 
 # La ricerca mostra i viaggi in ordine di partenza: la prima pagina basta.
 MAX_VIAGGI = 12
