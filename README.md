@@ -151,19 +151,27 @@ BlaBlaCar Bus  29,99 EUR  00:30 -> 08:50  punto: Autostazione San Donato
 BlaBlaCar (passaggio in auto)  26,19 EUR  01:50 -> 07:50
 ```
 
-### Voli: Google Voli e Skyscanner
+### Voli: prezzi veri con SerpApi, link per il resto
 
-Per i voli ci sono due fonti in più, **Google Voli** e **Skyscanner**. Entrambi
-i siti bloccano le letture automatiche fatte da un server: provato il 22
-ottobre 2026 sulla VM con Chrome vero, Google resta sul caricamento e
-Skyscanner risponde «sei una persona o un robot». Quindi l'app non finge:
-prepara la ricerca **già compilata** (città, data, passeggeri, codici degli
-aeroporti) e la mette nella scheda *Link utili*. Un tocco e sei sulla ricerca
-vera, con i prezzi veri.
+I voli hanno una fonte con i prezzi, **Google Voli (prezzi)**, che legge
+Google Voli tramite **SerpApi**. Non è un'API di Google: è un servizio terzo
+che apre la pagina al posto nostro e restituisce i risultati in JSON. I
+prezzi sono quelli di Google Voli al momento della lettura, con fonte e ora
+accanto all'offerta.
 
-Se la tratta non ha aeroporti — Bressanone → Rovereto — le due fonti stanno
-zitte: nessun rumore nei risultati. I voli con prezzo letto in automatico
-restano quelli di **Omio**.
+Il piano gratuito dà 250 ricerche al mese. L'app si ferma a **240**, tiene
+in cache ogni rotta per **24 ore** e, quando la quota finisce o la chiave non
+c'è, torna ai link: nessun errore, nessun addebito. La chiave sta in
+`SERPAPI_KEY`, nei secret della VM, mai nel repository.
+
+**Google Voli** e **Skyscanner** restano come fonti di soli link: entrambi i
+siti bloccano le letture automatiche fatte da un server (provato il 22 ottobre
+2026 sulla VM con Chrome vero) e leggere i risultati richiederebbe di
+aggirare le protezioni. La ricerca **già compilata** (città, data, passeggeri,
+codici degli aeroporti) è nella scheda *Link utili*.
+
+Se la tratta non ha aeroporti — Bressanone → Rovereto — tutte le fonti voli
+stanno zitte: nessun rumore nei risultati.
 
 ### Rispondi a parole
 
@@ -325,6 +333,7 @@ Tutte le fonti restituiscono **dati reali** al momento del controllo: nessuna of
 | Fonte | Copre | Stato | Note |
 |---|---|---|---|
 | **Omio** | treni + bus + voli di decine di compagnie | ⚠️ best effort | Aggregatore (Trenitalia, Italo, FlixBus, Itabus, Marino, compagnie aeree…). Endpoint dell'app, non documentato. |
+| **Google Voli (prezzi)** | voli | ✅ dati reali, con un tetto | Prezzi letti da Google Voli tramite SerpApi (servizio terzo, non un'API di Google). Piano gratuito: 250 ricerche al mese, l'app si ferma a 240 e tiene la cache 24 ore. Senza chiave o a quota esaurita resta il link. |
 | **Google Voli** | voli | 🔗 solo link | Google non lascia leggere i risultati dei voli da un server (la pagina resta sul caricamento). Il link apre la ricerca già compilata, con i prezzi veri sul sito. |
 | **Skyscanner** | voli | 🔗 solo link | Risponde a un server con la verifica «sei una persona o un robot». Il link apre la ricerca compilata con i codici degli aeroporti. |
 | **Trenitalia** | regionali, Frecciarossa, Intercity, notturni | ⚠️ best effort | Prezzi ufficiali Trenitalia. Endpoint interno, non documentato. |
@@ -446,6 +455,7 @@ app/
     itabus.py          autobus low-cost
     trenitalia.py      treni (regionali, Frecce, Intercity)
     omio.py            aggregatore treni + bus + voli
+    serpapi.py         voli: prezzi veri da Google Voli (SerpApi, 250/mese)
     googleflights.py   voli: solo link di ricerca compilato
     skyscanner.py      voli: solo link di ricerca compilato
     carsharing.py      stime noleggio one-way

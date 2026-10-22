@@ -1,0 +1,139 @@
+{
+  "search_metadata": {
+    "status": "Success",
+    "google_flights_url": "https://www.google.com/travel/flights?hl=it&gl=it&curr=EUR&tfs=CBwQAhonEgoyMDI2LTEwLTI1agcIARIDTVhQagcIARIDTElOcgcIARIDRkNPQAFIAXABmAEC&tfu=EgIIAQ"
+  },
+  "search_parameters": {
+    "engine": "google_flights",
+    "hl": "it",
+    "gl": "it",
+    "type": "2",
+    "departure_id": "MXP,LIN",
+    "arrival_id": "FCO",
+    "outbound_date": "2026-10-25",
+    "adults": 1,
+    "currency": "EUR"
+  },
+  "best_flights": [
+    {
+      "price": 61,
+      "total_duration": 70,
+      "type": "One way",
+      "flights": [
+        {
+          "departure_airport": {
+            "name": "Aeroporto di Milano Linate",
+            "id": "LIN",
+            "time": "2026-10-25 06:30"
+          },
+          "arrival_airport": {
+            "name": "Aeroporto di Roma - Fiumicino Leonardo da Vinci",
+            "id": "FCO",
+            "time": "2026-10-25 07:40"
+          },
+          "duration": 70,
+          "airplane": "Airbus A320neo",
+          "airline": "ITA",
+          "flight_number": "AZ 2013",
+          "travel_class": "Economy"
+        }
+      ]
+    },
+    {
+      "price": 61,
+      "total_duration": 70,
+      "type": "One way",
+      "flights": [
+        {
+          "departure_airport": {
+            "name": "Aeroporto di Milano Linate",
+            "id": "LIN",
+            "time": "2026-10-25 08:30"
+          },
+          "arrival_airport": {
+            "name": "Aeroporto di Roma - Fiumicino Leonardo da Vinci",
+            "id": "FCO",
+            "time": "2026-10-25 09:40"
+          },
+          "duration": 70,
+          "airplane": "Airbus A320",
+          "airline": "ITA",
+          "flight_number": "AZ 2021",
+          "travel_class": "Economy"
+        }
+      ]
+    },
+    {
+      "price": 61,
+      "total_duration": 70,
+      "type": "One way",
+      "flights": [
+        {
+          "departure_airport": {
+            "name": "Aeroporto di Milano Linate",
+            "id": "LIN",
+            "time": "2026-10-25 09:30"
+          },
+          "arrival_airport": {
+            "name": "Aeroporto di Roma - Fiumicino Leonardo da Vinci",
+            "id": "FCO",
+            "time": "2026-10-25 10:40"
+          },
+          "duration": 70,
+          "airplane": "Airbus A320neo",
+          "airline": "ITA",
+          "flight_number": "AZ 2029",
+          "travel_class": "Economy"
+        }
+      ]
+    }
+  ],
+  "other_flights": [
+    {
+      "price": 111,
+      "total_duration": 840,
+      "type": "One way",
+      "flights": [
+        {
+          "departure_airport": {
+            "name": "Aeroporto di Milano Malpensa",
+            "id": "MXP",
+            "time": "2026-10-25 10:15"
+          },
+          "arrival_airport": {
+            "name": "Aeroporto di Madrid-Barajas",
+            "id": "MAD",
+            "time": "2026-10-25 12:40"
+          },
+          "duration": 145,
+          "airplane": "Airbus A320",
+          "airline": "Iberia",
+          "flight_number": "IB 672",
+          "travel_class": "Economy"
+        },
+        {
+          "departure_airport": {
+            "name": "Aeroporto di Madrid-Barajas",
+            "id": "MAD",
+            "time": "2026-10-25 21:50"
+          },
+          "arrival_airport": {
+            "name": "Aeroporto di Roma - Fiumicino Leonardo da Vinci",
+            "id": "FCO",
+            "time": "2026-10-26 00:15"
+          },
+          "duration": 145,
+          "airplane": "Airbus A320",
+          "airline": "Iberia",
+          "flight_number": "IB 657",
+          "travel_class": "Economy"
+        }
+      ]
+    }
+  ],
+  "price_insights": {
+    "lowest_price": 61,
+    "price_level": "low",
+    "typical_price_range": [61, 120]
+  }
+}

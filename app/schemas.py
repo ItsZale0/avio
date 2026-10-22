@@ -14,6 +14,7 @@ DEFAULT_SOURCES = [
     "trenitalia",
     "omio",
     "googleflights",
+    "serpapi",
     "skyscanner",
     "carsharing",
     "transit",

@@ -1624,6 +1624,16 @@ function offerCard(offer, suppressNew = false) {
   }
   if (offer.details?.tariffa) detailBits.push(esc(offer.details.tariffa));
   if (offer.details?.disponibilita) detailBits.push(esc(offer.details.disponibilita));
+  // Voli: gli scali sono il dato che conta, e il prezzo va datato.
+  if (offer.details?.volo && offer.details?.scali != null) {
+    const scali = Number(offer.details.scali);
+    detailBits.push(
+      scali === 0 ? "volo diretto" : `${scali} ${scali === 1 ? "scalo" : "scali"}`
+    );
+  }
+  if (offer.details?.letto_il && offer.details?.fonte) {
+    detailBits.push(`${esc(offer.details.fonte)} · letto alle ${fmtTime(offer.details.letto_il)}`);
+  }
   if (offer.details?.spezzatura) {
     detailBits.push(
       `2 biglietti invece di 1: risparmi ${euro(offer.details.risparmio)} ` +
@@ -1989,7 +1999,7 @@ function openWatchModal(watch) {
     name: "", from_place: "", to_place: "",
     depart_after: "", arrive_by: "", max_price: "", passengers: 1, radius_km: 5,
     interval_min: 60,
-    sources: ["blablacar", "flixbus", "itabus", "trenitalia", "omio", "googleflights", "skyscanner", "carsharing", "transit", "gtfs"],
+    sources: ["blablacar", "flixbus", "itabus", "trenitalia", "omio", "googleflights", "serpapi", "skyscanner", "carsharing", "transit", "gtfs"],
     notify: ["web", "telegram"],
   };
 

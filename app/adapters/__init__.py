@@ -10,6 +10,7 @@ from .googleflights import GoogleFlightsAdapter
 from .gtfs import GtfsAdapter
 from .itabus import ItabusAdapter
 from .omio import OmioAdapter
+from .serpapi import SerpApiFlightsAdapter
 from .skyscanner import SkyscannerAdapter
 from .transit import TransitAdapter
 from .trenitalia import TrenitaliaAdapter
@@ -21,6 +22,7 @@ _INSTANCES: list[Adapter] = [
     TrenitaliaAdapter(),
     OmioAdapter(),
     GoogleFlightsAdapter(),
+    SerpApiFlightsAdapter(),
     SkyscannerAdapter(),
     CarsharingAdapter(),
     TransitAdapter(),

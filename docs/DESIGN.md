@@ -528,6 +528,7 @@ Non serve toccare il motore: filtri, scoring, deduplica e avvisi sono automatici
 | Adapter | Meccanismo | Affidabilità | Costo/limiti |
 |---|---|---|---|
 | `omio` | endpoint app (GoEuro) `v5/searches` + `v5/results` | media | aggregatore multi-compagnia (treni/bus/voli); non documentato |
+| `serpapi` | `serpapi.com/search?engine=google_flights` (JSON) | alta, a consumo | prezzi veri di Google Voli letti da un servizio terzo. Piano gratuito 250 ricerche/mese; tetto dell'app 240, cache 24 ore per rotta. Senza `SERPAPI_KEY` o a quota esaurita resta il link. Gli orari sono locali rispetto all'aeroporto, l'app li tratta come ora italiana |
 | `googleflights` | solo link di ricerca (nessuna chiamata) | — | Google Voli apre il modulo ma i risultati restano su "caricamento dei risultati" quando la richiesta arriva da un server (verificato 22/10/2026 con Chrome vero sulla VM): l'adapter restituisce l'hint con il link già compilato, nessuna offerta. Nessun prezzo inventato |
 | `skyscanner` | solo link di ricerca (nessuna chiamata) | — | Risponde "sei una persona o un robot?" a un server (stessa verifica). Il link usa i codici aeroporto (`/transport/flights/mxp/fco/261025/`): con i nomi delle città risponde "pagina non trovata" |
 | `trenitalia` | endpoint interno `app.lefrecce.it` BFF | media | prezzi ufficiali; non documentato |
@@ -547,22 +548,41 @@ I **link utili** (BlaBlaCar, FlixBus, Omio, Google Voli, Skyscanner, Trainline,
 Trenitalia, Italo, Google Maps, app carsharing, codici sconto treni) sono sempre
 disponibili e non dipendono da API.
 
-### I voli: perché solo link
+### I voli: prezzi con SerpApi, link per il resto
 
-Google Voli e Skyscanner sono fonti di voli che **non** restituiscono offerte:
-servono a mettere in *Link utili* la ricerca già compilata della tratta. La
-ragione è misurata, non supposta: dalla VM (indirizzo da datacenter, Chrome
-vero, nessun travestimento) Google Voli compila il modulo ma i risultati
-restano su "caricamento dei risultati", e Skyscanner risponde con la pagina
-"sei una persona o un robot?". Leggere quei prezzi richiederebbe di aggirare
-le protezioni: questo progetto non lo fa.
+Google non pubblica un'API per Google Voli: l'unica che ha avuto, QPX Express,
+è chiusa dal 10 aprile 2018. Il sito blocca le letture automatiche da un
+server (verificato il 22/10/2026 sulla VM con Chrome vero: il modulo si
+compila, i risultati restano su "caricamento"). Per avere prezzi veri c'è una
+sola strada praticabile: **SerpApi**, un servizio terzo che apre la pagina e
+restituisce i risultati in JSON.
+
+La fonte `serpapi` è una scelta consapevole, con dei limiti scritti nel codice:
+
+- piano gratuito 250 ricerche al mese, tetto dell'app a **240**;
+- cache di **24 ore** per rotta, giorno e passeggeri (`voli_cache`);
+- contatore mensile in `voli_quota`, così la quota non si esaurisce di nascosto;
+- senza `SERPAPI_KEY`, a quota finita o con un errore la fonte resta zitta e
+  il link a Google Voli continua a funzionare.
+
+Gli aeroporti della città si passano tutti insieme (`MXP,LIN,BGY`), perché
+Google Voli accetta la lista ma non il codice di città (`MIL`): così il
+confronto trova il diretto da Linate a 61 € invece del solo volo con scalo da
+Malpensa a 111 €.
+
+**Google Voli** e **Skyscanner** restano fonti di soli link: servono a mettere
+in *Link utili* la ricerca già compilata. La ragione è misurata: dalla VM
+Google Voli compila il modulo ma i risultati non arrivano, e Skyscanner
+risponde con la pagina "sei una persona o un robot?". Leggere quei prezzi
+direttamente richiederebbe di aggirare le protezioni: questo progetto non lo
+fa.
 
 Il legame con gli aeroporti sta in `app/services/airports.py`: una tabella
 curata di città con aeroporto (codice principale + tutti gli aeroporti), che
 riconosce anche "Milano Centrale", "Malpensa", "FCO" e "Monaco di Baviera".
-Serve a due cose: capire se la tratta ha senso in aereo (sotto i 200 km le due
-fonti stanno zitte) e costruire i link, perché Skyscanner vuole i codici e non
-i nomi. Chi ha un prezzo di volo letto in automatico resta **Omio**.
+Serve a capire se la tratta ha senso in aereo (sotto i 200 km le fonti voli
+stanno zitte) e a costruire link e chiamate, perché entrambi vogliono i
+codici e non i nomi.
 
 ### Offerte e codici sconto
 

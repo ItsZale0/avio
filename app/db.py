@@ -300,6 +300,20 @@ CREATE TABLE IF NOT EXISTS ai_log (
     error      TEXT,
     created_at TEXT NOT NULL
 );
+
+-- Voli: l'ultima risposta di SerpApi per rotta e giorno (24 ore), e quante
+-- ricerche sono state consumate nel mese. La risposta salvata e' ripulita
+-- dalla chiave prima di finire qui.
+CREATE TABLE IF NOT EXISTS voli_cache (
+    chiave   TEXT PRIMARY KEY,
+    risposta TEXT NOT NULL,
+    letto_il TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS voli_quota (
+    mese  TEXT PRIMARY KEY,
+    usate INTEGER NOT NULL DEFAULT 0
+);
 """
 
 # Colonne aggiunte nel tempo: create con ALTER se mancano (migrazione idempotente).
