@@ -245,7 +245,7 @@ def offerte_da_risposta(
                     "volo": True,
                     "scali": max(0, len(tratte) - 1),
                     "compagnie": compagnie,
-                    "tratte": tappe,
+                    "tappe": tappe,
                     "letto_il": letto_il.isoformat(),
                     "fonte": "Google Voli (SerpApi)",
                     "orari_locali": True,

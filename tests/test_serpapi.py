@@ -68,7 +68,7 @@ class LetturaTests(unittest.TestCase):
         offerte = offerte_da_risposta(DATI, now_utc())
         con_scalo = next(o for o in offerte if o.operator == "Iberia")
         self.assertEqual(con_scalo.details["scali"], 1)
-        self.assertEqual(len(con_scalo.details["tratte"]), 2)
+        self.assertEqual(len(con_scalo.details["tappe"]), 2)
         self.assertEqual(con_scalo.price, 111)
         self.assertEqual(con_scalo.duration_min, 840)
 
