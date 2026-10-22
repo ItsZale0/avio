@@ -2,8 +2,8 @@
 # Installa AVIO su una VM Ubuntu (Oracle Cloud Always Free).
 #
 # Uso (sulla VM, come utente ubuntu):
-#   git clone https://github.com/ItsZale0/carpool-intelligence.git
-#   cd carpool-intelligence
+#   git clone https://github.com/ItsZale0/avio.git
+#   cd avio
 #   sudo bash scripts/install_oracle.sh
 #
 # Lo script:
@@ -16,7 +16,7 @@ set -euo pipefail
 
 APP_DIR=/opt/carpool
 DATA_DIR=/var/lib/carpool
-REPO_URL=${REPO_URL:-https://github.com/ItsZale0/carpool-intelligence.git}
+REPO_URL=${REPO_URL:-https://github.com/ItsZale0/avio.git}
 BRANCH=${BRANCH:-main}
 SERVICE_USER=carpool
 

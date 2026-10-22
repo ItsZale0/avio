@@ -13,7 +13,7 @@ avvisa su Telegram/email quando trova qualcosa di nuovo. Se un dato manca, **te 
 
 ## Come si usa
 
-L'app è **online**: <https://itszale0.github.io/carpool-intelligence/>
+L'app è **online**: <https://itszale0.github.io/avio/>
 
 Il link è l'unico indirizzo da usare, da qualunque dispositivo e da qualunque
 rete. Aprendolo, la pagina verifica in pochi secondi quale backend è **online**
@@ -496,7 +496,7 @@ tests/test_security.py test di sicurezza: rate limiting, ruoli, cookie
 
 L'app è già online e installabile come PWA:
 
-- dal telefono apri <https://itszale0.github.io/carpool-intelligence/> →
+- dal telefono apri <https://itszale0.github.io/avio/> →
   **Aggiungi a schermata Home** → è una PWA;
 - l'agente gira sulla VM, quindi funziona anche col PC spento;
 - la chiave segreta (`?key=...`) evita di digitare la password ogni volta.

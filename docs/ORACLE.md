@@ -61,8 +61,8 @@ ssh -i ~/Downloads/ssh-key-ocid.key ubuntu@<IP_PUBBLICO>
 Sul PC (o direttamente nella VM):
 
 ```powershell
-git clone https://github.com/ItsZale0/carpool-intelligence.git
-cd carpool-intelligence
+git clone https://github.com/ItsZale0/avio.git
+cd avio
 ```
 
 Poi, **sulla VM**:
@@ -207,7 +207,7 @@ Nel repo → **Settings → Secrets and variables → Actions → Variables**:
 Poi forza il redeploy del frontend dalla tab **Actions** (ri-esegui
 "Deploy frontend su GitHub Pages").
 
-Verifica: <https://itszale0.github.io/carpool-intelligence/> deve chiederti
+Verifica: <https://itszale0.github.io/avio/> deve chiederti
 l'accesso e mostrare le tue ricerche.
 
 ## 7. Firewall
@@ -264,7 +264,7 @@ Restando su Always Free, la rete di sicurezza è questa:
 
 ## Se l'app non risponde
 
-1. **Il link del giorno**: `https://itszale0.github.io/carpool-intelligence/`
+1. **Il link del giorno**: `https://itszale0.github.io/avio/`
    porta sulla VM. Se non risponde, il problema è la VM (non il frontend).
 2. **La console Oracle**: Compute → Instances → la tua istanza → **Start**
    (se è *Stopped*). Attendi 1-2 minuti: Nginx, l'app e i timer ripartono

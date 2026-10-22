@@ -13,7 +13,7 @@ una modifica e come si tiene sotto controllo il servizio.
         │                          │
         │                          └──► https://129.152.8.10   (app e API, stessa origine)
         │
-        └──►  GitHub Pages (interfaccia)  ──►  https://itszale0.github.io/carpool-intelligence/
+        └──►  GitHub Pages (interfaccia)  ──►  https://itszale0.github.io/avio/
                         (il frontend, all'apertura, porta sulla VM)
 ```
 
@@ -132,7 +132,7 @@ tar xzf carpool-backup.tar.gz
 
 ## 6. Se l'app non risponde
 
-1. Il link del giorno: <https://itszale0.github.io/carpool-intelligence/>.
+1. Il link del giorno: <https://itszale0.github.io/avio/>.
    Se non risponde, il problema e' la VM.
 2. Console Oracle → Compute → Instances → **Start** (se e' *Stopped*). Dopo
    1-2 minuti l'app torna: `carpool`, Nginx e i timer sono abilitati al boot.
@@ -148,7 +148,7 @@ La guida completa della VM: [`ORACLE.md`](ORACLE.md).
 
 ## 7. Sul telefono
 
-- apri <https://itszale0.github.io/carpool-intelligence/> → **Aggiungi a
+- apri <https://itszale0.github.io/avio/> → **Aggiungi a
   schermata Home** → PWA installabile;
 - la chiave segreta (`?key=...`) evita di digitare la password: la trovi in
   *Impostazioni → Genera chiave* (si vede una volta sola).

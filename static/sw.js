@@ -3,7 +3,7 @@
    sicurezza quando sei offline. I dati (/api) non vengono mai messi in cache.
 
    I path sono relativi alla base dello SW, cosi' funziona sia in locale (/)
-   sia su GitHub Pages (/carpool-intelligence/). */
+   sia su GitHub Pages (/avio/). */
 const BASE = new URL("./", self.location).pathname;
 const CACHE = "avio-v10";
 const SHELL = [

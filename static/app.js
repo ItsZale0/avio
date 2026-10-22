@@ -264,7 +264,7 @@ function anima(el) {
    config.json di GitHub Pages si aggiorna solo dopo il deploy (un paio di
    minuti). Questo file e' subito disponibile. */
 const RAW_BACKEND =
-  "https://raw.githubusercontent.com/ItsZale0/carpool-intelligence/main/backend.json";
+  "https://raw.githubusercontent.com/ItsZale0/avio/main/backend.json";
 
 /* Tutti i backend conosciuti, in ordine di preferenza. */
 let API_FALLBACKS = [];

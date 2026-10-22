@@ -34,7 +34,7 @@ def main() -> int:
         action="store_true",
         help="non rilanciare il deploy di GitHub Pages",
     )
-    parser.add_argument("--repo", default="ItsZale0/carpool-intelligence")
+    parser.add_argument("--repo", default="ItsZale0/avio")
     args = parser.parse_args()
 
     url = args.url.strip().rstrip("/")
