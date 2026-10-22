@@ -7,7 +7,18 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-DEFAULT_SOURCES = ["blablacar", "flixbus", "itabus", "trenitalia", "omio", "carsharing", "transit", "gtfs"]
+DEFAULT_SOURCES = [
+    "blablacar",
+    "flixbus",
+    "itabus",
+    "trenitalia",
+    "omio",
+    "googleflights",
+    "skyscanner",
+    "carsharing",
+    "transit",
+    "gtfs",
+]
 DEFAULT_NOTIFY = ["web", "telegram"]
 
 

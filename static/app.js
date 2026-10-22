@@ -1989,7 +1989,7 @@ function openWatchModal(watch) {
     name: "", from_place: "", to_place: "",
     depart_after: "", arrive_by: "", max_price: "", passengers: 1, radius_km: 5,
     interval_min: 60,
-    sources: ["blablacar", "flixbus", "itabus", "trenitalia", "omio", "carsharing", "transit", "gtfs"],
+    sources: ["blablacar", "flixbus", "itabus", "trenitalia", "omio", "googleflights", "skyscanner", "carsharing", "transit", "gtfs"],
     notify: ["web", "telegram"],
   };
 

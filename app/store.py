@@ -609,7 +609,31 @@ def mark_alerts_read(
         return cursor.rowcount
 
 
+def _link_voli(genera, watch: dict[str, Any], momento) -> str:
+    """Il link del volo, se la tratta ha aeroporti (altrimenti vuoto).
+
+    Voli e Skyscanner non si possono leggere da un server: il loro valore e'
+    proprio il link gia' compilato, che finisce in «Link utili».
+    """
+    if momento is None:
+        return ""
+    try:
+        return (
+            genera(
+                watch["from_place"],
+                watch["to_place"],
+                momento.date(),
+                watch.get("passengers", 1),
+            )
+            or ""
+        )
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def links_for_watch(watch: dict[str, Any]) -> list[dict[str, str]]:
+    from .adapters.googleflights import link_ricerca as link_google_voli
+    from .adapters.skyscanner import link_ricerca as link_skyscanner
     from .timeutil import parse_dt
 
     arrive = parse_dt(watch["arrive_by"])
@@ -641,6 +665,18 @@ def links_for_watch(watch: dict[str, Any]) -> list[dict[str, str]]:
             "label": "Omio",
             "url": f"https://www.omio.it/search?departure={from_place}&arrival={to_place}&date={day}",
             "note": "Confronto treno + bus",
+        },
+        {
+            "id": "googleflights",
+            "label": "Google Voli",
+            "url": _link_voli(link_google_voli, watch, start or arrive),
+            "note": "Voli: ricerca già compilata",
+        },
+        {
+            "id": "skyscanner",
+            "label": "Skyscanner",
+            "url": _link_voli(link_skyscanner, watch, start or arrive),
+            "note": "Voli: confronto compagnie",
         },
         {
             "id": "trainline",
@@ -700,6 +736,13 @@ def links_for_watch(watch: dict[str, Any]) -> list[dict[str, str]]:
                 "note": provider.get("note", "Carsharing"),
             }
         )
+    # Voli: se la tratta non ha aeroporti il link resta vuoto e non si mostra.
+    links = [
+        collegamento
+        for collegamento in links
+        if collegamento.get("url")
+        or collegamento["id"] not in {"googleflights", "skyscanner"}
+    ]
     return links
 
 

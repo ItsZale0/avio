@@ -528,6 +528,8 @@ Non serve toccare il motore: filtri, scoring, deduplica e avvisi sono automatici
 | Adapter | Meccanismo | Affidabilità | Costo/limiti |
 |---|---|---|---|
 | `omio` | endpoint app (GoEuro) `v5/searches` + `v5/results` | media | aggregatore multi-compagnia (treni/bus/voli); non documentato |
+| `googleflights` | solo link di ricerca (nessuna chiamata) | — | Google Voli apre il modulo ma i risultati restano su "caricamento dei risultati" quando la richiesta arriva da un server (verificato 22/10/2026 con Chrome vero sulla VM): l'adapter restituisce l'hint con il link già compilato, nessuna offerta. Nessun prezzo inventato |
+| `skyscanner` | solo link di ricerca (nessuna chiamata) | — | Risponde "sei una persona o un robot?" a un server (stessa verifica). Il link usa i codici aeroporto (`/transport/flights/mxp/fco/261025/`): con i nomi delle città risponde "pagina non trovata" |
 | `trenitalia` | endpoint interno `app.lefrecce.it` BFF | media | prezzi ufficiali; non documentato |
 | `blablacar` | pagina di ricerca aperta con Chrome vero (Playwright) | media | il sito risponde `403` con interstitial CAPTCHA (DataDome) ai client non-browser; con un browser vero la pagina si carica e la risposta JSON sta in `window["__INFRASTRUCTURE__cache"]`. Verificato sulla VM Oracle (Milano): 3 viaggi reali in circa 23 secondi. Senza browser installato resta l'hint con il link. |
 | `flixbus` | endpoint pubblico del sito | media | non documentato, può cambiare |
@@ -541,8 +543,26 @@ Ogni adapter popola `details["tappe"]`: la lista delle tratte reali (`da`, `a`,
 per i viaggi con cambi, l'elenco espandibile delle tratte. Helper condiviso `tappa()`
 in `adapters/base.py`.
 
-I **link utili** (BlaBlaCar, FlixBus, Omio, Trainline, Trenitalia, Italo, Google Maps,
-app carsharing, codici sconto treni) sono sempre disponibili e non dipendono da API.
+I **link utili** (BlaBlaCar, FlixBus, Omio, Google Voli, Skyscanner, Trainline,
+Trenitalia, Italo, Google Maps, app carsharing, codici sconto treni) sono sempre
+disponibili e non dipendono da API.
+
+### I voli: perché solo link
+
+Google Voli e Skyscanner sono fonti di voli che **non** restituiscono offerte:
+servono a mettere in *Link utili* la ricerca già compilata della tratta. La
+ragione è misurata, non supposta: dalla VM (indirizzo da datacenter, Chrome
+vero, nessun travestimento) Google Voli compila il modulo ma i risultati
+restano su "caricamento dei risultati", e Skyscanner risponde con la pagina
+"sei una persona o un robot?". Leggere quei prezzi richiederebbe di aggirare
+le protezioni: questo progetto non lo fa.
+
+Il legame con gli aeroporti sta in `app/services/airports.py`: una tabella
+curata di città con aeroporto (codice principale + tutti gli aeroporti), che
+riconosce anche "Milano Centrale", "Malpensa", "FCO" e "Monaco di Baviera".
+Serve a due cose: capire se la tratta ha senso in aereo (sotto i 200 km le due
+fonti stanno zitte) e costruire i link, perché Skyscanner vuole i codici e non
+i nomi. Chi ha un prezzo di volo letto in automatico resta **Omio**.
 
 ### Offerte e codici sconto
 

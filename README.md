@@ -151,6 +151,20 @@ BlaBlaCar Bus  29,99 EUR  00:30 -> 08:50  punto: Autostazione San Donato
 BlaBlaCar (passaggio in auto)  26,19 EUR  01:50 -> 07:50
 ```
 
+### Voli: Google Voli e Skyscanner
+
+Per i voli ci sono due fonti in più, **Google Voli** e **Skyscanner**. Entrambi
+i siti bloccano le letture automatiche fatte da un server: provato il 22
+ottobre 2026 sulla VM con Chrome vero, Google resta sul caricamento e
+Skyscanner risponde «sei una persona o un robot». Quindi l'app non finge:
+prepara la ricerca **già compilata** (città, data, passeggeri, codici degli
+aeroporti) e la mette nella scheda *Link utili*. Un tocco e sei sulla ricerca
+vera, con i prezzi veri.
+
+Se la tratta non ha aeroporti — Bressanone → Rovereto — le due fonti stanno
+zitte: nessun rumore nei risultati. I voli con prezzo letto in automatico
+restano quelli di **Omio**.
+
 ### Rispondi a parole
 
 Ogni domanda dell'agente ha i pulsanti **e** una **casella di testo libera**.
@@ -311,6 +325,8 @@ Tutte le fonti restituiscono **dati reali** al momento del controllo: nessuna of
 | Fonte | Copre | Stato | Note |
 |---|---|---|---|
 | **Omio** | treni + bus + voli di decine di compagnie | ⚠️ best effort | Aggregatore (Trenitalia, Italo, FlixBus, Itabus, Marino, compagnie aeree…). Endpoint dell'app, non documentato. |
+| **Google Voli** | voli | 🔗 solo link | Google non lascia leggere i risultati dei voli da un server (la pagina resta sul caricamento). Il link apre la ricerca già compilata, con i prezzi veri sul sito. |
+| **Skyscanner** | voli | 🔗 solo link | Risponde a un server con la verifica «sei una persona o un robot». Il link apre la ricerca compilata con i codici degli aeroporti. |
 | **Trenitalia** | regionali, Frecciarossa, Intercity, notturni | ⚠️ best effort | Prezzi ufficiali Trenitalia. Endpoint interno, non documentato. |
 | **FlixBus** | autobus | ⚠️ best effort | Endpoint pubblico non ufficiale: può cambiare o bloccare. |
 | **Itabus** | autobus | ⚠️ best effort | Operatore low-cost italiano. Endpoint pubblico non ufficiale. |
@@ -425,11 +441,13 @@ app/
     intelligence.py    orchestrazione: NLU, piano, spiegazioni, domande
   adapters/
     base.py            contratto comune delle fonti
-    blablacar.py       link di ricerca (API pubblica dismessa)
+    blablacar.py       passaggi in auto e bus, letti dal sito con un browser
     flixbus.py         autobus
     itabus.py          autobus low-cost
     trenitalia.py      treni (regionali, Frecce, Intercity)
     omio.py            aggregatore treni + bus + voli
+    googleflights.py   voli: solo link di ricerca compilato
+    skyscanner.py      voli: solo link di ricerca compilato
     carsharing.py      stime noleggio one-way
     transit.py         fermate vicine (Overpass)
     gtfs.py            orari reali da feed GTFS + coincidenze

@@ -6,9 +6,11 @@ from .base import Adapter
 from .blablacar import BlaBlaCarAdapter
 from .carsharing import CarsharingAdapter
 from .flixbus import FlixBusAdapter
+from .googleflights import GoogleFlightsAdapter
 from .gtfs import GtfsAdapter
 from .itabus import ItabusAdapter
 from .omio import OmioAdapter
+from .skyscanner import SkyscannerAdapter
 from .transit import TransitAdapter
 from .trenitalia import TrenitaliaAdapter
 
@@ -18,6 +20,8 @@ _INSTANCES: list[Adapter] = [
     ItabusAdapter(),
     TrenitaliaAdapter(),
     OmioAdapter(),
+    GoogleFlightsAdapter(),
+    SkyscannerAdapter(),
     CarsharingAdapter(),
     TransitAdapter(),
     GtfsAdapter(),
