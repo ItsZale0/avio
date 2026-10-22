@@ -78,9 +78,10 @@ jobs:
           validate_config(config)
           client = ComputeClient(config)
           instance_id = os.environ["OCI_INSTANCE_OCID"]
-          istanza = client.get_instance(instance_id)
-          print("stato dell'istanza:", istanza.lifecycle_state)
-          if istanza.lifecycle_state == "RUNNING":
+          risposta = client.get_instance(instance_id)
+          stato = risposta.data.lifecycle_state
+          print("stato dell'istanza:", stato)
+          if stato == "RUNNING":
               print("l'istanza e' gia' accesa: non serve riavviarla")
           else:
               client.instance_action(instance_id, "START")
