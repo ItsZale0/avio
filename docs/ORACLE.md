@@ -75,6 +75,24 @@ Lo script fa tutto: installa Python e le dipendenze, mette l'app in
 `/opt/carpool`, i dati in `/var/lib/carpool`, crea il servizio systemd
 (`systemctl status carpool`) e installa Nginx come reverse proxy.
 
+Prepara anche le due cose che servono a leggere **BlaBlaCar** con un browser
+vero: **2 GB di swap** (la VM micro ha 1 GB di RAM) e **Chrome** via Playwright.
+Se li aggiungi a mano, sono questi due comandi:
+
+```bash
+# swap (una volta sola, resta anche dopo il riavvio)
+sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile \
+  && sudo mkswap /swapfile && sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+
+# Chrome per Playwright
+sudo env PLAYWRIGHT_BROWSERS_PATH=/opt/carpool/.cache/ms-playwright \
+  /opt/carpool/.venv/bin/python -m playwright install --with-deps chrome
+```
+
+Senza Chrome l'app funziona lo stesso: per BlaBlaCar mostra il link alla
+ricerca invece dei prezzi, e lo dice (non inventa nulla).
+
 Per gli orari GTFS (opzionali, ~100 MB):
 
 ```bash
@@ -303,6 +321,11 @@ Il codice resta su GitHub: l'agente non ha bisogno del PC, ma il repo
 resta il posto dove modifichi e versioni tutto. E con `carpool-update.timer`
 il backend si aggiorna da solo, senza che tu debba ricordarti di fare
 `git pull` sulla VM.
+
+Se i viaggi di BlaBlaCar spariscono e resta solo il link, il browser e' il
+primo sospetto: `free -m` deve mostrare lo swap attivo e
+`ls /opt/google/chrome/chrome` il browser installato. Si rimettono con i due
+comandi della sezione 3.
 
 ## Costi
 

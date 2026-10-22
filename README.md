@@ -314,7 +314,7 @@ Tutte le fonti restituiscono **dati reali** al momento del controllo: nessuna of
 | **Trenitalia** | regionali, Frecciarossa, Intercity, notturni | ⚠️ best effort | Prezzi ufficiali Trenitalia. Endpoint interno, non documentato. |
 | **FlixBus** | autobus | ⚠️ best effort | Endpoint pubblico non ufficiale: può cambiare o bloccare. |
 | **Itabus** | autobus | ⚠️ best effort | Operatore low-cost italiano. Endpoint pubblico non ufficiale. |
-| **BlaBlaCar** | passaggi in auto | 🔗 solo link | L'API pubblica è stata **dismessa**: niente dati automatici, la ricerca si apre sul sito ufficiale (scheda *Link utili*). |
+| **BlaBlaCar** | passaggi in auto e bus | ✅ dati reali (con un browser) | Il sito è protetto da un filtro anti-bot: l'app apre la ricerca con **Chrome vero** (via Playwright) e legge prezzi, orari e punti di ritrovo dalla pagina. Se sulla macchina non c'è un browser resta il link alla ricerca: nessun prezzo inventato. |
 | **Carsharing** | auto condivisa | ✅ | **Stima** di costo (non un preventivo) su tariffe Enjoy, Free2Move, Ubeeqo, E-Vai. |
 | **Mezzi pubblici vicini** | fermate/stazioni | ⚠️ best effort | OpenStreetMap Overpass: fermate vicine, non orari. A volte lento/indisponibile. |
 | **Orari GTFS** | treni e bus locali (Trentino, Lombardia, tram di Padova) | ✅ | Orari **ufficiali** da feed GTFS aperti, con coincidenze dirette e con **un cambio**. Il GTFS non contiene i prezzi: le card mostrano "solo orario". |
@@ -343,10 +343,17 @@ messe in cache per 6 ore (pulsante **Aggiorna** per forzare).
 
 ### BlaBlaCar
 
-L'API pubblica di BlaBlaCar è stata **dismessa**: l'app non può più leggere i
-passaggi in modo automatico. La fonte resta attiva come **link di ricerca**: la
-scheda *Link utili* apre il sito ufficiale con partenza, destinazione e data già
-compilate.
+L'API pubblica di BlaBlaCar è stata **dismessa** e il sito è protetto da un filtro
+anti-bot: l'app lo legge con un **browser vero** (Chrome installato sulla macchina,
+via Playwright), come farebbe una persona. Prende prezzo, orari e punto di ritrovo
+di ogni passaggio; i risultati valgono un quarto d'ora, così il browser non si apre
+a ogni giro.
+
+Se sulla macchina il browser non c'è, l'app **non inventa nulla**: te lo dice e
+lascia il link alla ricerca già compilato (scheda *Link utili*). Lo script di
+installazione lo mette da solo (`python -m playwright install chrome`), insieme a
+2 GB di swap: un browser headless in 1 GB di RAM, senza swap, rischia di far
+fuori l'app.
 
 ---
 

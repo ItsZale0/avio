@@ -307,7 +307,10 @@ coordinate, e la scarsita' ("ultimi posti disponibili"). Se il punto di
 ritrovo non e' noto (i passaggi in auto lo sceglie l'autista), la carta lo
 dice.
 
-Nessuna stima: senza browser l'adapter non propone nulla.
+Nessuna stima: senza browser l'adapter non propone nulla e lo dice ("qui non
+c'e' un browser installato"), lasciando il link di ricerca. La cartella della
+copia diagnostica (`ultima_pagina.html`) sta in `CARPOOL_DATA_DIR`, cosi' anche
+sulla VM si puo' guardare cosa ha risposto il sito.
 
 ### Il catalogo degli abbonamenti (59 tipi)
 
@@ -526,7 +529,7 @@ Non serve toccare il motore: filtri, scoring, deduplica e avvisi sono automatici
 |---|---|---|---|
 | `omio` | endpoint app (GoEuro) `v5/searches` + `v5/results` | media | aggregatore multi-compagnia (treni/bus/voli); non documentato |
 | `trenitalia` | endpoint interno `app.lefrecce.it` BFF | media | prezzi ufficiali; non documentato |
-| `blablacar` | solo link di ricerca (API pubblica dismessa) | — | nessuna chiamata: hint + link. **Verificato**: ogni endpoint (anche la pagina di ricerca) risponde `403` con interstitial CAPTCHA (DataDome) a client non-browser: i prezzi non sono ottenibili senza aggirare la protezione, che questo progetto non fa. Il deep link apre la ricerca gia' parametrizzata (città e data) nel browser |
+| `blablacar` | pagina di ricerca aperta con Chrome vero (Playwright) | media | il sito risponde `403` con interstitial CAPTCHA (DataDome) ai client non-browser; con un browser vero la pagina si carica e la risposta JSON sta in `window["__INFRASTRUCTURE__cache"]`. Verificato sulla VM Oracle (Milano): 3 viaggi reali in circa 23 secondi. Senza browser installato resta l'hint con il link. |
 | `flixbus` | endpoint pubblico del sito | media | non documentato, può cambiare |
 | `itabus` | endpoint pubblico del sito + codici stazione | media | non documentato; rete solo Italia/Europa |
 | `carsharing` | tabella tariffe + città coperte | alta (stima) | disponibilità veicolo da verificare |
@@ -760,7 +763,7 @@ python -m unittest discover -s tests -v
    fermate a pochi metri, badge `orario` e `gtfs-update` in Impostazioni.
    Restano da valutare GTFS-RT (ritardi in tempo reale) e nuovi feed quando le
    regioni li pubblicano (Veneto).
-2. **BlaBlaCar**: ✔ **fatto** — API pubblica dismessa, fonte solo link di ricerca.
+2. **BlaBlaCar**: ✔ **fatto** — lettura con browser vero (Chrome via Playwright); senza browser resta il link, mai un prezzo stimato.
 3. ~~**Mappa**~~ ✔ **fatto**: Leaflet + OpenStreetMap, offerte con punti di ritrovo/arrivo
    e linea, popup con operatore/orari/prezzo, zone carsharing da `/api/carsharing/zones`.
 4. ~~**Web Push**~~ ✔ **fatto**: VAPID + `pywebpush`, iscrizioni in `push_subscriptions`,

@@ -9,8 +9,9 @@
 # Lo script:
 #   1. installa Python 3.11+ e le dipendenze;
 #   2. mette l'app in /opt/carpool e i dati in /var/lib/carpool;
-#   3. crea un servizio systemd che parte col boot e si riavvia da solo;
-#   4. prepara il tunnel Cloudflare (se lo vuoi) e il proxy HTTPS.
+#   3. prepara 2 GB di swap e Chrome (per leggere i dati veri di BlaBlaCar);
+#   4. crea un servizio systemd che parte col boot e si riavvia da solo;
+#   5. mette Nginx davanti all'app; HTTPS con scripts/setup_oracle_https.sh.
 set -euo pipefail
 
 APP_DIR=/opt/carpool
@@ -51,6 +52,25 @@ log "Dipendenze Python"
 python3 -m venv "$APP_DIR/.venv"
 "$APP_DIR/.venv/bin/pip" install --quiet --upgrade pip
 "$APP_DIR/.venv/bin/pip" install --quiet -r "$APP_DIR/requirements.txt"
+
+# --------------------------------------------------------------------------
+# 2b. Swap e Chrome: servono a leggere i dati veri di BlaBlaCar
+# --------------------------------------------------------------------------
+# Un browser headless in 1 GB di RAM, senza swap, rischia di far fuori l'app.
+# Lo swap da 2 GB costa solo disco.
+log "Swap da 2 GB (serve al browser per BlaBlaCar)"
+if [[ ! -f /swapfile ]]; then
+    fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none
+    chmod 600 /swapfile
+    mkswap /swapfile >/dev/null
+fi
+swapon --show | grep -q /swapfile || swapon /swapfile
+grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+
+log "Chrome per Playwright (lettura di BlaBlaCar)"
+export PLAYWRIGHT_BROWSERS_PATH="$APP_DIR/.cache/ms-playwright"
+"$APP_DIR/.venv/bin/python" -m playwright install --with-deps chrome || \
+    log "Chrome non installato: BlaBlaCar restera' un link di ricerca"
 
 mkdir -p "$DATA_DIR"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR" "$DATA_DIR"
