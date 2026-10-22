@@ -62,10 +62,11 @@ jobs:
           "$HOME/oci-venv/bin/python" - <<'PY'
           import os
 
-          # Import espliciti: il pacchetto "oci" non carica i sottopacchetti
-          # da solo (senza, "oci.compute" non esiste).
-          from oci.compute import ComputeClient
+          # Import espliciti: il pacchetto "oci" carica i sottopacchetti solo
+          # su richiesta. Il client dei calcoli sta in "oci.core" (in passato
+          # qualcuno lo cercava in "oci.compute", che non esiste).
           from oci.config import validate_config
+          from oci.core import ComputeClient
 
           config = {
               "user": os.environ["OCI_USER_OCID"],
