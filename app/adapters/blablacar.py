@@ -111,9 +111,9 @@ class BlaBlaCarAdapter(Adapter):
         if not blablacar_browser.browser_disponibile():
             return AdapterResult(
                 hints=[
-                    "BlaBlaCar: per leggere i viaggi serve un browser. "
-                    "Installa Playwright (pip install playwright) e Chrome: "
-                    "la ricerca si apre con un tocco nella scheda «Link utili»."
+                    "BlaBlaCar: qui non c'e' un browser installato, quindi non "
+                    "posso leggere i viaggi dal sito. La ricerca si apre con un "
+                    "tocco nella scheda «Link utili»."
                 ]
             )
 

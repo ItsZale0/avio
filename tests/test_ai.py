@@ -12,6 +12,8 @@ from app.ai import intelligence
 from app.ai.planner import build_candidates
 from app.timeutil import ROME, iso, now_utc
 
+from base_db import prepara_db_di_prova
+
 
 def reference(hours: float = 2) -> datetime:
     """Momento di riferimento stabile per i test.
@@ -270,6 +272,8 @@ class PlannerTests(unittest.TestCase):
 
 class IntelligenceFallbackTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
+        prepara_db_di_prova(self)
+
         class _DisabledClient:
             available = False
 

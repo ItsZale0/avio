@@ -20,7 +20,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import shutil
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -37,13 +40,84 @@ _CACHE: dict[str, tuple[float, Any]] = {}
 _CACHE_SECONDI = 900
 
 
+# Dove Playwright tiene i browser che ha scaricato da solo.
+def _cache_browser() -> list[Path]:
+    base = Path(__file__).resolve().parents[2]
+    return [
+        Path.home() / ".cache" / "ms-playwright",
+        base / ".cache" / "ms-playwright",
+    ]
+
+
+# I nomi con cui un browser puo' essere installato nel sistema.
+_NOMI_BROWSER = ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser")
+
+
+def _browser_di_sistema() -> bool:
+    """True se nel sistema c'e' un browser (Chrome o Chromium)."""
+    for nome in _NOMI_BROWSER:
+        if shutil.which(nome):
+            return True
+    if sys.platform == "win32":
+        # Chrome su Windows non e' nel PATH: Playwright lo trova nel registro,
+        # qui guardiamo dove lo mette l'installatore.
+        for cartella in (
+            os.environ.get("PROGRAMFILES"),
+            os.environ.get("PROGRAMFILES(X86)"),
+            os.environ.get("LOCALAPPDATA"),
+        ):
+            if not cartella:
+                continue
+            eseguibile = Path(cartella) / "Google" / "Chrome" / "Application" / "chrome.exe"
+            if eseguibile.exists():
+                return True
+    return False
+
+
+def _chromium_di_playwright() -> bool:
+    """True se Playwright ha gia' scaricato il suo Chromium."""
+    for cache in _cache_browser():
+        try:
+            for modello in ("chromium*/chrome-linux/chrome", "chromium*/chrome-win/chrome.exe"):
+                if next(cache.glob(modello), None) is not None:
+                    return True
+        except OSError:
+            continue
+    return False
+
+
 def browser_disponibile() -> bool:
-    """True se c'e' un browser che puo' aprire la pagina."""
+    """True se c'e' davvero un browser da aprire.
+
+    Non basta che Playwright sia installato: serve un browser vero (Chrome
+    del sistema o il Chromium che Playwright scarica). Se non c'e' l'adapter
+    non ci prova nemmeno: meglio il link di ricerca che un errore.
+    """
     try:
         import playwright  # noqa: F401
     except Exception:
         return False
-    return True
+    return _browser_di_sistema() or _chromium_di_playwright()
+
+
+def _avvia(p) -> Any:
+    """Apre Chrome se c'e', altrimenti il Chromium di Playwright."""
+    argomenti = [
+        "--disable-blink-features=AutomationControlled",
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+    ]
+    ultimo: Exception | None = None
+    if _browser_di_sistema():
+        try:
+            return p.chromium.launch(channel="chrome", headless=True, args=argomenti)
+        except Exception as exc:  # noqa: BLE001
+            ultimo = exc
+            log.debug("Chrome di sistema non avviabile: %s", exc)
+    try:
+        return p.chromium.launch(headless=True, args=argomenti)
+    except Exception as exc:  # noqa: BLE001
+        raise exc from ultimo
 
 
 def _estrai_cache(html: str) -> dict[str, Any] | None:
@@ -118,15 +192,7 @@ def scarica_ricerca(url: str, profilo: Path, timeout: int = 60) -> dict[str, Any
         return voce[1]
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(
-            channel="chrome",
-            headless=True,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-            ],
-        )
+        browser = _avvia(p)
         try:
             context = browser.new_context(
                 locale="it-IT",

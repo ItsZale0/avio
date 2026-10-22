@@ -9,40 +9,9 @@ from datetime import datetime, timedelta, timezone
 from app.ai import chat
 from app.services import questions as questions_service
 
+from base_db import BaseDbTest
+
 ROME = timezone(timedelta(hours=2))
-
-
-class BaseDbTest(unittest.TestCase):
-    """Un database di prova con un utente, e niente dipendenze dai dati locali.
-
-    Prima questi test scrivevano sul database di sviluppo e si appoggiavano
-    all'utente con id 3 che stava li' per caso: su un PC pulito (o senza
-    quei dati) fallivano. Ora sono autonomi.
-    """
-
-    def setUp(self):
-        import tempfile
-        from pathlib import Path
-
-        from app import db
-
-        self._tmp = tempfile.TemporaryDirectory()
-        self._old_path = db.DB_PATH
-        db.DB_PATH = Path(self._tmp.name) / "test-chat.db"
-        db.init_db()
-        with db.db() as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO users(id, username, password_hash, is_admin, "
-                "status, created_at) VALUES(3, 'test', 'x', 1, 'active', "
-                "'2026-01-01T00:00:00')"
-            )
-        self.addCleanup(self._ripristina)
-
-    def _ripristina(self):
-        from app import db
-
-        db.DB_PATH = self._old_path
-        self._tmp.cleanup()
 
 
 class PatchDeterministicTests(unittest.TestCase):

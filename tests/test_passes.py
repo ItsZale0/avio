@@ -15,6 +15,8 @@ from app.ai import intelligence
 from app.ai.planner import build_candidates
 from app.services import passes as passes_service
 
+from base_db import BaseDbTest
+
 ROME = timezone(timedelta(hours=2))
 DEPART = datetime(2026, 10, 22, 6, 0, tzinfo=timezone.utc)
 ARRIVE = datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc)
@@ -207,7 +209,7 @@ class PlannerTests(unittest.TestCase):
         self.assertFalse(candidates[0].covered)
 
 
-class QuestionTests(unittest.TestCase):
+class QuestionTests(BaseDbTest):
     def test_pass_question_is_proposed(self):
         questions = intelligence._pass_question({})
         self.assertEqual(len(questions), 1)
