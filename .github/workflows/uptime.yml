@@ -61,7 +61,11 @@ jobs:
           "$HOME/oci-venv/bin/pip" install --quiet --disable-pip-version-check oci
           "$HOME/oci-venv/bin/python" - <<'PY'
           import os
-          import oci
+
+          # Import espliciti: il pacchetto "oci" non carica i sottopacchetti
+          # da solo (senza, "oci.compute" non esiste).
+          from oci.compute import ComputeClient
+          from oci.config import validate_config
 
           config = {
               "user": os.environ["OCI_USER_OCID"],
@@ -70,8 +74,8 @@ jobs:
               "region": "eu-milan-1",
               "key_content": os.environ["OCI_PRIVATE_KEY"],
           }
-          oci.config.validate_config(config)
-          client = oci.compute.ComputeClient(config)
+          validate_config(config)
+          client = ComputeClient(config)
           instance_id = os.environ["OCI_INSTANCE_OCID"]
           istanza = client.get_instance(instance_id)
           print("stato dell'istanza:", istanza.lifecycle_state)
