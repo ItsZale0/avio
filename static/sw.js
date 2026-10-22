@@ -5,7 +5,7 @@
    I path sono relativi alla base dello SW, cosi' funziona sia in locale (/)
    sia su GitHub Pages (/avio/). */
 const BASE = new URL("./", self.location).pathname;
-const CACHE = "avio-v10";
+const CACHE = "avio-v11";
 const SHELL = [
   BASE,
   "tokens.css",
