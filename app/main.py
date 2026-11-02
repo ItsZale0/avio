@@ -801,10 +801,13 @@ async def test_email(request: Request):
 @app.get("/api/push/status")
 async def push_status(request: Request):
     user = deps.require_user(request)
+    stats = store.notify_stats(int(user["id"]))
     return {
         "available": push_service.available(),
         "public_key": push_service.public_key(),
         "subscriptions": push_service.count(user_id=int(user["id"])),
+        "watches": stats["watches"],
+        "watches_push": stats["watches_push"],
     }
 
 
@@ -833,13 +836,27 @@ async def push_unsubscribe(payload: PushUnsubscribeIn, request: Request):
     }
 
 
+@app.post("/api/push/watches")
+async def push_watches(request: Request):
+    """Aggiunge il canale push alle ricerche dell'utente (azione esplicita)."""
+    user = deps.require_user(request)
+    changed = store.add_push_channel(int(user["id"]))
+    stats = store.notify_stats(int(user["id"]))
+    return {
+        "ok": True,
+        "changed": changed,
+        "watches": stats["watches"],
+        "watches_push": stats["watches_push"],
+    }
+
+
 @app.post("/api/push/test")
 async def push_test(request: Request):
     user = deps.require_user(request)
     outcomes = await push_service.send(
         f"{APP_NAME} - prova",
         "Se vedi questa notifica, le push funzionano. Buon viaggio!",
-        "/",
+        "",
         user_id=int(user["id"]),
     )
     ok = any(item["ok"] for item in outcomes)

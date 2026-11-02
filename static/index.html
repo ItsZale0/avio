@@ -96,6 +96,19 @@
     </aside>
 
     <section class="content">
+      <!-- Avvisi sul telefono: resta finche' le push non sono attive su questo
+           dispositivo e almeno una ricerca non le usa. -->
+      <div class="push-banner hidden" id="pushBanner" role="status" aria-live="polite">
+        <div class="push-banner-copy">
+          <strong id="pushBannerTitle">Avvisi sul telefono</strong>
+          <small class="hint" id="pushBannerText"></small>
+        </div>
+        <div class="push-banner-actions">
+          <button type="button" class="btn primary" id="btnPushBannerAction">Attiva notifiche</button>
+          <button type="button" class="btn ghost" id="btnPushBannerClose">Non ora</button>
+        </div>
+      </div>
+
       <div class="empty" id="emptyState">
         <h2>Nessuna ricerca ancora</h2>
         <p>Dimmi da dove parti, dove devi arrivare e entro quando. Ci pensa l'agente a cercare ogni ora sulle fonti che scegli.</p>
@@ -418,9 +431,10 @@
           <div class="field inline-field">
             <button type="button" class="btn ghost" id="btnPushEnable">Attiva su questo dispositivo</button>
             <button type="button" class="btn ghost" id="btnPushDisable">Disattiva su questo dispositivo</button>
+            <button type="button" class="btn ghost" id="btnPushWatches">Aggiungi alle ricerche</button>
             <button type="button" class="btn ghost" id="btnPushTest">Invia prova</button>
           </div>
-          <small class="field-hint">Le push arrivano solo ai dispositivi che le attivano qui (telefono o PC). Su iPhone/iPad richiedono l'app aggiunta alla schermata Home e iOS 16.4 o successivo.</small>
+          <small class="field-hint">Su Android funziona da Chrome o dall'app installata: se apri AVIO dal browser di Telegram o Instagram le notifiche non si attivano. Su iPhone/iPad servono l'app aggiunta alla schermata Home e iOS 16.4 o successivo.</small>
 
           <div class="section-title">Agente</div>
           <div class="grid-2">

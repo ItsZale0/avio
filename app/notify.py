@@ -182,9 +182,18 @@ async def send_email(subject: str, text: str, *, user_id: int | None = None) -> 
 
 
 async def send_push(
-    text: str, subject: str, channels: list[str], *, user_id: int | None = None
+    text: str,
+    subject: str,
+    channels: list[str],
+    *,
+    user_id: int | None = None,
+    url: str = "",
 ) -> list[dict]:
-    """Invia sui canali richiesti. Restituisce l'esito per canale."""
+    """Invia sui canali richiesti. Restituisce l'esito per canale.
+
+    `url` e' relativo alla pagina dell'app (`?watch=12`): il service worker lo
+    risolve sulla propria base, cosi' funziona sia su GitHub Pages sia in locale.
+    """
     results: list[dict] = []
     if not app_settings.notifications_enabled_for(user_id):
         return [{"channel": "push", "ok": False, "error": "Notifiche disattivate nelle impostazioni"}]
@@ -201,7 +210,7 @@ async def send_push(
         elif channel == "push":
             from .services import push as push_service
 
-            outcomes = await push_service.send(subject, text, user_id=user_id)
+            outcomes = await push_service.send(subject, text, url, user_id=user_id)
             ok = any(item["ok"] for item in outcomes)
             error = ""
             if not ok:

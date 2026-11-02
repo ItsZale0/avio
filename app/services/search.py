@@ -513,7 +513,13 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
                 alerts_sent += 1
 
             channels = [c for c in watch["notify"] if c not in ("web", "desktop")]
-            push_results = await notify.send_push(message, subject, channels, user_id=owner_id)
+            push_results = await notify.send_push(
+                message,
+                subject,
+                channels,
+                user_id=owner_id,
+                url=f"?watch={watch_id}",
+            )
             for item in push_results:
                 if item["ok"]:
                     alerts_sent += 1

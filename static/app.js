@@ -736,7 +736,11 @@ async function bootApp() {
       state.locked = !!access.locked;
     } catch (_) { /* senza stato accesso: si prosegue */ }
     await Promise.all([loadWatches(), loadSettings()]);
-    if (state.watches.length) {
+    // Una notifica push apre la ricerca giusta: `?watch=12`.
+    const richiesta = Number(new URL(location.href).searchParams.get("watch"));
+    if (richiesta && state.watches.some((watch) => watch.id === richiesta)) {
+      await selectWatch(richiesta);
+    } else if (state.watches.length) {
       await selectWatch(state.watches[0].id);
     } else {
       showEmpty(true);
@@ -744,6 +748,7 @@ async function bootApp() {
     await loadAlerts(true);
     state.booted = true;
     startPolling();
+    aggiornaBannerPush();
   } catch (error) {
     toast("Impossibile caricare i dati: " + error.message, "error");
     $("#agentStatus")?.classList.add("offline");
@@ -839,9 +844,15 @@ function bindEvents() {
   $("#btnTestAi")?.addEventListener("click", testAi);
   $("#btnAiModels")?.addEventListener("click", listAiModels);
   $("#btnGtfsUpdate")?.addEventListener("click", updateGtfs);
-  $("#btnPushEnable")?.addEventListener("click", enablePush);
+  $("#btnPushEnable")?.addEventListener("click", () => enablePush());
   $("#btnPushDisable")?.addEventListener("click", disablePush);
+  $("#btnPushWatches")?.addEventListener("click", () => pushOnWatches());
   $("#btnPushTest")?.addEventListener("click", testPush);
+  $("#btnPushBannerAction")?.addEventListener("click", pushBannerAction);
+  $("#btnPushBannerClose")?.addEventListener("click", () => {
+    pushBannerClosed = true;
+    nascondiBannerPush();
+  });
   $("#btnSetAccess")?.addEventListener("click", setAccessPassword);
   $("#btnClearAccess")?.addEventListener("click", clearAccessPassword);
   $("#btnNewKey")?.addEventListener("click", generateKey);
@@ -2000,7 +2011,7 @@ function openWatchModal(watch) {
     depart_after: "", arrive_by: "", max_price: "", passengers: 1, radius_km: 5,
     interval_min: 60,
     sources: ["blablacar", "flixbus", "itabus", "trenitalia", "omio", "googleflights", "serpapi", "skyscanner", "carsharing", "transit", "gtfs"],
-    notify: ["web", "telegram"],
+    notify: ["web", "telegram", "push"],
   };
 
   const data = watch ? {
@@ -2684,10 +2695,93 @@ function urlBase64ToUint8Array(base64) {
   return bytes;
 }
 
+/* ------------------------------------------------------------------ */
+/* Notifiche push (PWA, Android compreso)                             */
+/* ------------------------------------------------------------------ */
+let pushBannerClosed = false;
+
+function pushSupported() {
+  return (
+    "serviceWorker" in navigator &&
+    "PushManager" in window &&
+    "Notification" in window &&
+    window.isSecureContext
+  );
+}
+
+// I browser dentro Telegram, Instagram, Facebook o simili non consegnano
+// le push: li riconosciamo per dirlo chiaro, invece di far fallire il tap.
+function pushInAppBrowser() {
+  const ua = navigator.userAgent || "";
+  return /(FBAN|FBAV|FB_IAB|Instagram|Line\/|Telegram|Snapchat|; wv\))/i.test(ua);
+}
+
+function pushIsIos() {
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent || "") ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
+}
+
+function pushIsStandalone() {
+  return (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    window.navigator.standalone === true
+  );
+}
+
+function pushDeviceLabel() {
+  const ua = navigator.userAgent || "";
+  if (/Android/i.test(ua)) return "Android";
+  if (/iPhone|iPad|iPod/i.test(ua)) return "iPhone o iPad";
+  if (/Windows/i.test(ua)) return "Windows";
+  if (/Macintosh/i.test(ua)) return "Mac";
+  return "Dispositivo";
+}
+
+function pushWithTimeout(attesa, ms, messaggio) {
+  return Promise.race([
+    attesa,
+    new Promise((_, rifiuta) => setTimeout(() => rifiuta(new Error(messaggio)), ms)),
+  ]);
+}
+
+async function pushRegistration() {
+  if (!("serviceWorker" in navigator)) return null;
+  const pronta = await navigator.serviceWorker.getRegistration();
+  if (pronta) return pronta;
+  try {
+    return await pushWithTimeout(
+      navigator.serviceWorker.ready,
+      8000,
+      "il service worker non si e' avviato: ricarica la pagina"
+    );
+  } catch (_) {
+    return null;
+  }
+}
+
+// La chiave pubblica del server puo' cambiare (chiavi VAPID rigenerate): se
+// l'iscrizione e' legata a quella vecchia non riceve piu' nulla.
+function pushSameServerKey(subscription, publicKey) {
+  const presente = subscription?.options?.applicationServerKey;
+  if (!presente) return false;
+  const voluta = urlBase64ToUint8Array(publicKey);
+  const attuale = new Uint8Array(presente);
+  if (attuale.length !== voluta.length) return false;
+  return attuale.every((byte, indice) => byte === voluta[indice]);
+}
+
 async function renderPushStatus() {
   const hint = $("#pushStatus");
-  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+  if (!hint) return;
+  if (!pushSupported()) {
     hint.textContent = "Questo browser non supporta le notifiche push.";
+    hint.className = "field-hint err";
+    return;
+  }
+  if (pushInAppBrowser()) {
+    hint.textContent = "Sei nel browser di un'altra app: apri AVIO in Chrome per attivare le notifiche.";
     hint.className = "field-hint err";
     return;
   }
@@ -2698,30 +2792,160 @@ async function renderPushStatus() {
       hint.className = "field-hint err";
       return;
     }
-    const registration = await navigator.serviceWorker.getRegistration();
+    if (Notification.permission === "denied") {
+      hint.textContent = "Permesso notifiche negato: riattivalo dalle impostazioni del sito in Chrome.";
+      hint.className = "field-hint err";
+      return;
+    }
+    const registration = await pushRegistration();
     const subscription = registration ? await registration.pushManager.getSubscription() : null;
-    hint.textContent = subscription
-      ? `Attive su questo dispositivo · ${data.subscriptions} dispositivi collegati`
-      : `Non attive su questo dispositivo · ${data.subscriptions} dispositivi collegati`;
-    hint.className = "field-hint" + (subscription ? " ok" : "");
+    if (!subscription) {
+      hint.textContent = `Non attive su questo dispositivo · ${data.subscriptions} dispositivi collegati`;
+      hint.className = "field-hint";
+      return;
+    }
+    const ricerche = data.watches === 1 ? "1 ricerca" : `${data.watches} ricerche`;
+    hint.textContent = data.watches_push
+      ? `Attive su questo dispositivo · ${data.subscriptions} dispositivi collegati · ${data.watches_push} di ${ricerche} con push`
+      : "Attive su questo dispositivo, ma nessuna ricerca le usa";
+    hint.className = "field-hint" + (data.watches_push ? " ok" : " err");
   } catch (error) {
     hint.textContent = "Errore: " + error.message;
     hint.className = "field-hint err";
   }
 }
 
-async function enablePush() {
+function mostraBannerPush(titolo, testo, azione, etichetta) {
+  const banner = $("#pushBanner");
+  if (!banner || pushBannerClosed) return;
+  $("#pushBannerTitle").textContent = titolo;
+  $("#pushBannerText").textContent = testo;
+  const bottone = $("#btnPushBannerAction");
+  if (azione) {
+    bottone.classList.remove("hidden");
+    bottone.dataset.action = azione;
+    bottone.textContent = etichetta || "Attiva notifiche";
+  } else {
+    bottone.classList.add("hidden");
+    delete bottone.dataset.action;
+  }
+  banner.classList.remove("hidden");
+}
+
+function nascondiBannerPush() {
+  $("#pushBanner")?.classList.add("hidden");
+}
+
+async function aggiornaBannerPush() {
+  if (!pushSupported()) {
+    nascondiBannerPush();
+    return;
+  }
+  if (pushInAppBrowser()) {
+    mostraBannerPush(
+      "Apri AVIO in Chrome",
+      "Sei nel browser di un'altra app: le notifiche si attivano solo da Chrome o dall'app installata.",
+      null
+    );
+    return;
+  }
+  if (pushIsIos() && !pushIsStandalone()) {
+    mostraBannerPush(
+      "Aggiungi AVIO alla schermata Home",
+      "Su iPhone e iPad le notifiche arrivano solo dall'app installata, con iOS 16.4 o successivo.",
+      null
+    );
+    return;
+  }
+  if (Notification.permission === "denied") {
+    mostraBannerPush(
+      "Notifiche bloccate",
+      "Hai negato il permesso: riattivalo dalle impostazioni del sito in Chrome, alla voce Notifiche.",
+      null
+    );
+    return;
+  }
+  try {
+    const data = await api("/api/push/status");
+    if (!data.available || !data.watches) {
+      nascondiBannerPush();
+      return;
+    }
+    const registration = await pushRegistration();
+    const subscription = registration ? await registration.pushManager.getSubscription() : null;
+    if (!subscription) {
+      mostraBannerPush(
+        "Avvisi sul telefono",
+        "Attiva le notifiche: l'agente ti avvisa quando trova un passaggio e le aggiunge alle ricerche che hai gia'.",
+        "enable",
+        "Attiva notifiche"
+      );
+      return;
+    }
+    if (data.watches_push === 0) {
+      mostraBannerPush(
+        "Notifiche attive, ma nessuna ricerca le usa",
+        "Senza il canale push nelle ricerche gli avvisi non partono: aggiungilo con un tocco.",
+        "watches",
+        "Aggiungi alle ricerche"
+      );
+      return;
+    }
+    nascondiBannerPush();
+  } catch (_) {
+    nascondiBannerPush();
+  }
+}
+
+async function pushOnWatches(opzioni = {}) {
+  const silenzioso = opzioni.silenzioso === true;
+  try {
+    const data = await api("/api/push/watches", { method: "POST" });
+    if (!silenzioso) {
+      toast(
+        data.changed
+          ? `Canale push aggiunto a ${data.changed} ${data.changed === 1 ? "ricerca" : "ricerche"}`
+          : "Le ricerche usano gia' le notifiche push"
+      );
+    } else if (data.changed) {
+      toast(`Canale push aggiunto a ${data.changed} ${data.changed === 1 ? "ricerca" : "ricerche"}`);
+    }
+    await loadWatches();
+    return data;
+  } catch (error) {
+    if (!silenzioso) toast(error.message, "error");
+    return null;
+  }
+}
+
+async function enablePush(opzioni = {}) {
+  const alsoWatches = opzioni.alsoWatches === true;
   const hint = $("#pushStatus");
   try {
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-      throw new Error("push non supportate da questo browser");
+    if (!pushSupported()) {
+      throw new Error("servono una connessione https e un browser con supporto alle notifiche");
+    }
+    if (pushInAppBrowser()) {
+      throw new Error("apri AVIO in Chrome: nel browser di un'altra app le notifiche non si attivano");
+    }
+    if (pushIsIos() && !pushIsStandalone()) {
+      throw new Error("aggiungi prima AVIO alla schermata Home e riapri l'app da li'");
     }
     const permission = await Notification.requestPermission();
-    if (permission !== "granted") throw new Error("permesso notifiche negato");
+    if (permission !== "granted") {
+      throw new Error("permesso negato: riattivalo dalle impostazioni del sito in Chrome");
+    }
     const data = await api("/api/push/status");
-    if (!data.available) throw new Error("server: libreria push non installata");
-    const registration = await navigator.serviceWorker.ready;
+    if (!data.available) throw new Error("il server non ha la libreria push installata");
+    const registration = await pushRegistration();
+    if (!registration) throw new Error("service worker non disponibile: ricarica la pagina");
     let subscription = await registration.pushManager.getSubscription();
+    // Chiave del server cambiata: l'iscrizione vecchia va rifatta, altrimenti
+    // il telefono resta collegato ma non riceve nulla.
+    if (subscription && !pushSameServerKey(subscription, data.public_key)) {
+      await subscription.unsubscribe();
+      subscription = null;
+    }
     if (!subscription) {
       subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
@@ -2734,20 +2958,27 @@ async function enablePush() {
       body: JSON.stringify({
         endpoint: subscription.endpoint,
         keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
-        label: navigator.platform || "dispositivo",
+        label: pushDeviceLabel(),
       }),
     });
+    if (alsoWatches) await pushOnWatches({ silenzioso: true });
     await renderPushStatus();
+    await aggiornaBannerPush();
+    return true;
   } catch (error) {
-    hint.textContent = "Errore: " + error.message;
-    hint.className = "field-hint err";
+    if (hint) {
+      hint.textContent = "Errore: " + error.message;
+      hint.className = "field-hint err";
+    }
+    toast("Notifiche non attivate: " + error.message, "error");
+    return false;
   }
 }
 
 async function disablePush() {
   const hint = $("#pushStatus");
   try {
-    const registration = await navigator.serviceWorker.getRegistration();
+    const registration = await pushRegistration();
     const subscription = registration ? await registration.pushManager.getSubscription() : null;
     if (subscription) {
       await api("/api/push/unsubscribe", {
@@ -2757,6 +2988,7 @@ async function disablePush() {
       await subscription.unsubscribe();
     }
     await renderPushStatus();
+    await aggiornaBannerPush();
   } catch (error) {
     hint.textContent = "Errore: " + error.message;
     hint.className = "field-hint err";
@@ -2777,6 +3009,22 @@ async function testPush() {
     return;
   }
   await renderPushStatus();
+}
+
+async function pushBannerAction() {
+  const bottone = $("#btnPushBannerAction");
+  const azione = bottone?.dataset.action || "enable";
+  if (bottone) bottone.disabled = true;
+  try {
+    if (azione === "watches") {
+      await pushOnWatches();
+      await aggiornaBannerPush();
+    } else {
+      await enablePush({ alsoWatches: true });
+    }
+  } finally {
+    if (bottone) bottone.disabled = false;
+  }
 }
 
 async function testTelegram() {

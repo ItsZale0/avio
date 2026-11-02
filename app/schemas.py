@@ -20,7 +20,7 @@ DEFAULT_SOURCES = [
     "transit",
     "gtfs",
 ]
-DEFAULT_NOTIFY = ["web", "telegram"]
+DEFAULT_NOTIFY = ["web", "telegram", "push"]
 
 
 class WatchIn(BaseModel):

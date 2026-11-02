@@ -451,6 +451,70 @@ class PushTest(unittest.TestCase):
         self.assertFalse(results[0]["ok"])
         self.assertIn("nessun dispositivo", results[0]["error"].lower())
 
+    def _watch(self, notify: str, user_id: int = 3) -> int:
+        from app import db
+        from app.timeutil import now_utc
+
+        with db.db() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO users(id, username, password_hash, is_admin, status, created_at) "
+                "VALUES (?,?,?,0,'active',?)",
+                (user_id, f"utente{user_id}", "x", now_utc().isoformat()),
+            )
+            cursor = conn.execute(
+                "INSERT INTO watches(user_id, from_place, to_place, arrive_by, notify, created_at) "
+                "VALUES (?,?,?,?,?,?)",
+                (user_id, "Bressanone", "Rovereto", "2026-12-01T18:00:00+00:00", notify, now_utc().isoformat()),
+            )
+            return int(cursor.lastrowid)
+
+    def test_push_e_un_canale_predefinito(self):
+        from app.schemas import DEFAULT_NOTIFY, WatchIn
+
+        self.assertIn("push", DEFAULT_NOTIFY)
+        watch = WatchIn(
+            from_place="Bressanone",
+            to_place="Rovereto",
+            arrive_by="2026-12-01T18:00:00+01:00",
+        )
+        self.assertIn("push", watch.notify)
+
+    def test_il_canale_push_si_aggiunge_solo_su_richiesta(self):
+        from app import db, store
+
+        self._watch('["web","telegram"]')
+        self.assertEqual(store.notify_stats(3), {"watches": 1, "watches_push": 0})
+        self.assertEqual(store.add_push_channel(3), 1)
+        self.assertEqual(store.notify_stats(3), {"watches": 1, "watches_push": 1})
+        # Gia' presente: la seconda chiamata non cambia niente.
+        self.assertEqual(store.add_push_channel(3), 0)
+        with db.db() as conn:
+            row = conn.execute("SELECT notify FROM watches").fetchone()
+        canali = db.load_json(row["notify"], [])
+        self.assertIn("push", canali)
+        self.assertIn("telegram", canali)
+
+    def test_un_dispositivo_che_fallisce_sparisce_dopo_cinque_errori(self):
+        from app.services import push
+
+        push.subscribe(self._subscription())
+        for _ in range(4):
+            push._drop("https://push.example/1", failed=True)
+        self.assertEqual(push.count(), 1)
+        push._drop("https://push.example/1", failed=True)
+        self.assertEqual(push.count(), 0)
+
+    def test_l_avviso_apre_la_ricerca_giusta(self):
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+
+        from app import notify
+
+        with patch("app.services.push.send", new_callable=AsyncMock) as invia:
+            invia.return_value = [{"ok": True, "error": ""}]
+            asyncio.run(notify.send_push("testo", "oggetto", ["push"], url="?watch=7"))
+        self.assertEqual(invia.await_args.args[2], "?watch=7")
+
 
 if __name__ == "__main__":
     unittest.main()

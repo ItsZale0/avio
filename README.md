@@ -308,16 +308,25 @@ non a ogni controllo.
 Compila server SMTP, porta, utente, password/app-password, mittente e destinatario.
 Per Gmail serve una *app password* (verifica in due passaggi attiva).
 
-### Notifiche push (telefono)
+### Notifiche push (telefono, Android compreso)
 
-1. Installa la PWA (vedi *Sul telefono*) oppure usa la dashboard su `http://127.0.0.1:8787`.
-2. Impostazioni → **Notifiche push** → *Attiva su questo dispositivo* e concedi il permesso.
-3. *Invia prova* per verificare; poi spunta **Push (telefono)** tra i canali di una ricerca.
+1. Apri AVIO in **Chrome** (non dal browser di Telegram o Instagram) oppure dall'app
+   installata sul telefono.
+2. In cima alla dashboard compare **Avvisi sul telefono**: tocca *Attiva notifiche*. Il
+   permesso si chiede una volta sola e il canale push viene aggiunto anche alle ricerche
+   che hai già. Se l'invito non c'è più, la stessa azione sta in Impostazioni → **Notifiche
+   push** → *Attiva su questo dispositivo*.
+3. *Invia prova* per verificare l'arrivo della notifica.
 
 Le push si possono attivare su più dispositivi (telefono e PC insieme) e arrivano solo
-quando ci sono novità. Servono HTTPS o `localhost`; su iPhone/iPad servono iOS 16.4+ e
-l'app aggiunta alla schermata Home. Se la libreria non è installata:
-`pip install pywebpush`.
+quando ci sono novità; il tocco apre direttamente la ricerca. Servono HTTPS o `localhost`;
+su iPhone/iPad servono iOS 16.4+ e l'app aggiunta alla schermata Home. Se la libreria non è
+installata: `pip install pywebpush`.
+
+Se il telefono non riceve nulla, nell'ordine: il permesso non è stato negato (Chrome →
+impostazioni del sito → Notifiche), la ricerca ha il canale **Push (telefono)**, la fascia
+di silenzio non è attiva. Il pannello Impostazioni dice quanti dispositivi sono collegati e
+quante ricerche usano le push.
 
 ### Silenzio
 

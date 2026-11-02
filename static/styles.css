@@ -243,6 +243,27 @@ code {
 
 .content { overflow-y: auto; padding: var(--pad) var(--pad) 96px; min-height: 0; }
 
+/* ---------- invito alle notifiche --------------------------------------- */
+/* Un solo invito, in cima al contenuto: attivare le notifiche non deve
+   richiedere di cercare le impostazioni. Sparisce appena sono attive. */
+.push-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm) var(--space-lg);
+  margin: 0 0 var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-lg);
+  background: var(--tint-accent-weak);
+}
+.push-banner-copy { display: flex; flex-direction: column; gap: var(--space-2xs); min-width: 0; }
+.push-banner-copy strong { font-size: var(--text-sm); font-weight: 600; color: var(--text); }
+.push-banner-actions { display: flex; gap: var(--space-xs); flex: none; }
+.push-banner.hidden { display: none; }
+
 /* ---------- la ricerca aperta ------------------------------------------- */
 .detail { max-width: none; }
 /* Testata a griglia: titolo a sinistra, azioni a destra, criteri sotto a tutta

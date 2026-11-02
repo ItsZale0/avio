@@ -629,8 +629,14 @@ affidabilità  = rating/5 * 100, default 68
 - **Push (Web Push + VAPID)**: le chiavi si generano al primo uso e restano nel DB locale
   (`vapid_private_key` è un segreto mascherato); ogni dispositivo registra il proprio
   `endpoint` in `push_subscriptions`. Il canale `push` di una ricerca manda titolo, testo
-  e link al service worker, che mostra la notifica e apre la dashboard al tocco.
-  Gli endpoint scaduti (404/410) vengono rimossi da soli; `pywebpush` è opzionale.
+  e `?watch=<id>`: il service worker risolve il link sulla propria base (funziona anche su
+  GitHub Pages) e apre la ricerca giusta al tocco.
+  Gli endpoint scaduti (404/410) e le chiavi VAPID cambiate (403) fanno rimuovere
+  l'iscrizione, così il telefono si iscrive di nuovo; un dispositivo che fallisce cinque
+  volte sparisce da solo. `pywebpush` è opzionale.
+  La PWA mostra un invito in cima alla dashboard quando le push non sono attive o nessuna
+  ricerca le usa, e spiega i casi in cui non possono funzionare (browser dentro Telegram o
+  Instagram, iPhone senza app installata, permesso negato).
 - `notify_enabled` globale + fascia di silenzio configurabile.
 - Deduplica tramite fingerprint e `prev_price`; un'offerta già vista non riavvisa
   allo stesso prezzo.
@@ -693,9 +699,10 @@ affidabilità  = rating/5 * 100, default 68
 | GET | `/api/carsharing/zones` | città coperte dal carsharing con coordinate (mappa) |
 | GET | `/api/gtfs` | stato e feed degli orari GTFS |
 | POST | `/api/gtfs/update` | riscarica e reimporta i feed (in background) |
-| GET | `/api/push/status` | libreria push presente, chiave pubblica VAPID, dispositivi |
+| GET | `/api/push/status` | libreria push presente, chiave pubblica VAPID, dispositivi, ricerche con push |
 | POST | `/api/push/subscribe` | registra l'iscrizione del browser |
 | POST | `/api/push/unsubscribe` | rimuove l'iscrizione |
+| POST | `/api/push/watches` | aggiunge il canale push alle ricerche dell'utente (azione esplicita) |
 | POST | `/api/push/test` | notifica di prova ai dispositivi iscritti |
 | GET | `/api/geocode?q=` | verifica località |
 | GET | `/config.json` | `apiBase` per il frontend (Pages/tunnel) |
@@ -738,8 +745,9 @@ Le richieste preflight `OPTIONS` passano sempre. Ogni handler chiama
   di un nuovo account.
 - Impostazioni → **Telegram**: *Collega la mia chat* genera un codice da
   inoltrare al bot (`/link CODICE`).
-- Impostazioni → **Notifiche push**: stato dei dispositivi, *Attiva* / *Disattiva su questo
-  dispositivo* (iscrizione `pushManager`) e *Invia prova*.
+- Impostazioni → **Notifiche push**: stato dei dispositivi e delle ricerche, *Attiva* /
+  *Disattiva su questo dispositivo* (iscrizione `pushManager`), *Aggiungi alle ricerche* e
+  *Invia prova*. Lo stesso invito compare in cima alla dashboard quando serve.
 - Polling ogni 30 s; refresh immediato dopo creazione o "Cerca ora".
 - Toast + notifica desktop per le novità; badge non letti.
 - PWA: `manifest.webmanifest`, `sw.js` (shell in cache, mai le `/api`), icone

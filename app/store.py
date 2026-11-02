@@ -345,6 +345,48 @@ def set_watch_active(
     return get_watch(watch_id, user_id=user_id)
 
 
+def notify_stats(user_id: int) -> dict[str, int]:
+    """Quante ricerche ha l'utente e quante mandano gia' le notifiche push.
+
+    Serve alla PWA per accorgersi che le notifiche sono attive sul telefono
+    ma nessuna ricerca le usa: senza questo dato l'utente non riceve nulla
+    e non capisce perche'.
+    """
+    with db.db() as conn:
+        rows = conn.execute(
+            "SELECT notify FROM watches WHERE user_id = ?", (user_id,)
+        ).fetchall()
+    canali = [db.load_json(row["notify"], []) for row in rows]
+    return {
+        "watches": len(rows),
+        "watches_push": sum(1 for valori in canali if "push" in valori),
+    }
+
+
+def add_push_channel(user_id: int) -> int:
+    """Aggiunge il canale push alle ricerche dell'utente.
+
+    Lo chiama solo un'azione esplicita («Aggiungi alle ricerche»): non e' un
+    default silenzioso che cambia le preferenze gia' scelte.
+    """
+    cambiate = 0
+    with db.db() as conn:
+        rows = conn.execute(
+            "SELECT id, notify FROM watches WHERE user_id = ?", (user_id,)
+        ).fetchall()
+        for row in rows:
+            canali = list(db.load_json(row["notify"], ["web"]))
+            if "push" in canali:
+                continue
+            canali.append("push")
+            conn.execute(
+                "UPDATE watches SET notify = ? WHERE id = ?",
+                (db.dump_json(canali), row["id"]),
+            )
+            cambiate += 1
+    return cambiate
+
+
 def due_watches(limit: int = 5) -> list[dict[str, Any]]:
     """Ricerche da rilanciare. Le esegue lo scheduler: qui non serve filtrare per utente."""
     now = now_utc().isoformat()

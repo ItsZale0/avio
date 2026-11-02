@@ -5,7 +5,7 @@
    I path sono relativi alla base dello SW, cosi' funziona sia in locale (/)
    sia su GitHub Pages (/avio/). */
 const BASE = new URL("./", self.location).pathname;
-const CACHE = "avio-v11";
+const CACHE = "avio-v12";
 const SHELL = [
   BASE,
   "tokens.css",
@@ -73,19 +73,32 @@ self.addEventListener("push", (event) => {
       body,
       icon: BASE + "icons/icon-192.png",
       badge: BASE + "icons/icon-192.png",
-      data: { url: data.url || BASE },
+      data: { url: data.url || "" },
       tag: data.tag || "avio",
     })
   );
 });
 
+/* Il tocco apre la ricerca giusta. L'URL arriva relativo alla pagina
+   (`?watch=12`): va risolto sulla base del service worker, non sulla radice
+   del sito, altrimenti su GitHub Pages si finirebbe fuori da /avio/. */
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const target = (event.notification.data && event.notification.data.url) || BASE;
+  const relativo = (event.notification.data && event.notification.data.url) || "";
+  let target = self.registration.scope;
+  try {
+    target = new URL(relativo, self.registration.scope).href;
+  } catch (_) { /* resta la pagina dell'app */ }
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
-      for (const client of list) {
-        if (client.url.includes(self.location.origin)) return client.focus();
+      const client = list.find((c) => c.url.includes(self.location.origin));
+      if (client) {
+        return client.focus().then(() => {
+          if (target !== self.registration.scope && "navigate" in client) {
+            return client.navigate(target);
+          }
+          return undefined;
+        });
       }
       return self.clients.openWindow(target);
     })

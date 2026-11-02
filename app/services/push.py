@@ -138,10 +138,20 @@ def _label_for(row: dict) -> str:
 
 
 def _drop(endpoint: str, *, failed: bool = False) -> None:
+    """Toglie un'iscrizione morta.
+
+    Un errore di rete isolato non basta: si conta, e dopo cinque tentativi
+    falliti il dispositivo si considera perso (telefono cambiato, app
+    disinstallata). Cosi' la lista non si riempie di iscrizioni fantasma.
+    """
     with db.db() as conn:
         if failed:
             conn.execute(
                 "UPDATE push_subscriptions SET fail_count = fail_count + 1 WHERE endpoint = ?",
+                (endpoint,),
+            )
+            conn.execute(
+                "DELETE FROM push_subscriptions WHERE endpoint = ? AND fail_count >= 5",
                 (endpoint,),
             )
         else:
@@ -174,15 +184,17 @@ def _send_sync(row: dict, payload: dict, private_pem: str) -> tuple[bool, str, b
         return True, "", False
     except WebPushException as exc:  # type: ignore[misc]
         status = getattr(getattr(exc, "response", None), "status_code", None)
-        if status in (404, 410):
-            return False, f"iscrizione scaduta ({status})", True
+        # 403 e' il caso classico della chiave VAPID rigenerata: il telefono
+        # ha un'iscrizione legata alla vecchia chiave e va iscritto di nuovo.
+        if status in (403, 404, 410):
+            return False, f"iscrizione da rifare sul dispositivo ({status})", True
         return False, f"{type(exc).__name__}: {exc}"[:300], False
     except Exception as exc:  # noqa: BLE001
         return False, f"{type(exc).__name__}: {exc}"[:300], False
 
 
 async def send(
-    title: str, body: str, url: str = "/", *, user_id: int | None = None
+    title: str, body: str, url: str = "", *, user_id: int | None = None
 ) -> list[dict]:
     """Manda una notifica ai dispositivi iscritti. Restituisce l'esito per dispositivo.
 
