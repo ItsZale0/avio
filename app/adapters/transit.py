@@ -150,7 +150,14 @@ async def _nearby_stops(lat: float, lon: float) -> tuple[bool, list[dict]]:
         for task in tasks:
             if not task.done():
                 task.cancel()
-
+        # Si recupera l'esito (anche l'errore) di ogni task: altrimenti, con
+        # as_completed in timeout, Python segnala "Task exception was never
+        # retrieved" e riempie il log. Non cambia il risultato della ricerca.
+        for task in tasks:
+            try:
+                await task
+            except (Exception, asyncio.CancelledError):
+                pass
     _fail_until = time.time() + FAIL_COOLDOWN
     # Ripiego locale: le fermate dei feed GTFS hanno le stesse coordinate.
     locali = _gtfs_stops(lat, lon)
