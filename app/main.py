@@ -53,6 +53,9 @@ log = logging.getLogger("carpool")
 async def lifespan(_: FastAPI):
     db.init_db()
     store.migrate_sources()
+    stale = store.close_stale_runs()
+    if stale:
+        log.info("%d ricerche interrotte da un riavvio: chiuse", stale)
     scheduler.start()
     log.info("%s pronto su http://%s:%s", APP_NAME, HOST, PORT)
     yield

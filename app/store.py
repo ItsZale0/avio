@@ -333,6 +333,22 @@ def delete_watch(watch_id: int, *, user_id: int | None = None) -> bool:
         return cursor.rowcount > 0
 
 
+def close_stale_runs() -> int:
+    """Chiude le ricerche rimaste "running" da un processo precedente.
+
+    Un riavvio durante una ricerca (aggiornamento dal repository, deploy,
+    riavvio manuale) lascia la riga aperta per sempre: nella cronologia
+    comparirebbe una ricerca "in corso" che non finira' mai.
+    """
+    with db.db() as conn:
+        cursor = conn.execute(
+            "UPDATE runs SET status = 'interrupted', finished_at = ? "
+            "WHERE status = 'running'",
+            (now_utc().isoformat(),),
+        )
+        return cursor.rowcount
+
+
 def set_watch_active(
     watch_id: int, active: bool, *, user_id: int | None = None
 ) -> dict[str, Any] | None:

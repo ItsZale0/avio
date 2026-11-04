@@ -12,6 +12,8 @@ from app.services.promos import _extract_offers
 from app.services.search import _filter_offers
 from app.store import links_for_watch
 
+from base_db import BaseDbTest
+
 
 def _reference() -> datetime:
     """Momento di riferimento stabile: domani mattina alle 8 locali.
@@ -388,6 +390,54 @@ class GtfsScoringTest(unittest.TestCase):
         ranked = score_offers([schedule], ctx)
         self.assertIsNotNone(ranked[schedule.fingerprint]["score"])
         self.assertIn("orario", ranked[schedule.fingerprint]["badges"])
+
+
+class StaleRunsTest(BaseDbTest):
+    """Un riavvio a meta' ricerca non deve lasciare una run "in corso".
+
+    Succede a ogni aggiornamento dal repository: il servizio viene
+    riavviato mentre una ricerca e' in corso, e la riga resta aperta per
+    sempre nella cronologia dell'utente.
+    """
+
+    def test_chiude_le_ricerche_rimaste_appese(self):
+        from app import db, store
+        from app.schemas import WatchIn
+        from app.timeutil import now_utc
+
+        watch = store.create_watch(
+            WatchIn(
+                from_place="Thiene",
+                to_place="Trento",
+                arrive_by=now_utc() + timedelta(hours=6),
+            )
+        )
+        with db.db() as conn:
+            conn.execute(
+                "INSERT INTO runs(watch_id, trigger, status, started_at) "
+                "VALUES (?, 'schedule', 'running', ?)",
+                (watch["id"], now_utc().isoformat()),
+            )
+            conn.execute(
+                "INSERT INTO runs(watch_id, trigger, status, started_at) "
+                "VALUES (?, 'manual', 'ok', ?)",
+                (watch["id"], now_utc().isoformat()),
+            )
+        self.assertEqual(store.close_stale_runs(), 1)
+        with db.db() as conn:
+            righe = [
+                tuple(r)
+                for r in conn.execute(
+                    "SELECT status, finished_at FROM runs ORDER BY id"
+                )
+            ]
+        self.assertEqual(righe[0][0], "interrupted")
+        self.assertIsNotNone(righe[0][1])
+        # La run gia' conclusa non si tocca.
+        self.assertEqual(righe[1][0], "ok")
+        self.assertIsNone(righe[1][1])
+        # Idempotente: al secondo avvio non c'e' piu' niente da chiudere.
+        self.assertEqual(store.close_stale_runs(), 0)
 
 
 class PushTest(unittest.TestCase):
