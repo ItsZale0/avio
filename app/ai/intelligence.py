@@ -23,6 +23,46 @@ from .groq import ChatResult, ai_enabled, client_from_settings, log_call
 from .planner import Candidate, _reaches_destination, _transfer_km, build_candidates
 
 MAX_CANDIDATES_IN_PROMPT = 14
+# Quanti confronti di spezzatura entrano nel prompt. Non serve mandarli
+# tutti: i primi sono quelli che risparmiano davvero, gli altri sono rumore.
+MAX_CONFRONTI_IN_PROMPT = 5
+# Quanti caratteri di prompt si mandano al modello. Groq taglia a 8000 token
+# al minuto sull'organizzazione gratuita: ~4 caratteri per token, quindi
+# 20000 caratteri stanno dentro il budget lasciando spazio alla risposta.
+MAX_PROMPT_CHARS = 20000
+
+
+def _confronti_payload(confronti: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """I confronti in forma compatta, solo con i numeri che servono al modello.
+
+    Il confronto completo porta orari, categorie e pass di ogni tratta: utile
+    all'interfaccia, inutile al modello, che deve solo dire quale piano
+    conviene. Mandarlo intero faceva superare il limite di token al minuto di
+    Groq (8000) e il piano AI non veniva piu' prodotto.
+    """
+    compatti: list[dict[str, Any]] = []
+    for confronto in (confronti or [])[:MAX_CONFRONTI_IN_PROMPT]:
+        tratte = [
+            {
+                "da": tratta.get("da"),
+                "a": tratta.get("a"),
+                "prezzo": tratta.get("prezzo_effettivo", tratta.get("prezzo")),
+            }
+            for tratta in (confronto.get("tratte") or [])
+            if isinstance(tratta, dict)
+        ]
+        compatti.append(
+            {
+                "via": confronto.get("via"),
+                "totale": confronto.get("totale_effettivo", confronto.get("totale")),
+                "diretto": confronto.get("diretto_effettivo", confronto.get("diretto_prezzo")),
+                "delta_prezzo": confronto.get("delta_prezzo"),
+                "delta_minuti": confronto.get("delta_minuti"),
+                "cambi": confronto.get("cambi"),
+                "tratte": tratte,
+            }
+        )
+    return compatti
 
 
 @dataclass
@@ -813,20 +853,27 @@ async def analyze(
     confidence: float | None = None
 
     if use_ai:
+        testo = (
+            "RICHIESTA E VINCOLI\n"
+            + _constraints_text(watch, prefs)
+            + "\n\nCOMBINAZIONI CANDIDATE (JSON)\n"
+            + json.dumps(_candidates_payload(candidates), ensure_ascii=False)
+        )
+        # Il tetto di token al minuto di Groq (8000 sull'org gratuita) e' sul
+        # singolo prompt: oltre quello il piano AI non viene prodotto e la
+        # ricerca resta senza spiegazione. Se i candidati gia' occupano il
+        # budget, il confronto sulle tratte singole e' la parte che si taglia:
+        # serve a capire il risparmio, non a scegliere il piano.
+        confronti_json = json.dumps(_confronti_payload(confronti), ensure_ascii=False)
+        if confronti and len(testo) + len(confronti_json) <= MAX_PROMPT_CHARS:
+            testo += (
+                "\n\nCONFRONTI TRA TRATTE SINGOLE E BIGLIETTO DIRETTO (JSON)\n"
+                + confronti_json
+            )
+        testo += "\n\nScegli il piano più economico e rispondi in JSON."
         messages = [
             {"role": "system", "content": prompts.PLAN_SYSTEM},
-            {
-                "role": "user",
-                "content": (
-                    "RICHIESTA E VINCOLI\n"
-                    + _constraints_text(watch, prefs)
-                    + "\n\nCOMBINAZIONI CANDIDATE (JSON)\n"
-                    + json.dumps(_candidates_payload(candidates), ensure_ascii=False)
-                    + "\n\nCONFRONTI TRA TRATTE SINGOLE E BIGLIETTO DIRETTO (JSON)\n"
-                    + json.dumps(confronti or [], ensure_ascii=False)
-                    + "\n\nScegli il piano più economico e rispondi in JSON."
-                ),
-            },
+            {"role": "user", "content": testo},
         ]
         chat: ChatResult = await client.chat(
             messages, max_tokens=2000, temperature=0.2, timeout=45

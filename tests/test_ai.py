@@ -337,6 +337,114 @@ class IntelligenceFallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Groq", result.get("error", ""))
 
 
+class PromptBudgetTests(unittest.IsolatedAsyncioTestCase):
+    """Il prompt del piano deve stare nel tetto di token di Groq (8000/minuto).
+
+    Con i confronti di spezzatura completi il prompt di Thiene→Bressanone
+    arrivava a ~8400 token e Groq rispondeva 413: il piano restava senza
+    spiegazione e la ricerca usciva come "partial" a ogni giro.
+    """
+
+    def setUp(self):
+        prepara_db_di_prova(self)
+        self.inviati: list[list[dict]] = []
+        inviati = self.inviati
+
+        class _RecordingClient:
+            available = True
+
+            async def chat(self, messages, **kwargs):
+                inviati.append(messages)
+                return intelligence.ChatResult(ok=False, error="test")
+
+        self._patcher = unittest.mock.patch.object(
+            intelligence, "client_from_settings", lambda: _RecordingClient()
+        )
+        self._patcher.start()
+
+    def tearDown(self):
+        self._patcher.stop()
+
+    def test_i_confronti_sono_compatti(self):
+        confronti = [
+            {
+                "via": "Trento",
+                "totale": 30.75,
+                "totale_effettivo": 25.26,
+                "diretto_prezzo": 37.55,
+                "delta_prezzo": -6.8,
+                "delta_minuti": -30,
+                "cambi": 3,
+                "partenza": "2026-11-05T09:21:00+01:00",
+                "arrivo": "2026-11-05T14:02:00+01:00",
+                "tratte": [
+                    {
+                        "da": "Thiene",
+                        "a": "Trento",
+                        "prezzo": 13.10,
+                        "prezzo_effettivo": 13.10,
+                        "treni": "Regionale, Regionale Veloce",
+                        "partenza": "2026-11-05T09:21:00+01:00",
+                    },
+                    {
+                        "da": "Trento",
+                        "a": "Bressanone Brixen",
+                        "prezzo": 17.65,
+                        "prezzo_effettivo": 12.16,
+                        "treni": "Regionale Veloce",
+                    },
+                ],
+            }
+        ]
+        payload = intelligence._confronti_payload(confronti)
+        self.assertEqual(len(payload), 1)
+        self.assertEqual(payload[0]["via"], "Trento")
+        # Si manda il costo effettivo, non il listino.
+        self.assertAlmostEqual(payload[0]["totale"], 25.26)
+        self.assertAlmostEqual(payload[0]["tratte"][1]["prezzo"], 12.16)
+        # Niente orari e categorie: sono quelli che facevano esplodere il prompt.
+        self.assertNotIn("partenza", payload[0])
+        self.assertNotIn("treni", payload[0]["tratte"][0])
+
+    def test_al_massimo_cinque_confronti(self):
+        confronti = [{"via": f"nodo{i}", "totale": 10.0 + i} for i in range(12)]
+        self.assertEqual(len(intelligence._confronti_payload(confronti)), 5)
+
+    async def test_il_prompt_resta_nel_budget(self):
+        base = reference(2)
+        arrive_by = base + timedelta(hours=6)
+        offers = [
+            make_offer("trenitalia", f"o{i}", "train", 30.0 + i * 0.1, base, 180 + i * 5)
+            for i in range(12)
+        ]
+        # Confronti volutamente enormi: se non venissero compattati il test
+        # supererebbe il budget.
+        confronti = [
+            {
+                "via": f"nodo {i}",
+                "totale": 30.0 + i,
+                "tratte": [
+                    {"da": "Thiene", "a": f"Nodo {i}", "prezzo": 12.0, "treni": "Regionale " * 20},
+                ],
+            }
+            for i in range(12)
+        ]
+        ctx = context(arrive_by)
+        watch = {
+            "id": 101,
+            "from_place": "Thiene",
+            "to_place": "Trento",
+            "arrive_by": iso(arrive_by),
+            "prefs": {},
+            "passengers": 1,
+        }
+        await intelligence.analyze(watch, offers, ctx, confronti=confronti)
+        self.assertTrue(self.inviati, "il modello non e' stato chiamato")
+        prompt = self.inviati[0][-1]["content"]
+        self.assertLessEqual(len(prompt), intelligence.MAX_PROMPT_CHARS + 200)
+        self.assertIn("CONFRONTI", prompt)
+
+
 class LateWindowTests(unittest.TestCase):
     def test_flexible_days_keeps_late_offers(self):
         from app.services.search import _filter_offers
