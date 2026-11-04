@@ -337,6 +337,43 @@ class IntelligenceFallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Groq", result.get("error", ""))
 
 
+class CostoConPassTests(unittest.TestCase):
+    """Il budget si confronta col costo che l'utente paga davvero.
+
+    Thiene→Bressanone: 30,75 EUR di listino, 25,26 col Flex sui 17,65 della
+    tratta Trento→Bressanone. Dire "la piu' economica costa 30,75" e' falso
+    e fa sembrare fuori budget un viaggio che ci sta quasi dentro.
+    """
+
+    def _offerta(self, prezzo: float, netto: float | None, base: datetime) -> Offer:
+        offer = make_offer("spezzatura", "split", "train", prezzo, base, 281)
+        offer.net_cost = netto
+        return offer
+
+    def test_motivo_vincolo_usa_il_costo_col_pass(self):
+        base = reference(2)
+        ctx = context(base + timedelta(hours=6), max_price=25.0)
+        offerta = self._offerta(30.75, 25.26, base)
+        frase = intelligence._motivo_vincolo([offerta], ctx, {})
+        self.assertIn("25.26", frase)
+        self.assertNotIn("30.75", frase)
+
+    def test_domanda_sul_budget_usa_il_costo_col_pass(self):
+        base = reference(2)
+        ctx = context(base + timedelta(hours=6), max_price=25.0)
+        offerta = self._offerta(30.75, 25.26, base)
+        domande = intelligence._relax_questions([offerta], ctx, {})
+        budget = next(d for d in domande if d["key"] == "budget_flex")
+        self.assertIn("25.26", budget["text"])
+        self.assertIn("28", budget["options"][1]["label"])  # 25,26 * 1,1
+
+    def test_un_viaggio_coperto_non_e_fuori_budget(self):
+        base = reference(2)
+        ctx = context(base + timedelta(hours=6), max_price=25.0)
+        offerta = self._offerta(30.75, 0.0, base)
+        self.assertEqual(intelligence._motivo_vincolo([offerta], ctx, {}), "Nessuna combinazione rispetta i vincoli attuali.")
+
+
 class PromptBudgetTests(unittest.IsolatedAsyncioTestCase):
     """Il prompt del piano deve stare nel tetto di token di Groq (8000/minuto).
 

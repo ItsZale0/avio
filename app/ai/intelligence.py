@@ -518,6 +518,18 @@ def _point_questions(
     ]
 
 
+def _costo_utente(offer: Offer) -> float | None:
+    """Quanto paga davvero l'utente: col pass o l'abbonamento applicato.
+
+    Con il Flex altoatesino una tratta da 17,65 EUR costa 12,16: dire
+    "la piu' economica costa 17,65" sarebbe falso e farebbe sembrare fuori
+    budget un viaggio che ci sta dentro.
+    """
+    if offer.net_cost is not None:
+        return offer.net_cost
+    return offer.price
+
+
 def _motivo_vincolo(
     offers: list[Offer], ctx: SearchContext, prefs: dict[str, Any]
 ) -> str:
@@ -542,13 +554,13 @@ def _motivo_vincolo(
         over = [
             o
             for o in in_window
-            if o.price is not None and o.price > ctx.max_price
+            if _costo_utente(o) is not None and _costo_utente(o) > ctx.max_price
         ]
         if over:
-            cheapest = min(over, key=lambda o: o.price or 0)
+            cheapest = min(over, key=lambda o: _costo_utente(o) or 0)
             return (
                 f"Nessuna offerta sta nel budget di {ctx.max_price:.2f} EUR: la piu' "
-                f"economica costa {cheapest.price:.2f} EUR "
+                f"economica costa {_costo_utente(cheapest):.2f} EUR "
                 f"({cheapest.operator or cheapest.source})."
             )
     return "Nessuna combinazione rispetta i vincoli attuali."
@@ -576,15 +588,21 @@ def _relax_questions(
         if o.arrive_at
         and o.arrive_at > latest
         and _reaches_destination(o, ctx)
-        and (o.price is None or ctx.max_price is None or o.price <= ctx.max_price)
-    ]    # Nella finestra di tempo ma piu' care del budget: e' il prezzo reale
-    # della soluzione che l'utente deve conoscere per decidere.
+        and (
+            _costo_utente(o) is None
+            or ctx.max_price is None
+            or _costo_utente(o) <= ctx.max_price
+        )
+    ]
+    # Nella finestra di tempo ma piu' care del budget: e' il prezzo reale
+    # della soluzione che l'utente deve conoscere per decidere. Il confronto
+    # e' sul costo con gli abbonamenti, non sul listino.
     over_budget = [
         o
         for o in in_window
         if ctx.max_price is not None
-        and o.price is not None
-        and o.price > ctx.max_price
+        and _costo_utente(o) is not None
+        and _costo_utente(o) > ctx.max_price
     ]
     # Offerte che arrivano la sera prima: servono solo se l'utente le accetta.
     giorno_prima = [
@@ -608,13 +626,13 @@ def _relax_questions(
     ordinate: list[dict] = []
     ordinate.extend(_pass_question(prefs))
     if over_budget and ctx.max_price:
-        cheapest = min(over_budget, key=lambda o: o.price or 0)
-        suggested = round((cheapest.price or 0) * 1.1, 2)
+        cheapest = min(over_budget, key=lambda o: _costo_utente(o) or 0)
+        suggested = round((_costo_utente(cheapest) or 0) * 1.1, 2)
         ordinate.append(
             {
                 "key": "budget_flex",
                 "text": (
-                    f"La soluzione più economica costa {cheapest.price:.2f} EUR, sopra il budget "
+                    f"La soluzione più economica costa {_costo_utente(cheapest):.2f} EUR, sopra il budget "
                     f"di {ctx.max_price:.2f} EUR. Vuoi alzare il budget?"
                 ),
                 "options": [
