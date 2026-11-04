@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import re
 from datetime import datetime, timedelta
 from typing import Any
@@ -43,8 +44,11 @@ MIN_TRANSFER_MIN = 25
 # Quanti segmenti di partenza si provano per ogni nodo: il piu' economico
 # potrebbe non permettere il cambio, il secondo potrebbe costare poco di piu'.
 MAX_FIRST_LEGS = 4
-# Quanti punti di spezzatura si provano per viaggio.
-MAX_SPLIT_POINTS = 5
+# Quanti punti di spezzatura si provano per viaggio. Non basta guardare le
+# tappe commerciali: il punto giusto può essere una stazione che il treno
+# attraversa senza fermarsi (Trento sul Brennero, per esempio), quindi si
+# tiene un margine più largo.
+MAX_SPLIT_POINTS = 8
 # Con "preferisco arrivare prima", una spezzatura che arriva almeno
 # MIN_FASTER_MINUTES prima entra nel confronto anche se costa di piu'.
 MIN_FASTER_MINUTES = 30
@@ -162,6 +166,72 @@ def _nome_stazione(nome: str) -> str:
     return re.sub(r"\s*\([^)]*\)\s*$", "", str(nome or "")).strip()
 
 
+def _coordinate_stazione(nome: str | None) -> tuple[float, float] | None:
+    """Le coordinate di una stazione, anche quando il nome è bilingue.
+
+    Il grafo ferroviario conosce solo le linee dell'Alto Adige: Thiene,
+    Vicenza o Verona non ci sono. Per capire se Trento è davvero sulla
+    strada, però, bastano le coordinate della città.
+    """
+    from ..geo import CITIES
+    from . import rail_km
+
+    chiave = rail_km.stazione(nome)
+    if chiave and chiave in CITIES:
+        return CITIES[chiave]
+
+    testo = _nome_stazione(nome).lower()
+    if not testo:
+        return None
+    for città, coordinate in CITIES.items():
+        if città == testo or città in testo or testo in città:
+            return coordinate
+    return None
+
+
+def _posizione_sul_percorso(
+    lat: float, lon: float, ctx: SearchContext, *, max_deviazione_km: float = 70.0
+) -> float | None:
+    """Dove cade un punto lungo la linea partenza→arrivo (0 = partenza, 1 = arrivo).
+
+    Restituisce None se il punto è fuori dalla linea o se allunga troppo il
+    viaggio. Serve a provare le stazioni giuste **in ordine di percorso**,
+    anche quando l'adapter descrive solo le tappe commerciali.
+    """
+    from ..geo import haversine_km
+
+    if None in (ctx.from_lat, ctx.from_lon, ctx.to_lat, ctx.to_lon):
+        return None
+    from_lat = float(ctx.from_lat)  # type: ignore[arg-type]
+    from_lon = float(ctx.from_lon)  # type: ignore[arg-type]
+    to_lat = float(ctx.to_lat)  # type: ignore[arg-type]
+    to_lon = float(ctx.to_lon)  # type: ignore[arg-type]
+
+    diretto = haversine_km(from_lat, from_lon, to_lat, to_lon)
+    primo = haversine_km(from_lat, from_lon, lat, lon)
+    secondo = haversine_km(lat, lon, to_lat, to_lon)
+    if not diretto or primo is None or secondo is None:
+        return None
+    if primo + secondo - diretto > max_deviazione_km:
+        return None
+
+    # Proiezione in coordinate locali (km): dà l'ordine lungo la tratta.
+    cos_lat = math.cos(math.radians(from_lat))
+    x = (lon - from_lon) * 111.32 * cos_lat
+    y = (lat - from_lat) * 111.32
+    x2 = (to_lon - from_lon) * 111.32 * cos_lat
+    y2 = (to_lat - from_lat) * 111.32
+    lunghezza2 = x2 * x2 + y2 * y2
+    if lunghezza2 <= 0:
+        return None
+    t = (x * x2 + y * y2) / lunghezza2
+    # Un punto oltre la destinazione (o prima della partenza) non è un
+    # cambio intermedio: allungherebbe il viaggio tornando indietro.
+    if not (0.02 <= t <= 0.98):
+        return None
+    return t
+
+
 def _split_points(offer: Offer, ctx: SearchContext) -> list[str]:
     """Le citta' dove provare a spezzare il biglietto, in ordine di promessa.
 
@@ -171,8 +241,11 @@ def _split_points(offer: Offer, ctx: SearchContext) -> list[str]:
     regionale attraversati (Fortezza, Bolzano, Trento...), infine le fermate
     reali dell'itinerario, che sono un buon piano B.
 
-    "In linea" vuol dire che la deviazione e' minima:
-    dist(partenza, X) + dist(X, arrivo) - dist(partenza, arrivo) < 70 km.
+    I nodi regionali non si ricavano solo dal grafo ferroviario: Thiene non
+    e' nel grafo dell'Alto Adige, ma Trento e' comunque sulla strada. Per
+    questo si guarda anche la posizione geografica lungo la tratta. Senza
+    questo controllo una spezzatura a Trento (spesso la piu' conveniente)
+    non veniva mai provata.
     """
     points: list[str] = []
     visti: set[str] = set()
@@ -187,6 +260,9 @@ def _split_points(offer: Offer, ctx: SearchContext) -> list[str]:
         visti.add(chiave)
         points.append(nome)
 
+    # 1. I grandi nodi italiani, nell'ordine di importanza: sono i piu'
+    #    promettenti per una spezzatura. Restano davanti anche quando la
+    #    geografia metterebbe altre stazioni prima.
     if None not in (ctx.from_lat, ctx.from_lon, ctx.to_lat, ctx.to_lon):
         from ..geo import CITIES, haversine_km
 
@@ -207,9 +283,12 @@ def _split_points(offer: Offer, ctx: SearchContext) -> list[str]:
             for _, hub in on_the_way:
                 aggiungi(hub.title())
 
-    # I nodi in linea della rete regionale: il percorso reale dice quali
-    # stazioni si attraversano, anche quando l'adapter descrive solo le
-    # tratte commerciali. Trento e' il confine del sistema altoatesino.
+    # 2. Nodi in linea e fermate reali, ordinati lungo il percorso. Il
+    #    grafo dice quali stazioni si attraversano quando conosce la linea;
+    #    la geografia copre i casi in cui la partenza non e' nel grafo
+    #    (Thiene, per esempio).
+    in_linea: list[tuple[float, str]] = []
+
     if offer.mode == "train":
         partenza = rail_km.stazione(offer.pickup_name)
         arrivo = rail_km.stazione(offer.dropoff_name)
@@ -217,15 +296,55 @@ def _split_points(offer: Offer, ctx: SearchContext) -> list[str]:
             cammino, _ = rail_km.percorso(partenza, arrivo)
             for nodo in cammino:
                 if nodo in NODI_IN_LINEA:
-                    aggiungi(nodo.replace("_", " ").title())
+                    nome = nodo.replace("_", " ").title()
+                    coordinate = _coordinate_stazione(nome)
+                    t = (
+                        _posizione_sul_percorso(coordinate[0], coordinate[1], ctx)
+                        if coordinate
+                        else None
+                    )
+                    in_linea.append((t if t is not None else 0.5, nome))
 
-    # Poi le fermate reali del treno.
+        # Anche quando il grafo non conosce partenza o arrivo, i nodi
+        # regionali sulla linea vanno provati. Trento e Bolzano sono i
+        # casi che contano di piu' sulla Brennero.
+        for nodo in NODI_IN_LINEA:
+            if _is_endpoint(nodo, ctx):
+                continue
+            coordinate = _coordinate_stazione(nodo)
+            if not coordinate:
+                continue
+            t = _posizione_sul_percorso(coordinate[0], coordinate[1], ctx)
+            if t is not None:
+                in_linea.append((t, nodo.replace("_", " ").title()))
+
+    # Le fermate reali del treno restano un piano B: si aggiungono anche
+    # quando la geografia non le riconosce, perche' l'adapter le ha viste.
     tappe = offer.details.get("tappe") or []
     for step in tappe:
         if not isinstance(step, dict):
             continue
         for key in ("da", "a"):
-            aggiungi(str(step.get(key) or ""))
+            nome = str(step.get(key) or "").strip()
+            if not nome:
+                continue
+            coordinate = _coordinate_stazione(nome)
+            t = (
+                _posizione_sul_percorso(coordinate[0], coordinate[1], ctx)
+                if coordinate
+                else None
+            )
+            in_linea.append((t if t is not None else 0.5, nome))
+
+    # Deduplica e ordina: un nodo che compare sia nel grafo sia nelle tappe
+    # si prova una volta sola, nel punto giusto del viaggio.
+    visti_in_linea: set[str] = set()
+    for _, nome in sorted(in_linea, key=lambda item: (item[0], item[1])):
+        chiave = _chiave_punto(nome)
+        if chiave in visti_in_linea:
+            continue
+        visti_in_linea.add(chiave)
+        aggiungi(nome)
 
     # Escludi partenza e arrivo.
     start = _chiave_punto(offer.pickup_name)

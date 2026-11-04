@@ -207,6 +207,31 @@ class PassiSullaSpezzaturaTests(unittest.TestCase):
         self.assertAlmostEqual(confronto["delta_prezzo"], -6.30, places=2)
         self.assertTrue(confronto["conveniente"])
 
+    def test_il_flex_su_trento_bressanone_paga_solo_il_tratto_altoatesino(self):
+        # Thiene→Trento resta a listino; Trento→Bressanone entra nel
+        # sistema provinciale e il Flex la porta a 12,16 €.
+        confronto = {
+            "via": "Trento",
+            "tratte": [
+                {"da": "Thiene", "a": "Trento", "prezzo": 11.90},
+                {"da": "Trento", "a": "Bressanone Brixen", "prezzo": 17.65},
+            ],
+            "totale": 29.55,
+            "diretto_prezzo": 37.55,
+            "delta_prezzo": -8.00,
+            "durata_min": 371,
+            "delta_minuti": 60,
+            "conveniente": True,
+            "offer": make_brennero_direct(price=37.55),
+        }
+        split_tickets.applica_abbonamenti([confronto], self.FLEX)  # type: ignore[list-item]
+        prima, seconda = confronto["tratte"]
+        self.assertEqual(prima["prezzo_effettivo"], 11.90)
+        self.assertNotIn("pass", prima)
+        self.assertAlmostEqual(seconda["prezzo_effettivo"], 12.16, places=2)
+        self.assertIn("Flex", seconda["pass"])
+        self.assertAlmostEqual(confronto["totale_effettivo"], 24.06, places=2)
+
     def test_xgo_non_vale_se_il_viaggio_tocca_l_alto_adige(self):
         # X-GO non vale in Trentino/Alto Adige: niente sconto ne' sul
         # diretto ne' sulle tratte, altrimenti il confronto sarebbe gonfiato.
@@ -294,6 +319,46 @@ class SplitPointTests(unittest.TestCase):
         tappe = [{"da": "Milano Centrale", "a": "Piacenza"}]
         points = split_tickets._split_points(make_train_offer(tappe=tappe), ctx)
         self.assertIn("Piacenza", points)
+
+    def test_thiene_bressanone_tries_trento_anche_se_thiene_non_e_nel_grafo(self):
+        # Thiene non è nel grafo ferroviario dell'Alto Adige: prima Trento
+        # veniva persa e la spezzatura si fermava a Bolzano, più cara.
+        ctx = make_ctx(
+            from_place="Thiene",
+            to_place="Bressanone",
+            from_lat=45.6983,
+            from_lon=11.4819,
+            to_lat=46.7160,
+            to_lon=11.6570,
+        )
+        offer = Offer(
+            source="trenitalia",
+            external_id="thiene-bressanone",
+            mode="train",
+            operator="Regionale",
+            depart_at=datetime(2026, 10, 25, 7, 21, tzinfo=timezone.utc),
+            arrive_at=datetime(2026, 10, 25, 12, 32, tzinfo=timezone.utc),
+            price=37.55,
+            pickup_name="Thiene",
+            dropoff_name="Bressanone Brixen",
+            pickup_lat=45.700667,
+            pickup_lon=11.475408,
+            dropoff_lat=46.709998,
+            dropoff_lon=11.650005,
+            details={
+                "tappe": [
+                    {"da": "Thiene", "a": "Vicenza"},
+                    {"da": "Vicenza", "a": "Verona Porta Nuova"},
+                    {"da": "Verona Porta Nuova", "a": "Bolzano Bozen"},
+                    {"da": "Bolzano Bozen", "a": "Bressanone Brixen"},
+                ]
+            },
+        )
+        points = split_tickets._split_points(offer, ctx)
+        self.assertIn("Trento", points)
+        self.assertIn("Bolzano", points)
+        # Trento è sulla strada e va provato prima di Bolzano.
+        self.assertLess(points.index("Trento"), points.index("Bolzano"))
 
     def test_trento_is_tried_even_if_the_adapter_skips_it(self):
         # L'adapter descrive solo le tratte commerciali (cambio a Bolzano):
