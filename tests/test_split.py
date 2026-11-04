@@ -512,6 +512,188 @@ class SplitOfferTests(unittest.TestCase):
         self.assertEqual(offer.details["risparmio"], 21.1)
 
 
+class SceltaDellaSpezzaturaTests(unittest.IsolatedAsyncioTestCase):
+    """Fra più coppie reali si sceglie prezzo + tempo, non solo il prezzo.
+
+    Il caso vero: Thiene→Trento ha un regionale da 11,90 € che impiega
+    4h17 (attese comprese) e uno da 13,10 € che ne impiega 2h29. Il primo
+    non è un risparmio: è una corsa con due ore di attese in più.
+    """
+
+    FLEX = [{"tipo": "altoadigemobilita_flex"}]
+
+    async def asyncSetUp(self):
+        self._lookup = split_tickets._lookup_station
+        self._price = split_tickets._segment_price
+
+    async def asyncTearDown(self):
+        split_tickets._lookup_station = self._lookup
+        split_tickets._segment_price = self._price
+
+    def test_scarta_il_segmento_troppo_piu_lento(self):
+        soluzioni = [
+            {
+                "price": 11.90,
+                "depart_at": datetime(2026, 10, 25, 7, 21, tzinfo=ROME),
+                "arrive_at": datetime(2026, 10, 25, 11, 38, tzinfo=ROME),
+                "durata_min": 257,
+            },
+            {
+                "price": 13.10,
+                "depart_at": datetime(2026, 10, 25, 7, 21, tzinfo=ROME),
+                "arrive_at": datetime(2026, 10, 25, 9, 50, tzinfo=ROME),
+                "durata_min": 149,
+            },
+        ]
+        tenute = split_tickets._plausibili_per_tempo(soluzioni)
+        self.assertEqual([s["price"] for s in tenute], [13.10])
+
+    async def test_sceglie_i_due_biglietti_reali_giusti_per_thiene_bressanone(self):
+        ctx = make_ctx(
+            from_place="Thiene",
+            to_place="Bressanone",
+            from_lat=45.6983,
+            from_lon=11.4819,
+            to_lat=46.7160,
+            to_lon=11.6570,
+            depart_after=datetime(2026, 10, 25, 5, 0, tzinfo=ROME),
+            arrive_by=datetime(2026, 10, 25, 20, 0, tzinfo=ROME),
+        )
+        direct = Offer(
+            source="trenitalia",
+            external_id="thiene-bressanone",
+            mode="train",
+            operator="Regionale",
+            depart_at=datetime(2026, 10, 25, 7, 21, tzinfo=ROME),
+            arrive_at=datetime(2026, 10, 25, 12, 32, tzinfo=ROME),
+            price=37.55,
+            pickup_name="Thiene",
+            dropoff_name="Bressanone Brixen",
+            pickup_lat=45.700667,
+            pickup_lon=11.475408,
+            dropoff_lat=46.709998,
+            dropoff_lon=11.650005,
+            details={
+                "treni": "Regionale",
+                "tappe": [
+                    {"da": "Thiene", "a": "Vicenza"},
+                    {"da": "Vicenza", "a": "Verona Porta Nuova"},
+                    {"da": "Verona Porta Nuova", "a": "Bolzano Bozen"},
+                    {"da": "Bolzano Bozen", "a": "Bressanone Brixen"},
+                ],
+            },
+        )
+
+        def soluzione(prezzo, partenza, arrivo, cambi, treni="Regionale"):
+            return {
+                "price": prezzo,
+                "depart_at": partenza,
+                "arrive_at": arrivo,
+                "durata_min": int((arrivo - partenza).total_seconds() // 60),
+                "cambi": cambi,
+                "treni": treni,
+                "regionale": treni == "Regionale",
+                "origin": "",
+                "destination": "",
+                "id": f"{prezzo}-{partenza:%H%M}",
+            }
+
+        async def lookup(client, name, lat=None, lon=None):
+            return {"id": name, "name": name}
+
+        async def price(client, a, b, when):
+            if (a, b) == ("Thiene", "Trento"):
+                return [
+                    soluzione(
+                        11.90,
+                        datetime(2026, 10, 25, 7, 21, tzinfo=ROME),
+                        datetime(2026, 10, 25, 11, 38, tzinfo=ROME),
+                        2,
+                    ),
+                    soluzione(
+                        13.10,
+                        datetime(2026, 10, 25, 7, 21, tzinfo=ROME),
+                        datetime(2026, 10, 25, 9, 50, tzinfo=ROME),
+                        2,
+                    ),
+                ]
+            if (a, b) == ("Trento", "Bressanone Brixen"):
+                # Arrivo alle 9:50 -> primo utile dopo i 25 minuti di cambio.
+                return [
+                    soluzione(
+                        17.65,
+                        datetime(2026, 10, 25, 12, 5, tzinfo=ROME),
+                        datetime(2026, 10, 25, 13, 32, tzinfo=ROME),
+                        1,
+                    )
+                ]
+            return []
+
+        split_tickets._lookup_station = lookup
+        split_tickets._segment_price = price
+
+        confronto = await split_tickets._split_via(
+            None,  # type: ignore[arg-type]
+            direct,
+            ctx,
+            {"id": "Thiene", "name": "Thiene"},
+            {"id": "Bressanone Brixen", "name": "Bressanone Brixen"},
+            "Trento",
+            passes=self.FLEX,
+        )
+        self.assertIsNotNone(confronto)
+        assert confronto is not None  # per il type checker
+        prima, seconda = confronto["tratte"]
+        # Il regionale da 4h17 è scartato: resta quello da 13,10 €.
+        self.assertEqual(prima["prezzo"], 13.10)
+        self.assertAlmostEqual(seconda["prezzo"], 17.65, places=2)
+        self.assertAlmostEqual(confronto["totale"], 30.75, places=2)
+        # Col Flex la seconda tratta scende a 12,16: 13,10 + 12,16 = 25,26.
+        split_tickets.applica_abbonamenti([confronto], self.FLEX)
+        self.assertAlmostEqual(confronto["tratte"][0]["prezzo_effettivo"], 13.10, places=2)
+        self.assertNotIn("pass", confronto["tratte"][0])
+        self.assertAlmostEqual(confronto["tratte"][1]["prezzo_effettivo"], 12.16, places=2)
+        self.assertIn("Flex", confronto["tratte"][1]["pass"])
+        self.assertAlmostEqual(confronto["totale_effettivo"], 25.26, places=2)
+        # I cambi si contano davvero: 2 dentro la prima tratta, 1 dentro la
+        # seconda, 1 cambio di biglietto a Trento.
+        self.assertEqual(confronto["cambi"], 4)
+        self.assertEqual(confronto["treni"], "Regionale")
+
+    def test_il_flex_non_vale_su_una_freccia(self):
+        from app.services import passes as passes_service
+
+        costo, nome = passes_service.netto_tratta(
+            self.FLEX, "Trento", "Bressanone Brixen", 29.50, treni="Frecciarossa, Regionale"
+        )
+        self.assertEqual(costo, 29.50)
+        self.assertIsNone(nome)
+        # Su un regionale invece vale, e il prezzo e' quello chilometrico.
+        costo_regionale, nome_regionale = passes_service.netto_tratta(
+            self.FLEX, "Trento", "Bressanone Brixen", 17.65, treni="Regionale"
+        )
+        self.assertAlmostEqual(costo_regionale, 12.16, places=2)
+        self.assertIn("Flex", nome_regionale or "")
+
+    def test_applica_abbonamenti_non_sconta_una_tratta_railjet(self):
+        confronto = {
+            "via": "Trento",
+            "tratte": [
+                {"da": "Trento", "a": "Bressanone Brixen", "prezzo": 22.00, "treni": "Rail jet"},
+            ],
+            "totale": 22.00,
+            "diretto_prezzo": 37.55,
+            "delta_prezzo": -15.55,
+            "durata_min": 63,
+            "delta_minuti": 0,
+            "conveniente": True,
+            "offer": make_brennero_direct(price=37.55),
+        }
+        split_tickets.applica_abbonamenti([confronto], self.FLEX)  # type: ignore[list-item]
+        self.assertEqual(confronto["tratte"][0]["prezzo_effettivo"], 22.00)
+        self.assertNotIn("pass", confronto["tratte"][0])
+
+
 class SplitScoringTests(unittest.TestCase):
     def test_split_gets_the_spezzato_badge(self):
         from app.scoring import score_offers

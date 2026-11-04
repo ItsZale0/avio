@@ -492,6 +492,10 @@ NON_REGIONALI = (
     "ntv",
     "notte",
     "night",
+    # I Railjet (ÖBB) sono treni a lunga percorrenza, come gli Eurocity:
+    # l'abbonamento regionale non vale, anche se la corsa e' breve.
+    "railjet",
+    "rail jet",
 )
 # Compagnie che fanno solo treni regionali.
 OPERATORI_REGIONALI = (
@@ -1065,6 +1069,7 @@ def netto_tratta(
     quando: date | None = None,
     *,
     intera: bool = True,
+    treni: str = "Regionale",
 ) -> tuple[float, str | None]:
     """Costo di un biglietto singolo con gli abbonamenti: (costo, nome pass).
 
@@ -1076,6 +1081,10 @@ def netto_tratta(
     Con ``intera`` un abbonamento vale solo se copre tutto il tratto: su un
     biglietto separato che esce dall'area non si puo' scontare "una parte",
     sarebbe una promessa falsa.
+
+    ``treni`` e' la categoria reale della corsa: gli abbonamenti regionali
+    non valgono sulle Frecce, quindi va passata la categoria del segmento
+    (default "Regionale" per compatibilita' con le vecchie chiamate).
     """
     valore = float(prezzo or 0)
     coords_da = _station_coords(da)
@@ -1095,7 +1104,7 @@ def netto_tratta(
         pickup_lon=coords_da[1],
         dropoff_lat=coords_a[0],
         dropoff_lon=coords_a[1],
-        details={"treni": "Regionale", "tappe": []},
+        details={"treni": treni, "tappe": []},
         net_cost=None,
     )
     migliore = valore

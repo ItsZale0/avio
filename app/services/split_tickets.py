@@ -40,7 +40,10 @@ from . import rail_km
 log = logging.getLogger("carpool.split")
 
 # Un segmento deve partire almeno dopo che il precedente e' arrivato.
-MIN_TRANSFER_MIN = 25
+# Venti minuti bastano per un cambio alla stessa stazione anche con due
+# biglietti separati; venticinque tagliavano coincidenze vere di un minuto
+# (Trento 12:30 -> 12:54) e facevano perdere un'ora di viaggio.
+MIN_TRANSFER_MIN = 20
 # Quanti segmenti di partenza si provano per ogni nodo: il piu' economico
 # potrebbe non permettere il cambio, il secondo potrebbe costare poco di piu'.
 MAX_FIRST_LEGS = 4
@@ -56,6 +59,23 @@ MIN_FASTER_MINUTES = 30
 MAX_EXTRA_PRICE = 8.0
 # Quanti viaggi si provano a spezzare (i piu' economici diretti).
 MAX_SPLIT_OFFERS = 2
+# Quanto vale un'ora di viaggio in piu', in euro. Non e' denaro che l'utente
+# paga: serve solo a non proporre un itinerario che impiega due ore in piu'
+# per risparmiare un euro. Senza questo, il confronto fra spezzature sceglieva
+# sempre il biglietto piu' economico in assoluto, anche se la corsa era
+# assurda (es. un regionale con due attese per una tratta da due ore).
+VALORE_ORA_EUR = 8.0
+# Un singolo segmento che impiega piu' del piu' veloce per la stessa tratta
+# oltre questo margine e' una corsa sbagliata (attese lunghe, coincidenze
+# perse): si scarta prima ancora di confrontarne il prezzo.
+MAX_EXTRA_SEGMENT_MIN = 60
+# Quante soluzioni del secondo segmento si confrontano davvero. Sono gia'
+# filtrate per tempo: qui si tengono le piu' promettenti, non tutte.
+MAX_SECOND_LEGS = 4
+# Una spezzatura che ci mette piu' di due ore in piu' del diretto resta nel
+# confronto (l'utente vede quanto cambia) ma non diventa un piano: meglio
+# pagare il diretto che passare la giornata in stazione.
+MAX_EXTRA_TOTAL_MIN = 120
 
 # I nodi ferroviari italiani, in ordine di importanza: e' li' che la
 # spezzatura conviene, perche' offrono regionali economici che il treno
@@ -132,17 +152,47 @@ async def _segment_price(
             continue
         if depart_at < when:
             continue  # parte prima di quando richiesto
+        treni = solution.get("trains") or []
+        categorie: list[str] = []
+        for treno in treni:
+            if not isinstance(treno, dict):
+                continue
+            categoria = str(treno.get("trainCategory") or "").strip()
+            if categoria and categoria not in categorie:
+                categorie.append(categoria)
+        # I cambi reali del segmento: ogni nodo in piu' del primo e' un
+        # cambio di treno. Serve a non dichiarare "0 cambi" su un viaggio
+        # che ne ha due.
+        nodi = solution.get("nodes") or []
+        cambi = max(0, len(nodi) - 1) if nodi else max(0, len(treni) - 1)
         found.append(
             {
                 "price": round(price, 2),
                 "depart_at": depart_at,
                 "arrive_at": arrive_at,
+                "durata_min": _duration(depart_at, arrive_at),
+                "cambi": cambi,
+                "treni": ", ".join(categorie) or "Trenitalia",
+                "regionale": _e_regionale(categorie),
                 "origin": solution.get("origin") or "",
                 "destination": solution.get("destination") or "",
                 "id": str(solution.get("id") or ""),
             }
         )
     return sorted(found, key=lambda s: s["price"])
+
+
+def _e_regionale(categorie: list[str]) -> bool:
+    """True se il segmento e' fatto solo di treni regionali.
+
+    Serve per gli abbonamenti: il Flex altoatesino vale sui regionali, non
+    sulle Frecce. Senza questo controllo il pass veniva applicato anche a
+    un Frecciarossa, e il prezzo mostrato era piu' basso del vero.
+    """
+    if not categorie:
+        return False
+    testo = " ".join(categorie).lower()
+    return not any(parola in testo for parola in passes_service.NON_REGIONALI)
 
 
 def _is_endpoint(hub: str, ctx: SearchContext) -> bool:
@@ -358,6 +408,74 @@ def _duration(depart: datetime | None, arrive: datetime | None) -> int:
     return max(0, int((arrive - depart).total_seconds() // 60))
 
 
+def _durata_soluzione(soluzione: dict[str, Any]) -> int:
+    """La durata del segmento, anche quando la fonte non la dichiara."""
+    dichiarata = int(soluzione.get("durata_min") or 0)
+    if dichiarata:
+        return dichiarata
+    return _duration(soluzione.get("depart_at"), soluzione.get("arrive_at"))
+
+
+def _plausibili_per_tempo(soluzioni: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Scarta le corse troppo piu' lente del meglio disponibile sulla tratta.
+
+    Un regionale che impiega quattro ore per una tratta da due e' una corsa
+    con attese lunghe: comprarlo a pezzi non e' "risparmiare", e' arrivare
+    distrutti. Il confronto deve restare su corse sensate.
+    """
+    if not soluzioni:
+        return []
+    veloce = min(_durata_soluzione(s) for s in soluzioni)
+    if not veloce:
+        return list(soluzioni)
+    return [
+        s
+        for s in soluzioni
+        if _durata_soluzione(s) <= veloce + MAX_EXTRA_SEGMENT_MIN
+    ]
+
+
+def _prezzo_netto_tratta(
+    passes: list[dict[str, Any]] | None, tratta: dict[str, Any]
+) -> float:
+    """Il prezzo del biglietto singolo con gli abbonamenti validi su quella corsa.
+
+    La categoria del treno conta: il Flex altoatesino non vale sulle Frecce.
+    Per questo si passa ``treni`` e non si da' per scontato che ogni corsa
+    sia un regionale (era il motivo per cui un Frecciarossa sembrava
+    costare quanto un regionale).
+    """
+    listino = float(tratta.get("price") or 0)
+    da = tratta.get("origin") or tratta.get("da") or ""
+    a = tratta.get("destination") or tratta.get("a") or ""
+    when = tratta.get("depart_at")
+    costo, _ = passes_service.netto_tratta(
+        passes or [],
+        da,
+        a,
+        listino,
+        when.date() if isinstance(when, datetime) else None,
+        treni=str(tratta.get("treni") or "Regionale"),
+    )
+    return costo
+
+
+def _punteggio_coppia(
+    prima: dict[str, Any],
+    seconda: dict[str, Any],
+    passes: list[dict[str, Any]] | None,
+) -> tuple[float, float, int]:
+    """Quanto "costa" davvero la coppia di biglietti: prezzo + tempo.
+
+    Ritorna (punteggio, costo effettivo, durata). Il punteggio non e' un
+    prezzo da mostrare: serve solo a scegliere fra due itinerari reali.
+    """
+    costo = _prezzo_netto_tratta(passes, prima) + _prezzo_netto_tratta(passes, seconda)
+    durata = _duration(prima.get("depart_at"), seconda.get("arrive_at"))
+    punteggio = costo + VALORE_ORA_EUR * (durata / 60.0)
+    return round(punteggio, 4), round(costo, 2), durata
+
+
 async def same_trains_comparison(
     offer: Offer,
     passes: list[dict[str, Any]] | None = None,
@@ -456,6 +574,9 @@ async def _same_trains_comparison(
     if migliore is None:
         return None
     i, prima, dopo, totale = migliore
+    # Le due corse sono quelle del diretto: la categoria e' la sua. Serve
+    # per non applicare un abbonamento regionale a un Frecciarossa.
+    categoria = str((offer.details or {}).get("treni") or "Regionale")
     tratte = [
         {
             "da": stazioni[0],
@@ -464,6 +585,8 @@ async def _same_trains_comparison(
             "partenza": iso(prima["depart_at"]),
             "arrivo": iso(prima["arrive_at"]),
             "durata_min": _duration(prima["depart_at"], prima["arrive_at"]),
+            "treni": categoria,
+            "cambi": int(prima.get("cambi") or 0),
         },
         {
             "da": stazioni[i],
@@ -472,6 +595,8 @@ async def _same_trains_comparison(
             "partenza": iso(dopo["depart_at"]),
             "arrivo": iso(dopo["arrive_at"]),
             "durata_min": _duration(dopo["depart_at"], dopo["arrive_at"]),
+            "treni": categoria,
+            "cambi": int(dopo.get("cambi") or 0),
         },
     ]
 
@@ -505,8 +630,17 @@ async def _split_via(
     origin: dict,
     destination: dict,
     point: str,
+    passes: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
-    """Calcola lo spezzamento attraverso un nodo e il confronto col diretto."""
+    """Calcola lo spezzamento attraverso un nodo e il confronto col diretto.
+
+    Fra le coppie di corse reali non si prende la piu' economica in assoluto:
+    si sceglie quella col miglior rapporto prezzo/tempo (``VALORE_ORA_EUR``),
+    usando il costo effettivo con gli abbonamenti. Le corse troppo piu'
+    lente del meglio disponibile sulla tratta vengono scartate: senza questo
+    filtro la spezzatura "risparmiava" comprando un regionale con due ore di
+    attese, e il piano sembrava assurdo.
+    """
     # Il nodo puo' essere una citta' ("Verona") o una stazione vera
     # ("Verona Porta Nuova"): per le citta' si passano le coordinate del
     # centro, cosi' l'API non viene scambiata per l'aeroporto o la stazione
@@ -532,7 +666,8 @@ async def _split_via(
     # fare il cambio, si prova il secondo, il terzo, e cosi' via. Un
     # segmento 50 centesimi piu' caro puo' far risparmiare l'intero
     # spezzamento.
-    best: tuple[dict[str, Any], dict[str, Any], float] | None = None
+    best: tuple[float, dict[str, Any], dict[str, Any], float, float, int] | None = None
+    # (punteggio, leg1, leg2, totale listino, costo effettivo, durata)
     for start in query_starts(ctx):
         first = await _segment_price(client, origin["id"], middle["id"], start)
         if not first:
@@ -541,12 +676,20 @@ async def _split_via(
         # altrimenti si aspetta una notte in stazione (che non e' un
         # viaggio). Un treno notturno che parte la sera prima e arriva
         # dopo mezzanotte resta valido.
+        # Il filtro sul tempo si applica a tutte le soluzioni restituite
+        # (non solo alle prime, ordinate per prezzo): altrimenti otto corse
+        # economiche ma lentissime potrebbero nascondere quella veloce.
         candidati = [
             leg1
-            for leg1 in first[:MAX_FIRST_LEGS]
+            for leg1 in _plausibili_per_tempo(first)
             if leg1["arrive_at"] >= ctx.arrival_day_start
             and leg1["depart_at"] >= ctx.window_start - timedelta(minutes=15)
         ]
+        candidati.sort(
+            key=lambda s: _prezzo_netto_tratta(passes, s)
+            + VALORE_ORA_EUR * (_durata_soluzione(s) / 60.0)
+        )
+        candidati = candidati[:MAX_FIRST_LEGS]
         if not candidati:
             continue
         # I secondi segmenti si cercano in parallelo: ogni candidato
@@ -568,7 +711,10 @@ async def _split_via(
             if isinstance(second, Exception) or not second:
                 continue
             # Il secondo biglietto deve arrivare nel giorno giusto E in
-            # tempo: si sceglie il piu' economico fra quelli che valgono.
+            # tempo. Fra quelli validi non si prende il primo della lista
+            # (ordinata per prezzo): si confrontano prezzo effettivo e
+            # durata, perche' due corse possono costare uguale con il pass
+            # ma impiegare un'ora di differenza.
             utili = [
                 s
                 for s in second
@@ -576,16 +722,30 @@ async def _split_via(
                 <= s["arrive_at"]
                 <= ctx.arrive_by + timedelta(minutes=10)
             ]
+            utili = _plausibili_per_tempo(utili)
             if not utili:
                 continue
-            leg2 = utili[0]
-            total = round(leg1["price"] + leg2["price"], 2)
-            if best is None or total < best[2]:
-                best = (leg1, leg2, total)
+            utili.sort(
+                key=lambda s: _prezzo_netto_tratta(passes, s)
+                + VALORE_ORA_EUR * (_durata_soluzione(s) / 60.0)
+            )
+            for leg2 in utili[:MAX_SECOND_LEGS]:
+                total = round(leg1["price"] + leg2["price"], 2)
+                punteggio, effettivo, durata = _punteggio_coppia(leg1, leg2, passes)
+                if best is None or punteggio < best[0]:
+                    best = (punteggio, leg1, leg2, total, effettivo, durata)
 
     if best is None:
         return None
-    leg1, leg2, total = best
+    _, leg1, leg2, total, effettivo, durata = best
+    log.debug(
+        "spezzatura via %s: %s EUR effettivi, %s min, %s + %s cambi",
+        middle["name"],
+        effettivo,
+        durata,
+        leg1.get("cambi"),
+        leg2.get("cambi"),
+    )
 
     if leg2["arrive_at"] > ctx.arrive_by + timedelta(minutes=10):
         return None  # arriva oltre il limite
@@ -597,6 +757,15 @@ async def _split_via(
     diretto = offer.price or 0.0
     durata = _duration(leg1["depart_at"], leg2["arrive_at"])
     durata_diretto = offer.duration_min or _duration(offer.depart_at, offer.arrive_at)
+    # I cambi veri: quelli dentro i due segmenti piu' il cambio di biglietto
+    # al nodo. Prima si dichiarava "0 cambi" anche su un viaggio con due
+    # coincidenze, e la card del piano sembrava quella di un diretto.
+    cambi = int(leg1.get("cambi") or 0) + int(leg2.get("cambi") or 0) + 1
+    treni = ", ".join(
+        dict.fromkeys(
+            t for t in (str(leg1.get("treni") or ""), str(leg2.get("treni") or "")) if t
+        )
+    )
     return {
         "via": middle["name"],
         "tratte": [
@@ -607,6 +776,9 @@ async def _split_via(
                 "partenza": iso(leg1["depart_at"]),
                 "arrivo": iso(leg1["arrive_at"]),
                 "durata_min": _duration(leg1["depart_at"], leg1["arrive_at"]),
+                "cambi": int(leg1.get("cambi") or 0),
+                "treni": leg1.get("treni") or "Trenitalia",
+                "regionale": bool(leg1.get("regionale")),
             },
             {
                 "da": leg2["origin"] or middle["name"],
@@ -615,6 +787,9 @@ async def _split_via(
                 "partenza": iso(leg2["depart_at"]),
                 "arrivo": iso(leg2["arrive_at"]),
                 "durata_min": _duration(leg2["depart_at"], leg2["arrive_at"]),
+                "cambi": int(leg2.get("cambi") or 0),
+                "treni": leg2.get("treni") or "Trenitalia",
+                "regionale": bool(leg2.get("regionale")),
             },
         ],
         "totale": total,
@@ -629,7 +804,8 @@ async def _split_via(
         "arrivo": iso(leg2["arrive_at"]),
         "diretto_partenza": iso(offer.depart_at),
         "diretto_arrivo": iso(offer.arrive_at),
-        "cambi": 1,
+        "cambi": cambi,
+        "treni": treni or "Trenitalia",
         "conveniente": total < diretto,
         "leg1": leg1,
         "leg2": leg2,
@@ -699,8 +875,14 @@ def applica_abbonamenti(
             scontato = _scontato(listino, sconto)
             if sconto and scontato < listino:
                 tratta["sconto_xgo"] = round(listino - scontato, 2)
+            partenza_tratta = parse_dt(tratta.get("partenza"))
             costo, nome = passes_service.netto_tratta(
-                passes or [], tratta.get("da") or "", tratta.get("a") or "", scontato
+                passes or [],
+                tratta.get("da") or "",
+                tratta.get("a") or "",
+                scontato,
+                partenza_tratta.date() if partenza_tratta else None,
+                treni=str(tratta.get("treni") or "Regionale"),
             )
             tratta["prezzo_effettivo"] = costo
             if nome:
@@ -714,11 +896,15 @@ def applica_abbonamenti(
 
         listino_diretto = float(getattr(diretta, "price", 0) or 0)
         scontato_diretto = _scontato(listino_diretto, sconto)
+        dettagli_diretta = getattr(diretta, "details", None) or {}
+        quando_diretta = getattr(diretta, "depart_at", None)
         diretto_eff, nome_diretto = passes_service.netto_tratta(
             passes or [],
             getattr(diretta, "pickup_name", "") or "",
             getattr(diretta, "dropoff_name", "") or "",
             scontato_diretto,
+            quando_diretta.date() if isinstance(quando_diretta, datetime) else None,
+            treni=str(dettagli_diretta.get("treni") or "Regionale"),
         )
         confronto["totale_effettivo"] = round(totale_effettivo, 2)
         confronto["diretto_effettivo"] = diretto_eff
@@ -784,7 +970,15 @@ async def analyze_splits(
                 # richieste all'API e la ricerca non puo' durare troppo.
                 results = await asyncio.gather(
                     *(
-                        _split_via(client, offer, ctx, origin, destination, point)
+                        _split_via(
+                            client,
+                            offer,
+                            ctx,
+                            origin,
+                            destination,
+                            point,
+                            passes=passes,
+                        )
                         for point in points
                     ),
                     return_exceptions=True,
@@ -797,12 +991,20 @@ async def analyze_splits(
         log.debug("spezzatura non disponibile: %s", exc)
         return [], []
 
-    # Solo una spezzatura per nodo: quella col costo migliore.
+    # Solo una spezzatura per nodo: quella col costo migliore. A pari
+    # costo vince quella che arriva prima: due nodi con lo stesso prezzo non
+    # sono equivalenti se uno fa aspettare due ore.
     best_per_via: dict[str, dict[str, Any]] = {}
     for confronto in comparisons:
         key = str(confronto["via"]).lower()
         current = best_per_via.get(key)
-        if current is None or confronto["totale"] < current["totale"]:
+        if current is None or (
+            confronto["totale"],
+            confronto["durata_min"],
+        ) < (
+            current["totale"],
+            current["durata_min"],
+        ):
             best_per_via[key] = confronto
     comparisons = list(best_per_via.values())
 
@@ -825,6 +1027,9 @@ async def analyze_splits(
                 continue
         if "leg1" not in confronto or "leg2" not in confronto:
             # Confronto informativo (stesse corse): non e' un piano diverso.
+            continue
+        if confronto["delta_minuti"] > MAX_EXTRA_TOTAL_MIN:
+            # Troppo lenta per essere un piano: resta solo nel confronto.
             continue
         leg1 = confronto["leg1"]
         leg2 = confronto["leg2"]
@@ -853,8 +1058,8 @@ async def analyze_splits(
                     "risparmio": abs(confronto["delta_prezzo"]),
                     "delta_minuti": confronto["delta_minuti"],
                     "biglietti": 2,
-                    "cambi": 0,
-                    "treni": "2 biglietti regionali",
+                    "cambi": int(confronto.get("cambi") or 1),
+                    "treni": confronto.get("treni") or "2 biglietti Trenitalia",
                     "tratte": confronto["tratte"],
                     "totale_effettivo": confronto.get("totale_effettivo"),
                     "diretto_effettivo": confronto.get("diretto_effettivo"),
