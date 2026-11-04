@@ -16,6 +16,7 @@ from ..timeutil import from_iso, iso, now_utc, parse_dt
 from . import questions as questions_service
 from . import passes as passes_service
 from . import split_tickets
+from . import nearby_origins
 
 RUNNING: set[int] = set()
 _lock = asyncio.Lock()
@@ -375,6 +376,28 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
         except Exception as exc:  # noqa: BLE001
             errors.append(f"split: {type(exc).__name__}: {exc}")
 
+        # Partenze alternative: il biglietto puo' costare meno se lo si compra
+        # partendo da una citta' vicina (es. Vicenza, Verona, Trento).
+        # Si aggiungono solo le soluzioni che battono il meglio gia' trovato.
+        try:
+            escludi = {
+                str(c.get("via") or "").strip().lower()
+                for c in (confronti or [])
+            }
+            nearby = await nearby_origins.analyze_nearby_origins(
+                gathered,
+                ctx,
+                passes=user_passes,
+                sconto_xgo=xgo_sconto(prefs),
+                escludi=escludi,
+            )
+            if nearby.offers:
+                gathered = _dedupe(gathered + nearby.offers)
+            for hint in nearby.hints:
+                hints.append(hint)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"partenze alternative: {type(exc).__name__}: {exc}")
+
         # Sconti X-GO (Trenitalia): -20% sui Regionali per chi e' iscritto.
         try:
             from . import discounts as discounts_service
@@ -402,7 +425,10 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
             # viaggio intero.
             for offer in gathered:
                 dettagli = offer.details or {}
-                if dettagli.get("spezzatura") and dettagli.get("totale_effettivo") is not None:
+                if (
+                    dettagli.get("totale_effettivo") is not None
+                    and int(dettagli.get("biglietti") or 1) >= 2
+                ):
                     offer.net_cost = round(float(dettagli["totale_effettivo"]), 2)
                     dettagli["net_cost"] = offer.net_cost
                     offer.details = dettagli
