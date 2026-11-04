@@ -89,6 +89,10 @@ class BlaBlaCarAdapter(Adapter):
         "ritrovo reali (la ricerca viene letta dal sito con un browser)."
     )
     modes = ("rideshare", "bus")
+    # Aprire il browser e leggere i risultati richiede ~30s anche quando va
+    # tutto bene: con il tetto standard di 45s basta un attimo di carico per
+    # perdere la fonte.
+    timeout_s = 90.0
 
     def search_url(self, ctx: SearchContext) -> str:
         """L'URL della ricerca sul sito."""

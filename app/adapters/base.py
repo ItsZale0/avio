@@ -192,6 +192,11 @@ class Adapter:
     description: str = ""
     modes: tuple[str, ...] = ()
     requires: str | None = None
+    # Quanto si aspetta questa fonte prima di dichiararla in timeout. Le
+    # fonti che aprono un browser o interrogano piu' mirror hanno bisogno di
+    # piu' tempo: con un tetto unico di 35s BlaBlaCar (32s solo per avviare
+    # Chromium) andava in timeout appena la macchina era occupata.
+    timeout_s: float = 45.0
 
     async def search(self, ctx: SearchContext) -> AdapterResult:  # pragma: no cover
         raise NotImplementedError

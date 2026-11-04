@@ -111,7 +111,8 @@ Tutti gli orari sono salvati in **UTC ISO 8601**; l'interfaccia li mostra nel fu
 ```
 1. carica watch (inclusi i prefs appresi)
 2. costruisci SearchContext (coordinate, finestra, raggio, budget)
-3. esegui gli adapter in parallelo (timeout 35 s ciascuno)
+3. esegui gli adapter in parallelo (timeout per fonte: 45 s, 90 s per
+   BlaBlaCar che deve avviare un browser, 60 s per Transit/Overpass)
 4. deduplica per fingerprint (tieni il prezzo più basso)
 5. filtri duri:
       depart_at >= now - 5 min

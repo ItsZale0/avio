@@ -245,8 +245,11 @@ def _dedupe(offers: list[Offer]) -> list[Offer]:
 
 
 async def _run_adapter(adapter, ctx: SearchContext) -> tuple[AdapterResult, str | None]:
+    # Ogni fonte ha il suo tempo: chi apre un browser o interroga piu' mirror
+    # ne ha bisogno di piu' (vedi ``Adapter.timeout_s``).
+    timeout = float(getattr(adapter, "timeout_s", 45.0) or 45.0)
     try:
-        result = await asyncio.wait_for(adapter.search(ctx), timeout=35)
+        result = await asyncio.wait_for(adapter.search(ctx), timeout=timeout)
         return result, None
     except asyncio.TimeoutError:
         return AdapterResult(), f"{adapter.id}: timeout"

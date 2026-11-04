@@ -392,6 +392,44 @@ class GtfsScoringTest(unittest.TestCase):
         self.assertIn("orario", ranked[schedule.fingerprint]["badges"])
 
 
+class AdapterTimeoutTests(unittest.IsolatedAsyncioTestCase):
+    """Ogni fonte ha il suo tempo massimo, non un tetto unico.
+
+    BlaBlaCar impiega ~30 s solo per avviare il browser: con il tetto unico
+    di 35 s andava in timeout appena la macchina era occupata, e la ricerca
+    usciva "partial" anche quando le altre fonti avevano risposto.
+    """
+
+    async def test_il_tempo_massimo_e_per_fonte(self):
+        import asyncio
+
+        from app.adapters.base import Adapter, AdapterResult
+        from app.services.search import _run_adapter
+
+        class Lenta(Adapter):
+            id = "lenta"
+            timeout_s = 0.05
+
+            async def search(self, ctx):
+                await asyncio.sleep(0.4)
+                return AdapterResult()
+
+        class Paziente(Adapter):
+            id = "paziente"
+            timeout_s = 2.0
+
+            async def search(self, ctx):
+                await asyncio.sleep(0.2)
+                return AdapterResult(hints=["fatto"])
+
+        ctx = make_context()
+        _, errore = await _run_adapter(Lenta(), ctx)
+        self.assertEqual(errore, "lenta: timeout")
+        risultato, errore = await _run_adapter(Paziente(), ctx)
+        self.assertIsNone(errore)
+        self.assertEqual(risultato.hints, ["fatto"])
+
+
 class StaleRunsTest(BaseDbTest):
     """Un riavvio a meta' ricerca non deve lasciare una run "in corso".
 

@@ -172,6 +172,9 @@ class TransitAdapter(Adapter):
     label = "Mezzi pubblici vicini"
     description = "Trova stazioni e fermate entro pochi minuti a piedi da partenza e arrivo."
     modes = ("transit",)
+    # Overpass ha mirror lenti: quando uno non risponde si aspetta il
+    # successivo, e il tempo si somma.
+    timeout_s = 60.0
 
     async def search(self, ctx: SearchContext) -> AdapterResult:
         if None in (ctx.from_lat, ctx.from_lon, ctx.to_lat, ctx.to_lon):
