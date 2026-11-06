@@ -94,16 +94,30 @@ async def _parse_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]
     if not (ai_enabled() and client.available):
         return _parse_regex(messages)
 
+    from datetime import date as _date
+
+    oggi = _date.today().isoformat()
     payload = "\n".join(
         f"{i}: [{m.get('sender')}] {m.get('text')}" for i, m in enumerate(messages)
     )
     prompt = (
-        "Estrai le offerte di passaggio in auto dai messaggi Telegram seguenti.\n"
-        "Rispondi SOLO con un array JSON, un oggetto per offerta trovata, con campi:\n"
-        "from (citta' di partenza), to (citta' di arrivo), date (YYYY-MM-DD o null),\n"
-        "time (HH:MM o null), seats (int o null), price (numero EUR o null),\n"
+        "Oggi e' " + oggi + ". Estrai le offerte di PASSAGGIO IN AUTO dai messaggi "
+        "Telegram seguenti.\n"
+        "Un messaggio offre un passaggio se contiene una tratta (citta' -> citta') "
+        "e spesso un giorno/ora.\n"
+        "Rispondi SOLO con un array JSON, un oggetto per offerta, con campi:\n"
+        "from (citta' di PARTENZA, solo il nome della citta'),\n"
+        "to (citta' di ARRIVO, solo il nome della citta'),\n"
+        "date (YYYY-MM-DD: risolvi i giorni della settimana e le date relative "
+        "rispetto a oggi; null se assente),\n"
+        "time (HH:MM 24h; 'mattina'->09:00, 'pomeriggio'->14:00, 'sera'->18:00; "
+        "null se assente),\n"
+        "seats (int o null), price (numero EUR o null),\n"
         "contact (nome autore), notes (breve), msg_index (indice del messaggio).\n"
-        "Se un messaggio non e' un'offerta di passaggio, ignoralo.\n"
+        "Il giorno della settimana o la data (es. 'per lunedi 9 novembre', 'domani') "
+        "NON e' una citta': mettilo in date, mai in from/to.\n"
+        "Se un messaggio non e' un'offerta di passaggio (es. 'cerco', 'ho modificato'), "
+        "ignoralo.\n"
         "Messaggi:\n" + payload
     )
     try:
