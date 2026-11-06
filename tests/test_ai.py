@@ -72,7 +72,9 @@ def make_offer(
     )
 
 
-def context(arrive_by: datetime, *, max_price: float | None = None) -> SearchContext:
+def context(
+    arrive_by: datetime, *, max_price: float | None = None, prefs: dict | None = None
+) -> SearchContext:
     return SearchContext(
         watch_id=1,
         from_place="Thiene",
@@ -85,6 +87,7 @@ def context(arrive_by: datetime, *, max_price: float | None = None) -> SearchCon
         arrive_by=arrive_by,
         radius_km=5,
         max_price=max_price,
+        prefs=prefs or {},
     )
 
 
@@ -491,7 +494,8 @@ class LateWindowTests(unittest.TestCase):
         late = make_offer("flixbus", "late", "bus", 6.0, base, 300)
         ctx = context(arrive_by)
         self.assertEqual(len(_filter_offers([late], ctx)), 0)
-        kept = _filter_offers([late], ctx, late_minutes=1440)
+        flex_ctx = context(arrive_by, prefs={"flexible_days": 1})
+        kept = _filter_offers([late], flex_ctx)
         self.assertEqual(len(kept), 1)
         self.assertIn("oltre_limite_min", kept[0].details)
 

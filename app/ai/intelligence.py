@@ -93,10 +93,24 @@ def prefs_of(watch: dict[str, Any]) -> dict[str, Any]:
 def _constraints_text(watch: dict[str, Any], prefs: dict[str, Any]) -> str:
     parts = [
         f"Percorso: {watch['from_place']} -> {watch['to_place']}",
-        f"Arrivo entro: {human_rome(watch['arrive_by'], '%a %d %b %Y, %H:%M')}",
+        f"Arrivo richiesto entro: {human_rome(watch['arrive_by'], '%a %d %b %Y, %H:%M')}",
     ]
     if watch.get("depart_after"):
         parts.append(f"Partenza non prima di: {human_rome(watch['depart_after'], '%a %d %b, %H:%M')}")
+    flex_from = prefs.get("flex_arrive_from")
+    flex_until = prefs.get("flex_arrive_until")
+    if flex_from or flex_until:
+        finestra = []
+        if flex_from:
+            finestra.append(f"da {human_rome(flex_from, '%a %d %b %Y, %H:%M')}")
+        if flex_until:
+            finestra.append(f"fino a {human_rome(flex_until, '%a %d %b %Y, %H:%M')}")
+        parts.append("Flessibilita' sull'arrivo: " + " ".join(finestra) + ".")
+    elif int(prefs.get("flexible_days", 0) or 0) > 0:
+        giorni = int(prefs.get("flexible_days", 0) or 0)
+        parts.append(f"Flessibilita': arrivo accettato fino a {giorni} giorno/i dopo la scadenza.")
+    if prefs.get("arrivo_giorno_prima"):
+        parts.append("Flessibilita': accetto di arrivare anche la sera prima.")
     if watch.get("max_price"):
         parts.append(f"Budget: {watch['max_price']:.2f} EUR")
     parts.append(f"Passeggeri: {watch.get('passengers', 1)}")
@@ -538,18 +552,15 @@ def _motivo_vincolo(
     Serve a spiegare all'utente il vuoto che vede: senza questa frase la
     dashboard sembra rotta, mentre il motivo e' magari solo il budget.
     """
-    latest = ctx.arrive_by + timedelta(minutes=int(prefs.get("flexible_days", 0)) * 1440)
+    latest = ctx.effective_arrive_by
     in_window = [
         o
         for o in offers
         if o.arrive_at is None
-        or (
-            ctx.arrival_day_start <= o.arrive_at <= latest
-            or (prefs.get("flexible_days", 0) and o.arrive_at > latest)
-        )
+        or (ctx.arrival_day_start <= o.arrive_at <= latest + timedelta(minutes=10))
     ]
     if not in_window:
-        return "Nessuna offerta arriva entro l'orario che hai chiesto."
+        return "Nessuna offerta arriva entro l'orario o la finestra che hai indicato (con la flessibilita' attiva)."
     if ctx.max_price is not None:
         over = [
             o
@@ -570,23 +581,20 @@ def _relax_questions(
     offers: list[Offer], ctx: SearchContext, prefs: dict[str, Any]
 ) -> list[dict]:
     """Domande mirate quando non c'e' nessuna combinazione valida."""
-    latest = ctx.arrive_by + timedelta(minutes=int(prefs.get("flexible_days", 0)) * 1440)
-    # Offerte che arrivano nel giorno richiesta (ed entro il limite): sono
-    # le uniche che interessano per il prezzo.
+    latest = ctx.effective_arrive_by
+    has_explicit_flex = bool(prefs.get("flex_arrive_until") or prefs.get("flex_arrive_from"))
+    # Offerte che arrivano nella finestra effettiva (con flessibilita').
     in_window = [
         o
         for o in offers
         if o.arrive_at is None
-        or (
-            ctx.arrival_day_start <= o.arrive_at <= latest
-            or (prefs.get("flexible_days", 0) and o.arrive_at > latest)
-        )
+        or (ctx.arrival_day_start <= o.arrive_at <= latest + timedelta(minutes=10))
     ]
     late = [
         o
         for o in offers
         if o.arrive_at
-        and o.arrive_at > latest
+        and o.arrive_at > latest + timedelta(minutes=10)
         and _reaches_destination(o, ctx)
         and (
             _costo_utente(o) is None
@@ -605,14 +613,6 @@ def _relax_questions(
         and _costo_utente(o) > ctx.max_price
     ]
     # Offerte che arrivano la sera prima: servono solo se l'utente le accetta.
-    giorno_prima = [
-        o
-        for o in offers
-        if o.arrive_at
-        and ctx.arrival_day_start <= o.arrive_at < ctx.arrival_day_start + timedelta(days=1)
-        and o.arrive_at > ctx.arrival_day_start
-    ]
-    # La sera primavera' rispetto al giorno richiesto.
     sera_prima = [
         o
         for o in offers
@@ -622,7 +622,7 @@ def _relax_questions(
     # Ordine di priorita' delle domande (al massimo due vanno avanti):
     # 1. gli abbonamenti: se la tratta e' coperta, il budget non e' un problema;
     # 2. il budget: il prezzo reale della soluzione piu' economica;
-    # 3. la sera prima e il giorno dopo.
+    # 3. la sera prima e il giorno dopo (solo se non c'e' gia' flessibilita' esplicita).
     ordinate: list[dict] = []
     ordinate.extend(_pass_question(prefs))
     if over_budget and ctx.max_price:
@@ -632,7 +632,7 @@ def _relax_questions(
             {
                 "key": "budget_flex",
                 "text": (
-                    f"La soluzione più economica costa {_costo_utente(cheapest):.2f} EUR, sopra il budget "
+                    f"La soluzione piu' economica costa {_costo_utente(cheapest):.2f} EUR, sopra il budget "
                     f"di {ctx.max_price:.2f} EUR. Vuoi alzare il budget?"
                 ),
                 "options": [
@@ -645,7 +645,7 @@ def _relax_questions(
                 ],
             }
         )
-    if sera_prima and not prefs.get("arrivo_giorno_prima"):
+    if sera_prima and not prefs.get("arrivo_giorno_prima") and not prefs.get("flex_arrive_from"):
         presto = max(sera_prima, key=lambda o: o.arrive_at or ctx.arrival_day_start)
         ordinate.append(
             {
@@ -669,14 +669,14 @@ def _relax_questions(
                 ],
             }
         )
-    if late and not prefs.get("flexible_days"):
+    if late and not prefs.get("flexible_days") and not prefs.get("flex_arrive_until"):
         soonest = min(late, key=lambda o: o.arrive_at or latest)
         ordinate.append(
             {
                 "key": "flexible_days",
                 "text": (
                     f"Ho trovato una corsa ma arriva {human_rome(soonest.arrive_at, '%a %d %b alle %H:%M')}, "
-                    "dopo il limite. Posso considerare anche arrivi più tardi?"
+                    "dopo il limite. Posso considerare anche arrivi piu' tardi?"
                 ),
                 "options": [
                     {"id": "0", "label": "No, entro il limite", "prefs": {"flexible_days": 0}},
@@ -828,7 +828,11 @@ async def analyze(
     confronti: list[dict[str, Any]] | None = None,
 ) -> IntelligenceResult:
     prefs = prefs_of(watch)
-    flexible_minutes = int(prefs.get("flexible_days", 0) or 0) * 1440
+    # Flessibilita': copre sia "giorni extra" sia "fino al giorno X alle ore Y".
+    effective = getattr(ctx, "effective_arrive_by", ctx.arrive_by)
+    flexible_minutes = max(
+        0, int((effective - ctx.arrive_by).total_seconds() // 60)
+    )
     max_transfer = float(prefs.get("max_walk_km") or 3.0)
     if prefs.get("no_changes"):
         max_transfer = 0
@@ -1084,11 +1088,36 @@ async def interpret_answer(question: dict[str, Any], answer: str) -> dict[str, A
         return None
 
     if key in ("flexible_days", "flexibility", "day_flexible"):
-        digits = [int(ch) for ch in clean if ch.isdigit()]
-        if digits:
-            return {"prefs": {"flexible_days": min(3, digits[0])}, "note": clean}
-        flag = yes_no(lowered, True)
-        return {"prefs": {"flexible_days": 1 if flag else 0}, "note": clean}
+        # Risposte con data/ora specifica ("da giovedi' alle 14", "fino al 13 alle 18")
+        # vanno interpretate dall'AI: il numero grezzo puo' essere un giorno o un'ora.
+        ha_data = bool(
+            re.search(
+                r"\b(lun|mar|mer|gio|ven|sab|dom|gen|feb|apr|mag|giu|lug|ago|set|ott|nov|dic|"
+                r"alle|entro|fino|dal|domani|dopodomani|\d{1,2}[/-]\d{1,2})\b",
+                lowered,
+            )
+        )
+        if not ha_data:
+            digits = [int(ch) for ch in clean if ch.isdigit()]
+            if digits:
+                return {"prefs": {"flexible_days": min(7, digits[0])}, "note": clean}
+            flag = yes_no(lowered, True)
+            return {"prefs": {"flexible_days": 1 if flag else 0}, "note": clean}
+        # altrimenti cade nel percorso AI qui sotto
+
+    if key in ("flex_arrive_from", "flex_arrive_until"):
+        text = clean.strip()
+        if not text or text.lower() in ("no", "nessuna", "nessuno", "annulla", "rimuovi"):
+            return {"prefs": {key: None}, "note": clean}
+        # Se sembra un ISO o una data parsabile, la si passa cosi' com'e';
+        # l'AI normalizzera' i casi ambigui nel percorso generico se serve.
+        if re.search(r"\d{4}-\d{2}-\d{2}", text) or re.search(r"\d{1,2}[/-]\d{1,2}", text):
+            from ..timeutil import iso as to_iso
+
+            parsed = to_iso(text)
+            if parsed:
+                return {"prefs": {key: parsed}, "note": clean}
+        # non deterministico: cade nell'AI
 
     if key in ("budget_flex", "budget", "budget_increase", "budget_raise"):
         # "alzo a 15", "15 euro", "fino a 20" -> il nuovo tetto.

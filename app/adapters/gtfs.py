@@ -84,7 +84,7 @@ class GtfsAdapter(Adapter):
         if not feeds:
             return []
         start_local = ctx.window_start.astimezone(ROME)
-        end_local = ctx.arrive_by.astimezone(ROME)
+        end_local = getattr(ctx, "effective_arrive_by", ctx.arrive_by).astimezone(ROME)
         radius = max(3.0, min(ctx.radius_km, 15.0))
         journeys: list[dict] = []
         day = start_local.date()
@@ -126,7 +126,7 @@ class GtfsAdapter(Adapter):
             return None
         if dep_at < ctx.window_start - timedelta(minutes=1):
             return None
-        if arr_at > ctx.arrive_by + timedelta(minutes=10):
+        if arr_at > getattr(ctx, "effective_arrive_by", ctx.arrive_by) + timedelta(minutes=10):
             return None
 
         feed = FEED_BY_ID.get(journey["feed"], {})

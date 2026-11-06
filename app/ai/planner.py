@@ -470,7 +470,11 @@ def build_candidates(
     if not priced:
         return []
 
+    # La scadenza effettiva include la flessibilita' ("da giorno X a ora Y").
     latest = ctx.arrive_by + timedelta(minutes=flexible_minutes)
+    effective = getattr(ctx, "effective_arrive_by", None)
+    if effective is not None and effective > latest:
+        latest = effective
     candidates: dict[tuple, Candidate] = {}
     # Candidati che superano il budget: si tengono da parte. Se il budget
     # esaurisce i candidati, si mostrano i piu' economici anche se superano

@@ -22,7 +22,9 @@ Schema JSON:
   "radius_km": numero (default 5),
   "notes": "vincoli utili in una riga (bagagli, no cambi, mezzi graditi)",
   "prefs": {{
-     "flexible_days": intero (0 se non flessibile),
+     "flexible_days": intero (0 se non flessibile; usa solo per "1-2 giorni dopo", non per finestre precise),
+     "flex_arrive_from": "YYYY-MM-DDTHH:MM:SS" o null (posso arrivare DA questo giorno/ora),
+     "flex_arrive_until": "YYYY-MM-DDTHH:MM:SS" o null (posso arrivare FINO A questo giorno/ora),
      "allow_multi_leg": true/false,
      "max_walk_km": numero o null,
      "prefer_modes": ["treno"|"bus"|"passaggio"] o [],
@@ -38,6 +40,7 @@ Regole:
 - Se non c'e' nemmeno il giorno, arrive_by = null.
 - "domani" = domani, "dopodomani" = +2 giorni, "il 22" = il 22 del mese corrente (o del prossimo se già passato), "weekend" = sabato prossimo.
 - Non inventare la destinazione se non e' deducibile.
+- FLESSIBILITA' (importante): se l'utente indica una finestra precisa ("dal 12 alle 14 al 13 alle 18", "flessibile da giovedi' ore 8 a venerdi' ore 20", "posso partire dal 12 alle 8 e arrivare entro il 13 alle 18"), usa "depart_after" per l'inizio della partenza e "flex_arrive_until" (e/o "flex_arrive_from") per la finestra di arrivo. Mantieni "arrive_by" come scadenza principale richiesta; metti in "flex_arrive_until" l'estremo finale se e' diverso o piu' ampio. NON usare "flexible_days" per finestre con giorno e ora specifici.
 - In "questions" metti al massimo 2 domande davvero utili, solo se mancano dati che cambierebbero il piano (es. entro che ora, budget, flessibilita' sul giorno, bagagli, disponibilita' a cambi).
 - Se mancano pochi dati, meglio nessuna domanda.
 """
@@ -89,9 +92,27 @@ Non usare markdown: testo semplice.
 
 ANSWER_SYSTEM = """Converti la risposta di un utente a una domanda di viaggio in preferenze strutturate.
 Rispondi SOLO con JSON: {{"prefs": {{...}}, "note": "una riga"}}.
-Chiavi ammesse in prefs: flexible_days (intero 0-3), allow_multi_leg (bool), max_walk_km (numero), luggage (stringa), prefer_modes (lista di "treno"/"bus"/"passaggio"/"carsharing"), no_changes (bool), prefer_fast (bool: true se vuole arrivare prima, anche spendendo di piu'), notes (stringa).
-Chiavi speciali: add_pass (stringa: "trenitalia_regionale", "trenitalia_tutti", "carnet_regionale", "carnet_bus", "abbonamento_unico", "urbano", "carnet_urbano") quando l'utente dice di avere un abbonamento o un carnet; clear_passes (true) quando dice di non avere abbonamenti; budget_raise (numero) quando l'utente dice un nuovo tetto di spesa (es. "alzo a 15 euro").
-Inserisci solo le chiavi deducibili dalla risposta.
+
+Chiavi ammesse in prefs:
+- flexible_days (intero 0-7): giorni interi di flessibilita' dopo la scadenza.
+- flex_arrive_from (stringa ISO locale "YYYY-MM-DDTHH:MM"): posso arrivare DA questo giorno/ora in poi.
+- flex_arrive_until (stringa ISO locale "YYYY-MM-DDTHH:MM"): posso arrivare FINO A questo giorno/ora.
+- set_depart_after (stringa ISO locale "YYYY-MM-DDTHH:MM" o ""): posso partire DA questo giorno/ora (limite di partenza).
+- set_arrive_by (stringa ISO locale "YYYY-MM-DDTHH:MM"): devo arrivare ENTRO questo giorno/ora.
+- allow_multi_leg (bool), max_walk_km (numero), luggage (stringa)
+- prefer_modes (lista di "treno"/"bus"/"passaggio"/"carsharing")
+- no_changes (bool), prefer_fast (bool: true se vuole arrivare prima)
+- arrivo_giorno_prima (bool), notes (stringa)
+
+Chiavi speciali: add_pass (stringa identificatore abbonamento) quando l'utente dice di avere un abbonamento/carnet; clear_passes (true) quando dice di non averne; budget_raise (numero) nuovo tetto di spesa.
+
+Esempi di flessibilita':
+- "sono flessibile da giovedi' alle 14 a sabato alle 18" -> flex_arrive_from e flex_arrive_until con le date/ore corrette (usa l'anno dal contesto se presente).
+- "posso partire dal 12 alle 8" -> set_depart_after.
+- "flessibile fino a domenica alle 20" -> flex_arrive_until.
+- "anche il giorno dopo va bene" -> flexible_days: 1.
+
+Inserisci solo le chiavi deducibili dalla risposta. Se c'e' ambiguita' sulle date, metti una nota chiara.
 """
 
 

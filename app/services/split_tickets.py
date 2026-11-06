@@ -720,7 +720,7 @@ async def _split_via(
                 for s in second
                 if ctx.arrival_day_start
                 <= s["arrive_at"]
-                <= ctx.arrive_by + timedelta(minutes=10)
+                <= getattr(ctx, "effective_arrive_by", ctx.arrive_by) + timedelta(minutes=10)
             ]
             utili = _plausibili_per_tempo(utili)
             if not utili:
@@ -747,7 +747,7 @@ async def _split_via(
         leg2.get("cambi"),
     )
 
-    if leg2["arrive_at"] > ctx.arrive_by + timedelta(minutes=10):
+    if leg2["arrive_at"] > getattr(ctx, "effective_arrive_by", ctx.arrive_by) + timedelta(minutes=10):
         return None  # arriva oltre il limite
     if leg2["arrive_at"] < ctx.arrival_day_start:
         return None  # arriva il giorno prima

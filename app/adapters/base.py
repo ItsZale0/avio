@@ -82,6 +82,35 @@ class SearchContext:
         start = local.replace(hour=0, minute=0, second=0, microsecond=0)
         return start.astimezone(timezone.utc)
 
+    def _flex_dt(self, key: str) -> datetime | None:
+        """Legge una data di flessibilita' dalle preferenze (ISO o datetime)."""
+        from ..timeutil import parse_dt
+
+        value = (self.prefs or {}).get(key)
+        if not value:
+            return None
+        try:
+            return parse_dt(value)
+        except Exception:  # noqa: BLE001
+            return None
+
+    @property
+    def effective_arrive_by(self) -> datetime:
+        """Scadenza effettiva: considera la flessibilita' sull'arrivo.
+
+        Priorita': ``flex_arrive_until`` (data/ora esplicita) > ``flexible_days``
+        (giorni interi dopo la scadenza) > ``arrive_by``.
+        """
+        from datetime import timedelta
+
+        until = self._flex_dt("flex_arrive_until")
+        if until is not None and until >= self.arrive_by:
+            return until
+        days = int((self.prefs or {}).get("flexible_days", 0) or 0)
+        if days > 0:
+            return self.arrive_by + timedelta(days=min(days, 14))
+        return self.arrive_by
+
     @property
     def arrival_day_start(self) -> datetime:
         """Inizio del giorno in cui l'utente deve essere a destinazione.
@@ -89,11 +118,21 @@ class SearchContext:
         E' diverso da `window_start`: "non partire prima delle 6" non
         significa "posso arrivare il giorno prima". Se arrivo il 21 e devo
         essere li' il 22 alle 11, mi serve una notte in hotel: la richiesta
-        e' per il 22. Con `allow_day_before` si accetta anche la sera prima.
+        e' per il 22.
+
+        Con ``flex_arrive_from`` (es. "flessibile da giovedi' alle 14") si usa
+        quell'istante preciso. Con ``arrivo_giorno_prima`` si accetta anche la
+        sera prima.
         """
         from datetime import timedelta, timezone
 
         from ..timeutil import ROME
+
+        flex_from = self._flex_dt("flex_arrive_from")
+        if flex_from is not None:
+            # Mai prima dell'inizio della finestra di ricerca.
+            anchor = self.window_start
+            return flex_from if flex_from >= anchor else anchor
 
         local = self.arrive_by.astimezone(ROME)
         start = local.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -103,10 +142,10 @@ class SearchContext:
 
     @property
     def window_end(self) -> datetime:
-        """Fine della finestra: l'ora di arrivo richiesta (piu' qualche minuto)."""
+        """Fine della finestra: la scadenza effettiva (con flessibilita')."""
         from datetime import timedelta
 
-        return self.arrive_by + timedelta(minutes=10)
+        return self.effective_arrive_by + timedelta(minutes=10)
 
 
 @dataclass

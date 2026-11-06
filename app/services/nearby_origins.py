@@ -144,7 +144,7 @@ async def _candidata(
         s
         for s in principali
         if s["arrive_at"] >= ctx.arrival_day_start
-        and s["arrive_at"] <= ctx.arrive_by + timedelta(minutes=10)
+        and s["arrive_at"] <= getattr(ctx, "effective_arrive_by", ctx.arrive_by) + timedelta(minutes=10)
         and s["depart_at"] >= ctx.window_start - timedelta(minutes=15)
     ]
     principali = split_tickets._plausibili_per_tempo(principali)

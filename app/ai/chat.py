@@ -37,6 +37,8 @@ CHIAVI_PATCH = (
     "set_depart_after",
     "set_arrive_by",
     "flexible_days",
+    "flex_arrive_from",
+    "flex_arrive_until",
     "allow_multi_leg",
     "max_walk_km",
     "prefer_modes",
@@ -69,6 +71,7 @@ Regole:
   - "set_depart_after" / "set_arrive_by": orario locale "YYYY-MM-DDTHH:MM"
   - per TOGLIERE un limite usa la stringa vuota: "set_depart_after": ""
   - se l'utente conferma un'opzione che parte PRIMA del limite attuale ("vai con quello"), non dire che va bene cosi': sposta il limite sulla partenza di quell'opzione con "set_depart_after" (o toglilo con la stringa vuota).
+  - FLESSIBILITA' ("da giorno X a ora Y"): usa "flex_arrive_from" (arrivo accettato DA, "YYYY-MM-DDTHH:MM"), "flex_arrive_until" (arrivo accettato FINO A, "YYYY-MM-DDTHH:MM"), oppure "set_depart_after" per la partenza piu' presto consentita. Per finestre con giorno e ora precisi NON usare "flexible_days" (che e' solo "N giorni dopo").
   - "prefer_modes": lista di "treno", "bus", "passaggio"
   - "add_pass": identificatore dell'abbonamento (se lo conosci: {passes})
   - "set_from_point" / "set_to_point": il punto esatto ("Stazione di Trento")
@@ -423,7 +426,7 @@ def _avviso_piano(watch_id: int, user_id: int | None) -> str:
     )
 
 
-def _etichette(cambi: dict[str, Any]) -> list[str]:
+def _etichette(cambi: dict[str, Any], patch: dict[str, Any] | None = None) -> list[str]:
     """Le modifiche in parole, come le legge l'utente nella chat."""
     etichette: list[str] = []
     for chiave, valore in (cambi or {}).items():
@@ -448,7 +451,21 @@ def _etichette(cambi: dict[str, Any]) -> list[str]:
             etichette.append("abbonamenti aggiornati")
         else:
             etichette.append(f"{chiave}: {valore}")
-    return etichette
+    for chiave, valore in (patch or {}).items():
+        if chiave == "flex_arrive_from" and valore:
+            etichette.append(f"arrivo flessibile da {_fmt(valore)}")
+        elif chiave == "flex_arrive_until" and valore:
+            etichette.append(f"arrivo flessibile fino a {_fmt(valore)}")
+        elif chiave == "flexible_days" and valore:
+            etichette.append(f"flessibilita' {valore} giorno/i")
+    # deduplica preservando l'ordine
+    viste: set[str] = set()
+    out: list[str] = []
+    for e in etichette:
+        if e not in viste:
+            viste.add(e)
+            out.append(e)
+    return out
 
 
 def _storico(testo: list[dict[str, Any]]) -> str:
@@ -509,10 +526,12 @@ async def answer(
             risultato, patch = _leggi_json(chat.text, watch, testo)
 
     applicato: dict[str, Any] = {}
+    flex_changed = False
     if patch:
         try:
             merge = questions_service.merge_prefs(watch, patch)
             applicato = merge.get("changes") or {}
+            flex_changed = bool(merge.get("flex_changed"))
         except Exception as exc:  # noqa: BLE001
             log.warning("patch non applicata: %s", exc)
 
@@ -528,8 +547,9 @@ async def answer(
             applicato.update(allineato)
             reply += nota_allineamento
 
-    etichette = _etichette(applicato)
-    if applicato:
+    etichette = _etichette(applicato, patch)
+    ha_modifiche = bool(applicato or flex_changed or patch)
+    if ha_modifiche and (applicato or flex_changed):
         reply += _avviso_finestra(watch_id, user_id)
         # Se l'utente ha appena confermato un'opzione, escludere le piu'
         # mattiniere e' voluto: niente avviso.
@@ -544,7 +564,7 @@ async def answer(
         "prefs": patch,
         "changes": applicato,
         "changes_labels": etichette,
-        "rerun": bool(risultato.get("rerun") or applicato),
+        "rerun": bool(risultato.get("rerun") or applicato or flex_changed),
     }
 
 

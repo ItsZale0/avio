@@ -175,7 +175,7 @@ async def _resolve_points(watch: dict[str, Any]) -> None:
         watch[f"{prefix}_point_lon"] = found[1]
 
 
-def _filter_offers(offers: list[Offer], ctx: SearchContext, late_minutes: int = 0) -> list[Offer]:
+def _filter_offers(offers: list[Offer], ctx: SearchContext) -> list[Offer]:
     """Filtra le offerte, ma non lascia mai la ricerca vuota per colpa del budget.
 
     Se il budget scarta tutto, le offerte piu' economiche che lo superano
@@ -183,9 +183,9 @@ def _filter_offers(offers: list[Offer], ctx: SearchContext, late_minutes: int = 
     che serve all'utente per decidere (e all'agente per proporre un piano).
     """
     now = now_utc()
-    latest = ctx.arrive_by + timedelta(minutes=max(0, late_minutes))
-    # L'arrivo deve essere nel giorno richiesto: "devo essere a Trento entro
-    # le 11 di giovedi" non ammette un treno che arriva mercoledi sera.
+    # ``effective_arrive_by`` include la flessibilita' (giorni extra o
+    # un orario esplicito "fino al giorno X alle ore Y").
+    latest = ctx.effective_arrive_by
     earliest = ctx.arrival_day_start
     kept: list[Offer] = []
     for offer in offers:
@@ -308,7 +308,6 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
                 errors.append(error)
 
         prefs = _prefs_of(watch)
-        late_minutes = int(prefs.get("flexible_days", 0) or 0) * 1440
         gathered = _dedupe(offers)
 
         # Gli abbonamenti servono anche alla spezzatura (si compra un
@@ -443,7 +442,7 @@ async def execute_run(watch_id: int, trigger: str = "schedule") -> dict[str, Any
                     f"{' e '.join(dettaglio)}."
                 )
 
-        offers = _filter_offers(gathered, ctx, late_minutes=late_minutes)
+        offers = _filter_offers(gathered, ctx)
         # I percorsi a piedi veri (mappe OpenStreetMap): solo verso i punti
         # esatti scelti dall'utente, niente stime dal centro citta'.
         from .. import routing

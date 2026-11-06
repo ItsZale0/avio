@@ -27,6 +27,8 @@ REASK_AFTER_HOURS = 12
 # Chiavi "note" a bassa priorita': non orientano i filtri, arricchiscono il contesto.
 KNOWN_PREFS = {
     "flexible_days",
+    "flex_arrive_from",
+    "flex_arrive_until",
     "allow_multi_leg",
     "max_walk_km",
     "luggage",
@@ -247,6 +249,15 @@ def merge_prefs(watch: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
             value = str(value or "").strip()
             changes[field] = iso(value) if value else None
             continue
+        if key in ("flex_arrive_from", "flex_arrive_until"):
+            # Flessibilita' con giorno e ora precisi ("da X a Y").
+            value = str(value or "").strip()
+            if not value or value.lower() in ("none", "null", "no", "0", "false"):
+                prefs[key] = None
+            else:
+                parsed = iso(value)
+                prefs[key] = parsed or value
+            continue
         if key not in KNOWN_PREFS and key not in PASS_ACTIONS:
             continue
         if key == "notes":
@@ -256,6 +267,15 @@ def merge_prefs(watch: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
             continue
         prefs[key] = value
 
+    flex_changed = any(
+        key in patch
+        for key in (
+            "flexible_days",
+            "flex_arrive_from",
+            "flex_arrive_until",
+            "arrivo_giorno_prima",
+        )
+    )
     with db.db() as conn:
         conn.execute(
             "UPDATE watches SET prefs = ? WHERE id = ?",
@@ -266,14 +286,16 @@ def merge_prefs(watch: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
             conn.execute(
                 f"UPDATE watches SET {assignments} WHERE id = ?", list(changes.values()) + [watch["id"]]
             )
-    if changes:
-        # Il piano calcolato prima non vale piu': i limiti sono cambiati.
+    if changes or flex_changed:
+        # Il piano calcolato prima non vale piu': i limiti/finestra sono cambiati.
         # Va azzerato SUBITO (non quando finisce il ricalcolo), altrimenti
         # per qualche secondo l'app mostra un piano che non rispetta i
         # nuovi limiti (es. treno delle 07:21 con "parto dopo le 07:30").
-        if any(chiave in changes for chiave in ("depart_after", "arrive_by", "max_price")):
+        if flex_changed or any(
+            chiave in changes for chiave in ("depart_after", "arrive_by", "max_price")
+        ):
             store.clear_plans(watch["id"])
-    return {"prefs": prefs, "changes": changes}
+    return {"prefs": prefs, "changes": changes, "flex_changed": flex_changed}
 
 
 def store_prefs(watch: dict[str, Any]) -> dict[str, Any]:

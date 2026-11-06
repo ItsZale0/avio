@@ -226,7 +226,7 @@ class ItabusAdapter(Adapter):
 
     def _days(self, ctx: SearchContext) -> list[str]:
         start = ctx.window_start
-        end = min(ctx.arrive_by, start + timedelta(days=2))
+        end = min(getattr(ctx, "effective_arrive_by", ctx.arrive_by), start + timedelta(days=5))
         days: list[str] = []
         current = start
         while current.date() <= end.date() and len(days) < 3:

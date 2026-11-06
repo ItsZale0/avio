@@ -52,7 +52,7 @@ def _city_distance(name: str, lat: float | None, lon: float | None) -> float:
 def _search_dates(ctx: SearchContext) -> list[str]:
     """Giorni da interrogare (max 3) per coprire la finestra richiesta."""
     start = ctx.window_start
-    end = min(ctx.arrive_by, start + timedelta(days=2))
+    end = min(getattr(ctx, "effective_arrive_by", ctx.arrive_by), start + timedelta(days=5))
     days: list[str] = []
     current = start
     while current.date() <= end.date() and len(days) < 3:
