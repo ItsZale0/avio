@@ -44,7 +44,10 @@ class TelegramCarsharingAdapter(Adapter):
                 ]
             )
 
-        since = (ctx.window_start or datetime.now(timezone.utc)) - timedelta(days=2)
+        # Orizzonte dei messaggi: gli annunci vengono pubblicati nei giorni
+        # prima della partenza, quindi non si puo' usare l'inizio del viaggio
+        # (per una gita fra una settimana non resterebbe nessun messaggio).
+        since = datetime.now(timezone.utc) - timedelta(days=4)
         all_messages = []
         errors = []
         for chat in chats:
@@ -191,12 +194,15 @@ def _to_offer(item, ctx, messages):
 
     date_str = item.get("date")
     time_str = item.get("time")
-    base_date = ctx.arrival_day_start.date()
+    # Se il messaggio non indica il giorno, si parte dal primo giorno utile
+    # della ricerca (non dal giorno d'arrivo: si puo' partire la sera prima).
+    default_day = ctx.window_start.astimezone(ROME).date()
+    base_date = default_day
     if date_str:
         try:
             base_date = datetime.strptime(date_str, "%Y-%m-%d").date()
         except (ValueError, TypeError):
-            base_date = ctx.arrival_day_start.date()
+            base_date = default_day
     if not time_str:
         return None
     try:
