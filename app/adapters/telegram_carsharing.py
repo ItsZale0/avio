@@ -5,11 +5,10 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Any
 
 from ..adapters.base import Adapter, AdapterResult, Offer, SearchContext
-from ..geo import haversine_km, offline_lookup
-from ..timeutil import ROME, parse_dt
+from ..geo import haversine_km
+from ..timeutil import ROME
 from .. import store
 from . import carsharing as cs
 
@@ -277,17 +276,11 @@ def _to_offer(item, ctx, messages):
 
 
 def _coords(city):
-    res = offline_lookup(city)
-    if res:
-        return (res[0], res[1])
-    from ..geo import CITIES
+    from ..geo import locality_lookup
 
-    key = city.strip().lower()
-    if key in CITIES:
-        return CITIES[key]
-    for k, v in CITIES.items():
-        if key in k or k in key:
-            return v
+    found = locality_lookup(city)
+    if found:
+        return (found[0], found[1])
     return None
 
 

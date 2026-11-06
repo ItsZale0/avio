@@ -215,6 +215,41 @@ def offline_lookup(query: str) -> tuple[float, float, str] | None:
     return None
 
 
+# Localita' minori (paesi, frazioni, quartieri) che compaiono negli annunci
+# di passaggio. Servono solo a dare coordinate ai messaggi Telegram: restano
+# fuori da CITIES perche' non sono partenze alternative sensate.
+LOCALITIES: dict[str, tuple[float, float]] = {
+    "thiene": (45.7089, 11.4797),
+    "valdagno": (45.6459, 11.2995),
+    "santorso": (45.7356, 11.3878),
+    "piovene rocchette": (45.7589, 11.4272),
+    "zane": (45.7167, 11.4333),
+    "carre": (45.7417, 11.4522),
+    "marano vicentino": (45.6922, 11.4229),
+    "arsiero": (45.8022, 11.3542),
+    "velo d'astico": (45.7983, 11.3917),
+    "cogollo del cengio": (45.7883, 11.4272),
+    "malo": (45.6589, 11.4053),
+    "mesiano": (46.0733, 11.1428),
+    "povo": (46.0633, 11.1553),
+}
+
+
+def locality_lookup(query: str) -> tuple[float, float, str] | None:
+    """Coordinate di una localita', anche minore (per i messaggi Telegram)."""
+    found = offline_lookup(query)
+    if found:
+        return found
+    q = normalize(query)
+    if not q:
+        return None
+    for name in sorted(LOCALITIES, key=len, reverse=True):
+        if name in q:
+            lat, lon = LOCALITIES[name]
+            return lat, lon, name.title()
+    return None
+
+
 class _RateLimiter:
     def __init__(self, min_interval: float = 1.1):
         self.min_interval = min_interval
