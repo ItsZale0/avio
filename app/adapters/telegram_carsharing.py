@@ -65,10 +65,9 @@ class TelegramCarsharingAdapter(Adapter):
                 log.debug("lettura gruppo fallita: %s", exc)
 
         if not all_messages:
-            return AdapterResult(
-                hints=["Nessun messaggio recente nei gruppi carsharing configurati."],
-                errors=errors,
-            )
+            hints = ["Nessun messaggio recente nei gruppi carsharing configurati."]
+            hints.extend(errors)
+            return AdapterResult(offers=[], hints=hints)
 
         parsed = await _parse_messages(all_messages)
         offers: list[Offer] = []
@@ -82,8 +81,7 @@ class TelegramCarsharingAdapter(Adapter):
             hints.append(
                 "Nessun passaggio Telegram per questa tratta e questa finestra."
             )
-        if errors:
-            hints.extend(errors)
+        hints.extend(errors)
         return AdapterResult(offers=offers, hints=hints)
 
 
