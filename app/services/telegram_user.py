@@ -14,9 +14,34 @@ from typing import Any
 
 log = logging.getLogger("carpool.telegram_user")
 
-# Coppia pubblica di fallback (Telethon). Sovrascrivibile da .env.
-API_ID = int(os.getenv("TELEGRAM_API_ID", "10840"))
-API_HASH = os.getenv("TELEGRAM_API_HASH", "eb06d4abfb49dc3eeb1aeb98ae0f581e")
+def _load_env() -> None:
+    for candidate in (
+        os.getenv("CARPOOL_ENV_FILE"),
+        "/opt/carpool/.env",
+        os.path.join(os.getcwd(), ".env"),
+    ):
+        if not candidate or not os.path.exists(candidate):
+            continue
+        try:
+            with open(candidate, encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    key, _, value = line.partition("=")
+                    key = key.strip()
+                    value = value.strip().strip('"').strip("'")
+                    if key and key not in os.environ:
+                        os.environ[key] = value
+        except OSError:
+            continue
+        break
+
+
+_load_env()
+
+API_ID = int(os.getenv("TELEGRAM_API_ID", "0") or "0")
+API_HASH = os.getenv("TELEGRAM_API_HASH", "")
 
 SESSION_PATH = os.getenv(
     "TELEGRAM_USER_SESSION", "/var/lib/carpool/telegram_user.session"
@@ -45,7 +70,11 @@ async def connect():
 
 
 async def login_send_code(phone: str) -> str:
-    """Invia il codice di verifica. Ritorna 'code_sent' o 'already_authorized'."""
+    if not API_ID or not API_HASH:
+        raise RuntimeError(
+            "TELEGRAM_API_ID / TELEGRAM_API_HASH non configurati. "
+            "Impostali in /opt/carpool/.env (vedi my.telegram.org)."
+        )
     client = _client()
     await client.connect()
     if await client.is_user_authorized():
