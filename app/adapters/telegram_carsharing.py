@@ -99,54 +99,58 @@ async def _parse_messages(messages):
         filtered = messages
 
     oggi = _date.today().isoformat()
-    payload = "\n".join(
-        f"{messages.index(m)}: [{m.get('sender')}] {m.get('text')}" for m in filtered
-    )
-    prompt = (
-        "Oggi e' " + oggi + ". Estrai le offerte di PASSAGGIO IN AUTO dai messaggi "
-        "Telegram seguenti.\n"
-        "Un messaggio offre un passaggio se contiene una tratta (citta' -> citta') "
-        "e spesso un giorno/ora.\n"
-        "Rispondi SOLO con un array JSON, un oggetto per offerta, con campi:\n"
-        "from (citta' di PARTENZA, solo il nome della citta'),\n"
-        "to (citta' di ARRIVO, solo il nome della citta'),\n"
-        "date (YYYY-MM-DD: risolvi i giorni della settimana e le date relative "
-        "rispetto a oggi; null se assente),\n"
-        "time (HH:MM 24h; 'mattina'->09:00, 'pomeriggio'->14:00, 'sera'->18:00; "
-        "null se assente),\n"
-        "seats (int o null), price (numero EUR o null),\n"
-        "contact (nome autore), notes (breve), msg_index (indice del messaggio).\n"
-        "Il giorno della settimana o la data (es. 'per lunedi 9 novembre', 'domani') "
-        "NON e' una citta': mettilo in date, mai in from/to.\n"
-        "Esempi:\n"
-        "  'Offro Schio-Rovereto per lunedi 9 novembre partenza 8.30' -> "
-        '{"from":"Schio","to":"Rovereto","date":"2026-11-09","time":"08:30"}\n'
-        "  'Offro Valdagno/Schio - Trento per domenica 8 novembre ore 16.00, 6euro' -> "
-        '{"from":"Valdagno","to":"Trento","date":"2026-11-08","time":"16:00","price":6}\n'
-        "Se un messaggio non e' un'offerta di passaggio, ignoralo.\n"
-        "Messaggi:\n" + payload
-    )
-    try:
-        result = await client.chat(
-            [{"role": "user", "content": prompt}], max_tokens=2000, temperature=0.1
+    all_items = []
+    batch_size = 5
+    for start in range(0, len(filtered), batch_size):
+        batch = filtered[start:start + batch_size]
+        payload = "\n".join(
+            f"{messages.index(m)}: [{m.get('sender')}] {m.get('text')}" for m in batch
         )
-        data = result.json() if hasattr(result, "json") else None
-        items = None
-        if isinstance(data, list):
-            items = data
-        elif isinstance(data, dict) and isinstance(data.get("offers"), list):
-            items = data["offers"]
-        if items is not None:
-            for it in items:
-                if not isinstance(it, dict):
-                    continue
-                idx = it.get("msg_index")
-                if isinstance(idx, int) and 0 <= idx < len(messages):
-                    it["_msg"] = messages[idx]
-                    it["_chat"] = messages[idx].get("_chat")
-            return items
-    except Exception as exc:
-        log.debug("parsing AI fallito: %s", exc)
+        prompt = (
+            "Oggi e' " + oggi + ". Estrai le offerte di PASSAGGIO IN AUTO dai messaggi "
+            "Telegram seguenti.\n"
+            "Rispondi SOLO con un array JSON, un oggetto per offerta, con campi:\n"
+            "from (citta' di PARTENZA, solo il nome della citta'),\n"
+            "to (citta' di ARRIVO, solo il nome della citta'),\n"
+            "date (YYYY-MM-DD: risolvi i giorni della settimana e le date relative "
+            "rispetto a oggi; null se assente),\n"
+            "time (HH:MM 24h; 'mattina'->09:00, 'pomeriggio'->14:00, 'sera'->18:00; "
+            "null se assente),\n"
+            "seats (int o null), price (numero EUR o null),\n"
+            "contact (nome autore), notes (breve), msg_index (indice del messaggio).\n"
+            "Il giorno della settimana o la data (es. 'per lunedi 9 novembre', 'domani') "
+            "NON e' una citta': mettilo in date, mai in from/to.\n"
+            "Esempi:\n"
+            "  'Offro Schio-Rovereto per lunedi 9 novembre partenza 8.30' -> "
+            '{"from":"Schio","to":"Rovereto","date":"2026-11-09","time":"08:30"}\n'
+            "  'Offro Valdagno/Schio - Trento per domenica 8 novembre ore 16.00, 6euro' -> "
+            '{"from":"Valdagno","to":"Trento","date":"2026-11-08","time":"16:00","price":6}\n'
+            "Se un messaggio non e' un'offerta di passaggio, ignoralo.\n"
+            "Messaggi:\n" + payload
+        )
+        try:
+            result = await client.chat(
+                [{"role": "user", "content": prompt}], max_tokens=1000, temperature=0.0
+            )
+            data = result.json() if hasattr(result, "json") else None
+            items = None
+            if isinstance(data, list):
+                items = data
+            elif isinstance(data, dict) and isinstance(data.get("offers"), list):
+                items = data["offers"]
+            if items is not None:
+                for it in items:
+                    if not isinstance(it, dict):
+                        continue
+                    idx = it.get("msg_index")
+                    if isinstance(idx, int) and 0 <= idx < len(messages):
+                        it["_msg"] = messages[idx]
+                        it["_chat"] = messages[idx].get("_chat")
+                all_items.extend(items)
+        except Exception as exc:
+            log.debug("parsing AI fallito: %s", exc)
+    if all_items:
+        return all_items
     return _parse_regex(messages)
 
 
@@ -158,7 +162,7 @@ def _parse_regex(messages):
         r"([A-Za-z]{3,30})\s*(?:->|a | per )\s*([A-Za-z]{3,30})",
         _re.IGNORECASE,
     )
-    price_re = _re.compile(r"(\d+(?:[.,]\d+)?)\s*(?:euro|eur|€)", _re.IGNORECASE)
+    price_re = _re.compile(r"(\d+(?:[.,]\d+)?)\s*(?:euro|eur)", _re.IGNORECASE)
     time_re = _re.compile(r"\b(\d{1,2}:\d{2})\b")
     for m in messages:
         text = m.get("text") or ""
