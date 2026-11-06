@@ -179,4 +179,3 @@ async def fetch_messages(chat_id, limit=100, since=None):
         return []
     finally:
         await client.disconnect()
-PY

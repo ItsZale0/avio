@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from ..adapters.base import Adapter, AdapterResult, Offer, SearchContext
 from ..geo import haversine_km, offline_lookup
 from ..timeutil import ROME, parse_dt
+from .. import store
 from . import carsharing as cs
 
 log = logging.getLogger("carpool.adapter.telegram_carsharing")
@@ -29,7 +31,6 @@ class TelegramCarsharingAdapter(Adapter):
     timeout_s = 60.0
 
     async def search(self, ctx: SearchContext) -> AdapterResult:
-        from .. import store
         from ..services import telegram_user
 
         if not telegram_user.session_exists():
@@ -50,8 +51,8 @@ class TelegramCarsharingAdapter(Adapter):
             )
 
         since = (ctx.window_start or datetime.now(timezone.utc)) - timedelta(days=2)
-        all_messages: list[dict[str, Any]] = []
-        errors: list[str] = []
+        all_messages = []
+        errors = []
         for chat in chats:
             try:
                 msgs = await telegram_user.fetch_messages(
@@ -60,7 +61,7 @@ class TelegramCarsharingAdapter(Adapter):
                 for m in msgs:
                     m["_chat"] = chat
                 all_messages.extend(msgs)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 errors.append(f"telegram/{chat.get('title')}: {type(exc).__name__}")
                 log.debug("lettura gruppo fallita: %s", exc)
 
@@ -70,7 +71,7 @@ class TelegramCarsharingAdapter(Adapter):
             return AdapterResult(offers=[], hints=hints)
 
         parsed = await _parse_messages(all_messages)
-        offers: list[Offer] = []
+        offers = []
         for item in parsed:
             offer = _to_offer(item, ctx, all_messages)
             if offer is not None:
@@ -85,20 +86,25 @@ class TelegramCarsharingAdapter(Adapter):
         return AdapterResult(offers=offers, hints=hints)
 
 
-async def _parse_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Usa l'AI per estrarre offerte strutturate dai messaggi (con fallback regex)."""
-    from ..ai import intelligence
+async def _parse_messages(messages):
     from ..ai.groq import client_from_settings, ai_enabled
+    from datetime import date as _date
 
     client = client_from_settings()
     if not (ai_enabled() and client.available):
         return _parse_regex(messages)
 
-    from datetime import date as _date
+    offer_re = re.compile(
+        r"offro|passaggio|posto|posti|\b[a-zà-ÿ]{3,}\s*[-/→]\s*[a-zà-ÿ]{3,}",
+        re.IGNORECASE,
+    )
+    filtered = [m for m in messages if offer_re.search(m.get("text") or "")]
+    if not filtered:
+        filtered = messages
 
     oggi = _date.today().isoformat()
     payload = "\n".join(
-        f"{i}: [{m.get('sender')}] {m.get('text')}" for i, m in enumerate(messages)
+        f"{messages.index(m)}: [{m.get('sender')}] {m.get('text')}" for m in filtered
     )
     prompt = (
         "Oggi e' " + oggi + ". Estrai le offerte di PASSAGGIO IN AUTO dai messaggi "
@@ -139,22 +145,21 @@ async def _parse_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]
                     it["_msg"] = messages[idx]
                     it["_chat"] = messages[idx].get("_chat")
             return items
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.debug("parsing AI fallito: %s", exc)
     return _parse_regex(messages)
 
 
-def _parse_regex(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Fallback euristico: cerca pattern 'citta -> citta' e prezzi."""
-    import re
+def _parse_regex(messages):
+    import re as _re
 
-    out: list[dict[str, Any]] = []
-    pattern = re.compile(
+    out = []
+    pattern = _re.compile(
         r"([A-Za-zÀ-ÿ'\s]{3,30})\s*(?:->|→| a | per )\s*([A-Za-zÀ-ÿ'\s]{3,30})",
-        re.IGNORECASE,
+        _re.IGNORECASE,
     )
-    price_re = re.compile(r"(\d+(?:[.,]\d+)?)\s*(?:€|eur|euro)", re.IGNORECASE)
-    time_re = re.compile(r"\b(\d{1,2}:\d{2})\b")
+    price_re = _re.compile(r"(\d+(?:[.,]\d+)?)\s*(?:€|eur|euro)", _re.IGNORECASE)
+    time_re = _re.compile(r"\b(\d{1,2}:\d{2})\b")
     for m in messages:
         text = m.get("text") or ""
         match = pattern.search(text)
@@ -173,12 +178,13 @@ def _parse_regex(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "contact": m.get("sender"),
                 "notes": text[:120],
                 "_msg": m,
+                "_chat": m.get("_chat"),
             }
         )
     return out
 
 
-def _to_offer(item: dict[str, Any], ctx: SearchContext, messages: list[dict[str, Any]]) -> Offer | None:
+def _to_offer(item, ctx, messages):
     from_city = (item.get("from") or "").strip()
     to_city = (item.get("to") or "").strip()
     if not from_city or not to_city:
@@ -189,7 +195,6 @@ def _to_offer(item: dict[str, Any], ctx: SearchContext, messages: list[dict[str,
     if from_coords is None or to_coords is None:
         return None
 
-    # Filtro tratta: deve essere vicina all'origine e alla destinazione.
     if ctx.from_lat is None or ctx.to_lat is None:
         return None
     if haversine_km(from_coords[0], from_coords[1], ctx.from_lat, ctx.from_lon) > 60:
@@ -197,7 +202,6 @@ def _to_offer(item: dict[str, Any], ctx: SearchContext, messages: list[dict[str,
     if haversine_km(to_coords[0], to_coords[1], ctx.to_lat, ctx.to_lon) > 60:
         return None
 
-    # Orario: usa quello del messaggio se presente, altrimenti scarta.
     date_str = item.get("date")
     time_str = item.get("time")
     base_date = ctx.arrival_day_start.date()
@@ -211,12 +215,8 @@ def _to_offer(item: dict[str, Any], ctx: SearchContext, messages: list[dict[str,
     try:
         hh, mm = time_str.split(":")
         depart = datetime(
-            base_date.year,
-            base_date.month,
-            base_date.day,
-            int(hh),
-            int(mm),
-            tzinfo=ROME,
+            base_date.year, base_date.month, base_date.day,
+            int(hh), int(mm), tzinfo=ROME,
         ).astimezone(timezone.utc)
     except (ValueError, TypeError):
         return None
@@ -230,14 +230,10 @@ def _to_offer(item: dict[str, Any], ctx: SearchContext, messages: list[dict[str,
     road_km = distance * 1.28
     duration_min = max(12, int(road_km / 26 * 60))
     arrive = depart + timedelta(minutes=duration_min)
-    if arrive > ctx.arrive_by + timedelta(minutes=10) and not ctx.allow_day_before:
-        # Tieni comunque se arriva entro la flessibilita'.
-        pass
 
     price = item.get("price")
     price_is_estimate = False
     if price is None:
-        # Stima dal km, come l'adapter carsharing esistente.
         provider = _first_provider()
         if provider:
             cost = (
@@ -254,7 +250,9 @@ def _to_offer(item: dict[str, Any], ctx: SearchContext, messages: list[dict[str,
     seats = item.get("seats")
     contact = item.get("contact") or ""
     notes = item.get("notes") or ""
-    external_id = f"tgcs:{item.get('_msg', {}).get('id', 'x')}:{from_city}:{to_city}"
+    msg = item.get("_msg") or {}
+    chat = item.get("_chat") or {}
+    external_id = f"tgcs:{msg.get('id', 'x')}:{from_city}:{to_city}"
 
     return Offer(
         source="telegram_carsharing",
@@ -279,13 +277,13 @@ def _to_offer(item: dict[str, Any], ctx: SearchContext, messages: list[dict[str,
             "distanza_km": round(road_km, 1),
             "contatto": contact,
             "note": notes[:200],
-            "gruppo": item.get("_chat", {}).get("title"),
-            "messaggio_id": item.get("_msg", {}).get("id"),
+            "gruppo": chat.get("title"),
+            "messaggio_id": msg.get("id"),
         },
     )
 
 
-def _coords(city: str) -> tuple[float, float] | None:
+def _coords(city):
     res = offline_lookup(city)
     if res:
         return (res[0], res[1])
@@ -294,16 +292,15 @@ def _coords(city: str) -> tuple[float, float] | None:
     key = city.strip().lower()
     if key in CITIES:
         return CITIES[key]
-    # Prova per sottostringa.
     for k, v in CITIES.items():
         if key in k or k in key:
             return v
     return None
 
 
-def _first_provider() -> dict[str, Any] | None:
+def _first_provider():
     try:
         providers = cs.load_providers()
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
     return providers[0] if providers else None
