@@ -1,10 +1,5 @@
-"""Adattatore per i gruppi Telegram di carsharing (account utente).
 
-Legge i messaggi recenti dei gruppi marcati come "carsharing" e li trasforma
-in offerte reali con AI. Non inventa nulla: prezzi e orari vengono dal
-messaggio; se mancano, l'offerta viene scartata o stimata dal km (prezzo
-indicativo, marcato come stima).
-"""
+"""Adattatore per i gruppi Telegram di carsharing (account utente)."""
 from __future__ import annotations
 
 import logging
@@ -107,35 +102,23 @@ async def _parse_messages(messages):
     for m in filtered:
         text = m.get("text") or ""
         prompt = (
-            "Oggi e' " + oggi + ". Estrai l'offerta di PASSAGGIO IN AUTO dal messaggio.
-"
+            "Oggi e' " + oggi + ". Estrai l'offerta di PASSAGGIO IN AUTO dal messaggio.\n"
             "Rispondi SOLO con un oggetto JSON (non array), oppure null se non e' "
-            "un'offerta di passaggio.
-"
-            "Campi: from (citta' di PARTENZA), to (citta' di ARRIVO),
-"
+            "un'offerta di passaggio.\n"
+            "Campi: from (citta' di PARTENZA), to (citta' di ARRIVO),\n"
             "date (YYYY-MM-DD: risolvi i giorni della settimana e le date relative "
-            "rispetto a oggi; null se assente),
-"
+            "rispetto a oggi; null se assente),\n"
             "time (HH:MM 24h; 'mattina'->09:00, 'pomeriggio'->14:00, 'sera'->18:00; "
-            "null se assente),
-"
-            "seats (int o null), price (numero EUR o null),
-"
-            "contact (nome autore), notes (breve).
-"
-            "Il giorno della settimana o la data NON e' una citta': mettilo in date.
-"
-            "Esempi:
-"
+            "null se assente),\n"
+            "seats (int o null), price (numero EUR o null),\n"
+            "contact (nome autore), notes (breve).\n"
+            "Il giorno della settimana o la data NON e' una citta': mettilo in date.\n"
+            "Esempi:\n"
             "  'Offro Schio-Rovereto per lunedi 9 novembre partenza 8.30' -> "
-            '{"from":"Schio","to":"Rovereto","date":"2026-11-09","time":"08:30"}
-'
+            '{"from":"Schio","to":"Rovereto","date":"2026-11-09","time":"08:30"}\n'
             "  'Offro Valdagno/Schio - Trento per domenica 8 novembre ore 16.00, 6euro' -> "
-            '{"from":"Valdagno","to":"Trento","date":"2026-11-08","time":"16:00","price":6}
-'
-            "Messaggio: " + text + "
-"
+            '{"from":"Valdagno","to":"Trento","date":"2026-11-08","time":"16:00","price":6}\n'
+            "Messaggio: " + text + "\n"
             "Autore: " + str(m.get("sender") or "")
         )
         try:
@@ -146,16 +129,12 @@ async def _parse_messages(messages):
             if isinstance(data, dict) and data.get("from") and data.get("to"):
                 data["_msg"] = m
                 data["_chat"] = m.get("_chat")
-                data["msg_index"] = messages.index(m)
-                all_items.append(data) if False else None
                 all_items.append(data)
         except Exception as exc:
             log.debug("parsing AI fallito: %s", exc)
     if all_items:
         return all_items
     return _parse_regex(messages)
-
-
 
 
 def _parse_regex(messages):
