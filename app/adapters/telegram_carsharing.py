@@ -92,6 +92,10 @@ async def _parse_messages(messages):
     client = client_from_settings()
     if not (ai_enabled() and client.available):
         return _parse_regex(messages)
+    # Forza il modello piu' capace per il parsing: i modelli piccoli troncano
+    # i nomi delle citta' e inventano offerte.
+    client.model_smart = "openai/gpt-oss-120b"
+    client.model_fast = "openai/gpt-oss-120b"
 
     offer_re = re.compile(r"offro|passaggio|posto|posti", re.IGNORECASE)
     filtered = [m for m in messages if offer_re.search(m.get("text") or "")]
