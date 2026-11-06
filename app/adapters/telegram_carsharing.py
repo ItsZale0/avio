@@ -7,7 +7,6 @@ indicativo, marcato come stima).
 """
 from __future__ import annotations
 
-import json
 import logging
 import re
 from datetime import datetime, timedelta, timezone
@@ -120,10 +119,10 @@ async def _parse_messages(messages):
         "Il giorno della settimana o la data (es. 'per lunedi 9 novembre', 'domani') "
         "NON e' una citta': mettilo in date, mai in from/to.\n"
         "Esempi:\n"
-        "  'Offro Schio-Rovereto per luned� 9 novembre partenza 8.30' -> "
-        "{\"from\":\"Schio\",\"to\":\"Rovereto\",\"date\":\"2026-11-09\",\"time\":\"08:30\"}\n"
-        "  'Offro Valdagno/Schio - Trento per domenica 8 novembre ore 16.00, 6�' -> "
-        "{\"from\":\"Valdagno\",\"to\":\"Trento\",\"date\":\"2026-11-08\",\"time\":\"16:00\",\"price\":6}\n"
+        "  'Offro Schio-Rovereto per lunedi 9 novembre partenza 8.30' -> "
+        '{"from":"Schio","to":"Rovereto","date":"2026-11-09","time":"08:30"}\n'
+        "  'Offro Valdagno/Schio - Trento per domenica 8 novembre ore 16.00, 6euro' -> "
+        '{"from":"Valdagno","to":"Trento","date":"2026-11-08","time":"16:00","price":6}\n'
         "Se un messaggio non e' un'offerta di passaggio, ignoralo.\n"
         "Messaggi:\n" + payload
     )
@@ -156,10 +155,10 @@ def _parse_regex(messages):
 
     out = []
     pattern = _re.compile(
-        r"([A-Za-zÀ-ÿ'\s]{3,30})\s*(?:->|→| a | per )\s*([A-Za-zÀ-ÿ'\s]{3,30})",
+        r"([A-Za-z]{3,30})\s*(?:->|a | per )\s*([A-Za-z]{3,30})",
         _re.IGNORECASE,
     )
-    price_re = _re.compile(r"(\d+(?:[.,]\d+)?)\s*(?:€|eur|euro)", _re.IGNORECASE)
+    price_re = _re.compile(r"(\d+(?:[.,]\d+)?)\s*(?:euro|eur|€)", _re.IGNORECASE)
     time_re = _re.compile(r"\b(\d{1,2}:\d{2})\b")
     for m in messages:
         text = m.get("text") or ""
