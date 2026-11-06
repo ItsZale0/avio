@@ -94,10 +94,7 @@ async def _parse_messages(messages):
     if not (ai_enabled() and client.available):
         return _parse_regex(messages)
 
-    offer_re = re.compile(
-        r"offro|passaggio|posto|posti|\b[a-zà-ÿ]{3,}\s*[-/→]\s*[a-zà-ÿ]{3,}",
-        re.IGNORECASE,
-    )
+    offer_re = re.compile(r"offro|passaggio|posto|posti", re.IGNORECASE)
     filtered = [m for m in messages if offer_re.search(m.get("text") or "")]
     if not filtered:
         filtered = messages
@@ -122,8 +119,12 @@ async def _parse_messages(messages):
         "contact (nome autore), notes (breve), msg_index (indice del messaggio).\n"
         "Il giorno della settimana o la data (es. 'per lunedi 9 novembre', 'domani') "
         "NON e' una citta': mettilo in date, mai in from/to.\n"
-        "Se un messaggio non e' un'offerta di passaggio (es. 'cerco', 'ho modificato'), "
-        "ignoralo.\n"
+        "Esempi:\n"
+        "  'Offro Schio-Rovereto per luned� 9 novembre partenza 8.30' -> "
+        "{\"from\":\"Schio\",\"to\":\"Rovereto\",\"date\":\"2026-11-09\",\"time\":\"08:30\"}\n"
+        "  'Offro Valdagno/Schio - Trento per domenica 8 novembre ore 16.00, 6�' -> "
+        "{\"from\":\"Valdagno\",\"to\":\"Trento\",\"date\":\"2026-11-08\",\"time\":\"16:00\",\"price\":6}\n"
+        "Se un messaggio non e' un'offerta di passaggio, ignoralo.\n"
         "Messaggi:\n" + payload
     )
     try:
