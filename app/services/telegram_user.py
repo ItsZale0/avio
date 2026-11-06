@@ -14,6 +14,7 @@ from typing import Any
 
 log = logging.getLogger("carpool.telegram_user")
 
+
 def _load_env() -> None:
     for candidate in (
         os.getenv("CARPOOL_ENV_FILE"),
@@ -86,7 +87,6 @@ async def login_send_code(phone: str) -> str:
 
 
 async def login_verify(phone: str, code: str, password: str | None = None) -> str:
-    """Completa il login con il codice (e la password 2FA se serve)."""
     from telethon.errors import SessionPasswordNeededError
 
     client = _client()
@@ -102,8 +102,7 @@ async def login_verify(phone: str, code: str, password: str | None = None) -> st
     return "ok"
 
 
-async def join_invite(link: str) -> dict[str, Any]:
-    """Entra in un gruppo tramite link di invito."""
+async def join_invite(link: str) -> dict:
     from telethon.tl.functions.messages import ImportChatInviteRequest
 
     client = await connect()
@@ -121,10 +120,10 @@ async def join_invite(link: str) -> dict[str, Any]:
         await client.disconnect()
 
 
-async def list_groups() -> list[dict[str, Any]]:
+async def list_groups() -> list:
     client = await connect()
     try:
-        out: list[dict[str, Any]] = []
+        out = []
         async for dialog in client.iter_dialogs():
             if dialog.is_group or dialog.is_channel:
                 entity = dialog.entity
@@ -140,15 +139,18 @@ async def list_groups() -> list[dict[str, Any]]:
         await client.disconnect()
 
 
-async def fetch_messages(
-    chat_id: Any, limit: int = 100, since: datetime | None = None
-) -> list[dict[str, Any]]:
+async def fetch_messages(chat_id, limit=100, since=None):
     from telethon.errors import FloodWaitError
 
     try:
         chat_id = int(chat_id)
     except (TypeError, ValueError):
         pass
+
+    client = await connect()
+    try:
+        out = []
+        async for m in client.iter_messages(chat_id, limit=limit):
             if since and m.date < since:
                 break
             if not m.message:
@@ -177,3 +179,4 @@ async def fetch_messages(
         return []
     finally:
         await client.disconnect()
+PY
