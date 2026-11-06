@@ -145,10 +145,10 @@ async def fetch_messages(
 ) -> list[dict[str, Any]]:
     from telethon.errors import FloodWaitError
 
-    client = await connect()
     try:
-        out: list[dict[str, Any]] = []
-        async for m in client.iter_messages(chat_id, limit=limit):
+        chat_id = int(chat_id)
+    except (TypeError, ValueError):
+        pass
             if since and m.date < since:
                 break
             if not m.message:
