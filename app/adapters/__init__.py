@@ -12,6 +12,7 @@ from .itabus import ItabusAdapter
 from .omio import OmioAdapter
 from .serpapi import SerpApiFlightsAdapter
 from .skyscanner import SkyscannerAdapter
+from .telegram_carsharing import TelegramCarsharingAdapter
 from .transit import TransitAdapter
 from .trenitalia import TrenitaliaAdapter
 
@@ -25,6 +26,7 @@ _INSTANCES: list[Adapter] = [
     SerpApiFlightsAdapter(),
     SkyscannerAdapter(),
     CarsharingAdapter(),
+    TelegramCarsharingAdapter(),
     TransitAdapter(),
     GtfsAdapter(),
 ]

@@ -81,10 +81,25 @@ CREATE TABLE IF NOT EXISTS telegram_chats (
     title        TEXT,
     username     TEXT,
     is_default   INTEGER NOT NULL DEFAULT 0,
+    is_carsharing INTEGER NOT NULL DEFAULT 0,
     created_at   TEXT NOT NULL,
     last_seen_at TEXT,
     UNIQUE(user_id, chat_id)
 );
+
+CREATE TABLE IF NOT EXISTS telegram_carsharing_messages (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id     TEXT NOT NULL,
+    message_id  INTEGER NOT NULL,
+    text        TEXT NOT NULL,
+    msg_date    TEXT NOT NULL,
+    sender      TEXT,
+    parsed_json TEXT,
+    created_at  TEXT NOT NULL,
+    UNIQUE(chat_id, message_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tg_cs_messages_chat ON telegram_carsharing_messages(chat_id);
 
 CREATE INDEX IF NOT EXISTS idx_telegram_chats_user ON telegram_chats(user_id);
 
@@ -362,6 +377,7 @@ MIGRATIONS = [
     ("plans", "walk_in_km", "REAL"),
     # Le cartelle: le ricerche si raggruppano per viaggio o per contesto.
     ("watches", "group_id", "INTEGER REFERENCES watch_groups(id) ON DELETE SET NULL"),
+    ("telegram_chats", "is_carsharing", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 # Indici sulle colonne introdotte dalle migrazioni: si creano dopo, quando

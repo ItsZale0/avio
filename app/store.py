@@ -361,6 +361,57 @@ def set_watch_active(
     return get_watch(watch_id, user_id=user_id)
 
 
+def list_carsharing_chats() -> list[dict[str, Any]]:
+    with db.db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM telegram_chats WHERE is_carsharing = 1"
+        ).fetchall()
+    return db.rows_to_dicts(rows)
+
+
+def set_carsharing_chat(chat_id: str, value: bool = True) -> None:
+    with db.db() as conn:
+        conn.execute(
+            "UPDATE telegram_chats SET is_carsharing = ? WHERE chat_id = ?",
+            (1 if value else 0, chat_id),
+        )
+
+
+def save_carsharing_message(
+    chat_id: str, message_id: int, text: str, msg_date: str, sender: str | None
+) -> bool:
+    with db.db() as conn:
+        try:
+            conn.execute(
+                "INSERT INTO telegram_carsharing_messages(chat_id, message_id, text, msg_date, sender, created_at) "
+                "VALUES (?,?,?,?,?,?)",
+                (chat_id, message_id, text, msg_date, sender, now_utc().isoformat()),
+            )
+            return True
+        except Exception:
+            return False
+
+
+def list_carsharing_messages(since_iso: str | None = None) -> list[dict[str, Any]]:
+    query = "SELECT * FROM telegram_carsharing_messages"
+    params: list[Any] = []
+    if since_iso:
+        query += " WHERE msg_date >= ?"
+        params.append(since_iso)
+    query += " ORDER BY msg_date DESC"
+    with db.db() as conn:
+        rows = conn.execute(query, params).fetchall()
+    return db.rows_to_dicts(rows)
+
+
+def cleanup_carsharing_messages(older_than_iso: str) -> int:
+    with db.db() as conn:
+        cur = conn.execute(
+            "DELETE FROM telegram_carsharing_messages WHERE msg_date < ?", (older_than_iso,)
+        )
+        return cur.rowcount
+
+
 def notify_stats(user_id: int) -> dict[str, int]:
     """Quante ricerche ha l'utente e quante mandano gia' le notifiche push.
 
