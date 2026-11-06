@@ -101,10 +101,11 @@ async def _parse_messages(messages):
     filtered = [m for m in messages if offer_re.search(m.get("text") or "")]
     if not filtered:
         filtered = messages
+    filtered = filtered[:15]
 
     oggi = _date.today().isoformat()
     all_items = []
-    batch_size = 5
+    batch_size = 1
     for start in range(0, len(filtered), batch_size):
         batch = filtered[start:start + batch_size]
         payload = "\n".join(
